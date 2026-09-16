@@ -9,7 +9,8 @@ docs/
 ├── README.md          # 本文件：文档索引与存放规范
 └── wiki/              # 技术文档（一篇文档讲透一个主题）
     ├── databus-el-express-parser.md       # EL 表达式与画布 JSON 双向转换引擎
-    └── databus-canvas-gateway-migration.md  # 画布渲染层：物理容器 → 网关节点范式迁移设计
+    ├── databus-canvas-gateway-migration.md  # 画布渲染层：物理容器 → 网关节点范式迁移设计
+    └── databus-context-design.md          # DatabusContext 执行上下文设计（JSONPath/混合路径/动态变量）
 ```
 
 ## 写新文档时请遵循
@@ -25,3 +26,4 @@ docs/
 | --- | --- | --- | --- |
 | [wiki/databus-el-express-parser.md](wiki/databus-el-express-parser.md) | LiteFlow EL 表达式与画布 JSON 双向转换引擎 | ruoyi-databus (`org.dromara.databus.el`) | 2026-09-13 |
 | [wiki/databus-canvas-gateway-migration.md](wiki/databus-canvas-gateway-migration.md) | 画布渲染层从物理容器范式迁移到网关节点范式（平级 nodes+语义边） | plus-ui `views/databus/editor` | 2026-09-15 |
+| [wiki/databus-context-design.md](wiki/databus-context-design.md) | DatabusContext 执行上下文设计（JSONPath 读写/混合路径/动态变量机制与决策） | ruoyi-databus (`org.dromara.databus.context`) | 2026-09-16 |

@@ -1,6 +1,7 @@
 package org.dromara.databus;
 
 import com.jayway.jsonpath.TypeRef;
+import lombok.extern.slf4j.Slf4j;
 import org.dromara.databus.context.DatabusContext;
 import org.dromara.databus.executor.DatabusExecutionResult;
 import org.dromara.databus.executor.DatabusExecutor;
@@ -34,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("dev")
 @DisplayName("数据总线执行引擎骨架")
+@Slf4j
 @SpringBootTest(
     classes = DatabusSmokeTestApplication.class,
     properties = {
@@ -114,6 +116,7 @@ public class DatabusEngineSkeletonTest {
     @Test
     public void executorShouldReturnSuccessWithSteps() {
         DatabusExecutionResult result = databusExecutor.execute("databusCtxChain", null);
+        logExecutionDetail(result);
 
         assertTrue(result.isSuccess(), () -> "链路应执行成功，错误: " + result.getMessage());
         assertNotNull(result.getExecutionId(), "executionId 不应为空");
@@ -137,6 +140,7 @@ public class DatabusEngineSkeletonTest {
     @Test
     public void executorShouldReturnFailureForErrorChain() {
         DatabusExecutionResult result = databusExecutor.execute("databusCtxErrorChain", null);
+        logExecutionDetail(result);
 
         assertFalse(result.isSuccess(), "异常链路应执行失败");
         assertNotNull(result.getMessage(), "错误信息不应为空");
@@ -153,11 +157,35 @@ public class DatabusEngineSkeletonTest {
     public void executorShouldInitContextFromRequestData() {
         Map<String, Object> request = Map.of("orderId", "ORD-001", "amount", 99.5);
         DatabusExecutionResult result = databusExecutor.execute("databusCtxChain", request);
+        logExecutionDetail(result);
 
         assertTrue(result.isSuccess());
         // 请求数据 + 节点写入的数据都应在上下文中
         String contextJson = result.getContextJson();
         assertTrue(contextJson.contains("ORD-001"), "上下文应包含请求数据 orderId");
         assertTrue(contextJson.contains("hello-databus"), "上下文应包含节点写入数据");
+    }
+
+    // ==================== 测试可读性辅助：输出执行中间数据到日志 ====================
+
+    /**
+     * 输出执行结果详情到日志，方便跑测试时在 IDE 控制台看到中间数据。
+     * <p>
+     * 设计动机：assert 只能判定通过/失败，但跑通时看不到执行结果长啥样，
+     * 失败时也只能看 assert 报的期望/实际值。加 log.info 后：
+     * <ul>
+     *     <li>跑通：能在控制台看到 executionId / 链路 / 节点步骤 / 上下文快照，确认行为符合预期</li>
+     *     <li>失败：除了 assert 错误，还能看到完整上下文，便于定位</li>
+     * </ul>
+     */
+    private void logExecutionDetail(DatabusExecutionResult result) {
+        log.info("[测试] 执行结果 executionId={}, chainId={}, success={}, 耗时={}ms",
+            result.getExecutionId(), result.getChainId(), result.isSuccess(), result.getCostTime());
+        for (DatabusExecutionResult.NodeStep step : result.getSteps()) {
+            log.info("[测试]   节点 nodeId={}, success={}, 耗时={}ms, 错误={}",
+                step.getNodeId(), step.isSuccess(), step.getTimeSpent(),
+                step.getErrorMessage() == null ? "无" : step.getErrorMessage());
+        }
+        log.info("[测试] 上下文快照 contextJson={}", result.getContextJson());
     }
 }

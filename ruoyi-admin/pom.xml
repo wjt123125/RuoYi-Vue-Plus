@@ -104,6 +104,12 @@
             <artifactId>ruoyi-workflow</artifactId>
         </dependency>
 
+        <!--  数据总线模块  -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-databus</artifactId>
+        </dependency>
+
         <!-- Spring Boot Admin 客户端 -->
         <dependency>
             <groupId>de.codecentric</groupId>

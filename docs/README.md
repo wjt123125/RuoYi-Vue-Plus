@@ -1,0 +1,27 @@
+# 项目技术文档中心
+
+本目录用于集中存放 RuoYi-Vue-Plus 项目的自研技术文档（区别于第三方框架的官方文档）。
+
+## 目录规范
+
+```
+docs/
+├── README.md          # 本文件：文档索引与存放规范
+└── wiki/              # 技术文档（一篇文档讲透一个主题）
+    ├── databus-el-express-parser.md       # EL 表达式与画布 JSON 双向转换引擎
+    └── databus-canvas-gateway-migration.md  # 画布渲染层：物理容器 → 网关节点范式迁移设计
+```
+
+## 写新文档时请遵循
+
+1. **一篇文档一个主题**：命名格式 `模块名-主题.md`（小写中划线，如 `databus-el-express-parser.md`），放在 `wiki/` 下。
+2. **写完必须登记**：在下方的"文档索引"表里加一行，方便后来人检索。
+3. **内容建议包含**：这个模块解决什么问题、整体架构图/流程、核心概念解释、关键代码位置索引（类名即可）、常见坑与扩展指南。
+4. **与代码同步维护**：模块结构性调整时同步更新对应文档，文档失效比没有文档更糟糕。
+
+## 文档索引
+
+| 文档 | 主题 | 模块 | 更新日期 |
+| --- | --- | --- | --- |
+| [wiki/databus-el-express-parser.md](wiki/databus-el-express-parser.md) | LiteFlow EL 表达式与画布 JSON 双向转换引擎 | ruoyi-databus (`org.dromara.databus.el`) | 2026-09-13 |
+| [wiki/databus-canvas-gateway-migration.md](wiki/databus-canvas-gateway-migration.md) | 画布渲染层从物理容器范式迁移到网关节点范式（平级 nodes+语义边） | plus-ui `views/databus/editor` | 2026-09-15 |

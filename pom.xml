@@ -450,6 +450,13 @@
                 <version>${revision}</version>
             </dependency>
 
+            <!--  数据总线模块  -->
+            <dependency>
+                <groupId>org.dromara</groupId>
+                <artifactId>ruoyi-databus</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
             <!--  api模块  -->
             <dependency>
                 <groupId>org.dromara</groupId>

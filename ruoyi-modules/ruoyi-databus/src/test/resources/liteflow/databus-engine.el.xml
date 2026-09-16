@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<flow>
+    <!--
+        执行引擎骨架测试链路：
+        1. databusCtxChain：ctxWrite 写入上下文 → ctxRead 读取并回写，验证节点间数据流转与混合路径解析
+        2. databusCtxErrorChain：ctxWrite → ctxError，验证异常捕获与执行结果失败分支
+    -->
+    <chain name="databusCtxChain">
+        THEN(
+            ctxWrite,
+            ctxRead
+        );
+    </chain>
+
+    <chain name="databusCtxErrorChain">
+        THEN(
+            ctxWrite,
+            ctxError
+        );
+    </chain>
+</flow>

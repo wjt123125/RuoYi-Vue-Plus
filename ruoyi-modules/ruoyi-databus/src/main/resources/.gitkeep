@@ -1,0 +1,2 @@
+# LiteFlow EL 规则文件目录占位
+# 阶段1 将通过 SQL 模式从 databus_chain 表加载 EL，文件模式备用

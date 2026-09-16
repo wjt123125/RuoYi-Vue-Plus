@@ -1,0 +1,136 @@
+package org.dromara.databus.executor;
+
+import com.yomahub.liteflow.core.FlowExecutor;
+import com.yomahub.liteflow.flow.LiteflowResponse;
+import com.yomahub.liteflow.flow.entity.CmpStep;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.databus.context.DatabusContext;
+import org.springframework.stereotype.Component;
+
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.UUID;
+
+/**
+ * 数据总线执行器。
+ * <p>
+ * 作为链路执行的统一入口，封装 LiteFlow {@link FlowExecutor} 调用，负责：
+ * <ul>
+ *     <li>生成 executionId</li>
+ *     <li>从请求数据初始化 {@link DatabusContext}</li>
+ *     <li>调用 LiteFlow 执行链路</li>
+ *     <li>组装 {@link DatabusExecutionResult}（含节点步骤与上下文快照）</li>
+ *     <li>记录执行日志（数据库持久化留待 monitor 阶段）</li>
+ * </ul>
+ *
+ * @author databus
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class DatabusExecutor {
+
+    private final FlowExecutor flowExecutor;
+
+    /**
+     * 同步执行链路。
+     *
+     * @param chainId     链路编码
+     * @param requestData 执行入参（任意对象，内部转为 DatabusContext 的初始 JSON 文档）
+     * @return 执行结果
+     */
+    public DatabusExecutionResult execute(String chainId, Object requestData) {
+        String executionId = generateExecutionId();
+        Date startTime = new Date();
+        log.info("[databus] 开始执行链路 chainId={}, executionId={}", chainId, executionId);
+
+        DatabusContext context = DatabusContext.fromObject(requestData);
+
+        LiteflowResponse response = flowExecutor.execute2Resp(chainId, requestData, context);
+
+        Date endTime = new Date();
+        long costTime = endTime.getTime() - startTime.getTime();
+
+        DatabusExecutionResult result = buildResult(executionId, chainId, startTime, endTime, costTime, response, context);
+        logExecution(result);
+        return result;
+    }
+
+    /**
+     * 生成执行记录业务 id。
+     */
+    private String generateExecutionId() {
+        return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    /**
+     * 从 LiteFlow 响应组装数据总线执行结果。
+     */
+    private DatabusExecutionResult buildResult(String executionId, String chainId, Date startTime, Date endTime,
+                                               long costTime, LiteflowResponse response, DatabusContext context) {
+        DatabusExecutionResult result = new DatabusExecutionResult();
+        result.setExecutionId(executionId);
+        result.setChainId(chainId);
+        result.setStartTime(startTime);
+        result.setEndTime(endTime);
+        result.setCostTime(costTime);
+        result.setSuccess(response.isSuccess());
+        result.setMessage(response.getMessage());
+        result.setContextJson(context.toJsonString());
+
+        // 提取节点执行步骤（按执行顺序）
+        Queue<CmpStep> stepQueue = response.getExecuteStepQueue();
+        if (stepQueue != null) {
+            for (CmpStep step : stepQueue) {
+                result.getSteps().add(toNodeStep(step));
+            }
+        }
+        return result;
+    }
+
+    private DatabusExecutionResult.NodeStep toNodeStep(CmpStep step) {
+        DatabusExecutionResult.NodeStep nodeStep = new DatabusExecutionResult.NodeStep();
+        nodeStep.setNodeId(step.getNodeId());
+        nodeStep.setNodeName(step.getNodeName());
+        nodeStep.setTag(step.getTag());
+        nodeStep.setSuccess(step.isSuccess());
+        nodeStep.setTimeSpent(step.getTimeSpent());
+        nodeStep.setStartTime(step.getStartTime());
+        nodeStep.setEndTime(step.getEndTime());
+        if (step.getException() != null) {
+            nodeStep.setErrorMessage(step.getException().getMessage());
+        }
+        return nodeStep;
+    }
+
+    /**
+     * 记录执行日志（先日志，存库留待 monitor 阶段）。
+     */
+    private void logExecution(DatabusExecutionResult result) {
+        if (result.isSuccess()) {
+            log.info("[databus] 链路执行成功 executionId={}, chainId={}, 耗时={}ms, 节点数={}",
+                result.getExecutionId(), result.getChainId(), result.getCostTime(), result.getSteps().size());
+        } else {
+            log.error("[databus] 链路执行失败 executionId={}, chainId={}, 耗时={}ms, 错误={}",
+                result.getExecutionId(), result.getChainId(), result.getCostTime(), result.getMessage());
+        }
+    }
+
+    /**
+     * 兼容旧调用：仅取 LiteFlow 原生响应（不构建数据总线结果），供过渡阶段使用。
+     */
+    public LiteflowResponse executeRaw(String chainId, Object requestData) {
+        DatabusContext context = DatabusContext.fromObject(requestData);
+        return flowExecutor.execute2Resp(chainId, requestData, context);
+    }
+
+    /**
+     * 获取 LiteFlow 原生步骤 Map（key 为 chainId），供需要细粒度步骤信息的场景使用。
+     */
+    public Map<String, List<CmpStep>> getExecuteSteps(LiteflowResponse response) {
+        return response.getExecuteSteps();
+    }
+}

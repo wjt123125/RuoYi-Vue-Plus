@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<flow>
+    <!--
+        冒烟测试链路：验证组件注册、顺序执行、日志打印。
+        THEN(hello, delay) 期望上下文轨迹为 [hello, delay]，链路执行成功。
+    -->
+    <chain name="databusSmokeChain">
+        THEN(
+            hello,
+            delay
+        );
+    </chain>
+
+    <!--
+        冒烟测试异常链路：验证异常捕获。
+        THEN(hello, errorNode) 期望 hello 先执行，errorNode 抛出异常，链路执行失败。
+    -->
+    <chain name="databusErrorChain">
+        THEN(
+            hello,
+            errorNode
+        );
+    </chain>
+</flow>

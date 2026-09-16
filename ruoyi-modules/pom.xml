@@ -22,6 +22,8 @@
         <module>ruoyi-system</module>
         <module>ruoyi-workflow</module>
         <module>ruoyi-ai</module>
+        <!-- 数据总线模块 -->
+        <module>ruoyi-databus</module>
     </modules>
 
 </project>

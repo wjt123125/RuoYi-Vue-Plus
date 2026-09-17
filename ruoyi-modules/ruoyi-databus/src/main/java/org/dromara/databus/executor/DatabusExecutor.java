@@ -60,6 +60,37 @@ public class DatabusExecutor {
     }
 
     /**
+     * 按 EL 字符串直接执行（不落库、不依赖规则源），供编辑器试运行使用。
+     * <p>
+     * 自定义上下文必须走 {@code execute2RespWithEL} 的四参重载（第三参 requestId 传 null）。
+     *
+     * @param elStr       EL 表达式（调用方负责已通过语法校验）
+     * @param requestData 执行入参（任意对象，内部转为 DatabusContext 的初始 JSON 文档，即文档根 {@code $}）
+     * @return 执行结果
+     */
+    public DatabusExecutionResult executeByEl(String elStr, Object requestData) {
+        String executionId = generateExecutionId();
+        Date startTime = new Date();
+        log.info("[databus] 开始试运行(EL 直执) executionId={}", executionId);
+
+        DatabusContext context = DatabusContext.fromObject(requestData);
+
+        LiteflowResponse response = flowExecutor.execute2RespWithEL(elStr, requestData, null, context);
+
+        Date endTime = new Date();
+        long costTime = endTime.getTime() - startTime.getTime();
+
+        DatabusExecutionResult result = buildResult(executionId, PREVIEW_CHAIN_ID, startTime, endTime, costTime, response, context);
+        logExecution(result);
+        return result;
+    }
+
+    /**
+     * 试运行结果中使用的虚拟链路标识（真实 chainId 不落库、不存在）。
+     */
+    private static final String PREVIEW_CHAIN_ID = "preview-el";
+
+    /**
      * 生成执行记录业务 id。
      */
     private String generateExecutionId() {
@@ -78,7 +109,12 @@ public class DatabusExecutor {
         result.setEndTime(endTime);
         result.setCostTime(costTime);
         result.setSuccess(response.isSuccess());
-        result.setMessage(response.getMessage());
+        // 执行异常的文案通常在 getMessage()，缺失时回退取 cause
+        String message = response.getMessage();
+        if ((message == null || message.isBlank()) && !response.isSuccess() && response.getCause() != null) {
+            message = response.getCause().getMessage();
+        }
+        result.setMessage(message);
         result.setContextJson(context.toJsonString());
 
         // 提取节点执行步骤（按执行顺序）

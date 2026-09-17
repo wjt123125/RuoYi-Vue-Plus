@@ -135,7 +135,8 @@ public class IfConditionParser extends AbstractExpressParser {
         String nodeComponentId = "";
         // 没有使用与或非表达式: AND,OR,NOT
         if (StringUtils.equals(NodeTypeEnum.BOOLEAN.getMappingClazz().getSimpleName(), condition.getType())) {
-            nodeComponentId = condition.getId();
+            // 布尔组件同样要带 tag（数据空间）与 data（path/op/value），否则运行时拿不到配置
+            nodeComponentId = appendNodeIdTagData(condition, nodeComponentId);
         }
         // 使用与或非表达式: AND,OR,NOT
         else {

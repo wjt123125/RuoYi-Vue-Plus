@@ -132,14 +132,14 @@ mybatis-plus:
 
 # 数据加密
 mybatis-encryptor:
-  # 是否开启加密
-  enable: false
+  # 是否开启加密（2026-09-18 数据总线连接 credentials 字段级加密需要；历史明文读取时自动原样返回，无需迁移）
+  enable: true
   # 默认加密算法
-  algorithm: BASE64
+  algorithm: AES
   # 编码方式 BASE64/HEX。默认BASE64
   encode: BASE64
-  # 安全秘钥 对称算法的秘钥 如：AES，SM4
-  password:
+  # 安全秘钥 对称算法的秘钥 如：AES，SM4（开发默认值，生产环境必须更换）
+  password: 10rfylhtccpuyke5
   # 公私钥 非对称算法的公私钥 如：SM2，RSA
   publicKey:
   privateKey:

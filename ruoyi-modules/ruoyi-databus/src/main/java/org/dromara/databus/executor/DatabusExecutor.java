@@ -5,7 +5,9 @@ import com.yomahub.liteflow.flow.LiteflowResponse;
 import com.yomahub.liteflow.flow.entity.CmpStep;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.databus.connector.Connection;
 import org.dromara.databus.context.DatabusContext;
+import org.dromara.databus.service.ISysDatabusConnectionService;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
@@ -35,6 +37,8 @@ public class DatabusExecutor {
 
     private final FlowExecutor flowExecutor;
 
+    private final ISysDatabusConnectionService connectionService;
+
     /**
      * 同步执行链路。
      *
@@ -48,6 +52,7 @@ public class DatabusExecutor {
         log.info("[databus] 开始执行链路 chainId={}, executionId={}", chainId, executionId);
 
         DatabusContext context = DatabusContext.fromObject(requestData);
+        injectConnections(context);
 
         LiteflowResponse response = flowExecutor.execute2Resp(chainId, requestData, context);
 
@@ -74,6 +79,7 @@ public class DatabusExecutor {
         log.info("[databus] 开始试运行(EL 直执) executionId={}", executionId);
 
         DatabusContext context = DatabusContext.fromObject(requestData);
+        injectConnections(context);
 
         LiteflowResponse response = flowExecutor.execute2RespWithEL(elStr, requestData, null, context);
 
@@ -160,7 +166,26 @@ public class DatabusExecutor {
      */
     public LiteflowResponse executeRaw(String chainId, Object requestData) {
         DatabusContext context = DatabusContext.fromObject(requestData);
+        injectConnections(context);
         return flowExecutor.execute2Resp(chainId, requestData, context);
+    }
+
+    /**
+     * 把启用的连接（enabled=Y）从 sys_databus_connection 加载并注入到当前执行上下文。
+     * <p>每次执行都重新查一次 DB，确保连接管理页修改后立即可见；后续如有性能压力可加缓存。
+     * <p>单条加载失败不阻断执行（已记录 ERROR 日志），后续组件取该 connectionId 时会抛"未注册"。
+     */
+    private void injectConnections(DatabusContext context) {
+        List<Connection> connections = connectionService.loadEnabledConnections();
+        if (connections == null || connections.isEmpty()) {
+            log.debug("[databus] 无启用的连接，跳过注入");
+            return;
+        }
+        for (Connection conn : connections) {
+            context.registerConnection(conn);
+        }
+        log.info("[databus] 注入连接 {} 个: {}", connections.size(),
+            connections.stream().map(Connection::getId).toList());
     }
 
     /**

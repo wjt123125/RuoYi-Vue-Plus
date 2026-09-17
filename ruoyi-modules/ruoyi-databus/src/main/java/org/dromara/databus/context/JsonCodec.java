@@ -48,4 +48,27 @@ public final class JsonCodec {
             return null;
         }
     }
+
+    /**
+     * 把 JSON 字符串解析为指定类型对象。解析失败时返回 {@code null}。
+     */
+    public static <T> T parseObject(String json, Class<T> clazz) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return MAPPER.readValue(json, clazz);
+        } catch (JsonProcessingException e) {
+            log.warn("JSON 解析失败 clazz={} err={}", clazz.getName(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 把任意对象（通常是 Map / POJO）转换为指定类型对象。
+     * <p>通过 ObjectMapper.convertValue 直接转换，失败时抛 {@link RuntimeException}（配置错误不应静默）。
+     */
+    public static <T> T convertValue(Object fromValue, Class<T> toType) {
+        return MAPPER.convertValue(fromValue, toType);
+    }
 }

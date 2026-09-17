@@ -41,6 +41,12 @@
             <artifactId>ruoyi-common-mybatis</artifactId>
         </dependency>
 
+        <!-- 字段级加密：连接 credentials 列（@EncryptField，AES） -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-encrypt</artifactId>
+        </dependency>
+
         <!-- 翻译模块 -->
         <dependency>
             <groupId>org.dromara</groupId>

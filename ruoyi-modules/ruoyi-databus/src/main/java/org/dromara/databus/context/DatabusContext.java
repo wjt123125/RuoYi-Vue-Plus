@@ -9,10 +9,13 @@ import com.jayway.jsonpath.spi.json.JacksonJsonProvider;
 import com.jayway.jsonpath.spi.mapper.JacksonMappingProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.databus.connector.Connection;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 数据总线执行上下文。
@@ -40,6 +43,13 @@ public class DatabusContext {
         .jsonProvider(new JacksonJsonProvider())
         .mappingProvider(new JacksonMappingProvider())
         .build();
+
+    /**
+     * 当前流程执行可用的连接实例注册表：{@code connectionId → Connection}。
+     * <p>组件层通过 {@link #getConnection(String)} 取出后传给对应 Connector（决策 9.3）。
+     * <p>Connector 类型注册表不放这里（Connector 是无状态单例，放 {@code ConnectorRegistry} Spring Bean）。
+     */
+    private final Map<String, Connection> connections = new LinkedHashMap<>();
 
     private final DocumentContext document;
 
@@ -172,6 +182,38 @@ public class DatabusContext {
             return resolveMixedPath((String) input);
         }
         return input;
+    }
+
+    /**
+     * 注册一个连接实例到当前上下文（执行前由 Executor / 试运行入口注入）。
+     * <p>同一 id 重复注册时覆盖（便于重新执行覆盖旧连接）。
+     */
+    public void registerConnection(Connection connection) {
+        if (connection == null || connection.getId() == null || connection.getId().isBlank()) {
+            throw new ServiceException("连接实例缺少 id");
+        }
+        connections.put(connection.getId(), connection);
+    }
+
+    /**
+     * 按 connectionId 取已注册的连接实例。
+     *
+     * @throws ServiceException 未注册时抛出（组件层调 Connector 前必须先取到 Connection）
+     */
+    public Connection getConnection(String connectionId) {
+        Connection conn = connections.get(connectionId);
+        if (conn == null) {
+            throw new ServiceException("未注册的 connectionId: " + connectionId
+                + "，已注册: " + connections.keySet());
+        }
+        return conn;
+    }
+
+    /**
+     * 列出当前上下文所有已注册连接实例（不可变视图）。
+     */
+    public Map<String, Connection> allConnections() {
+        return Collections.unmodifiableMap(connections);
     }
 
     /**

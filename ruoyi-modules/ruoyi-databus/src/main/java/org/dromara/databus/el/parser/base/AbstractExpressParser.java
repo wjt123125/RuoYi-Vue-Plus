@@ -300,12 +300,13 @@ public abstract class AbstractExpressParser implements ExpressParser {
      *       递归调用 {@link #abstractGenerateEL} 生成整段表达式，
      *       例如 THEN(b,c)、AND(x,y)；</li>
      *   <li><b>id != null → 普通节点</b>：
-     *       <ul>
-     *         <li>普通节点（type=NodeComponent）：拼 {@code a.tag("x").data("y")}，
-     *             tag/data 为 null 时自动跳过；</li>
-     *         <li>布尔节点（type=NodeBooleanComponent）：只拼 id（出现在
-     *             IF/WHILE 的条件位或 .BREAK(d) 里，布尔节点不允许带 tag/data）。</li>
-     *       </ul></li>
+ *       <ul>
+ *         <li>普通节点（type=NodeComponent）：拼 {@code a.tag("x").data("y")}，
+ *             tag/data 为 null 时自动跳过；</li>
+ *         <li>布尔节点（type=NodeBooleanComponent）：同样拼 id/tag/data
+ *             （出现在 IF/WHILE 条件位，布尔组件也需要数据空间与参数，
+ *             如 {@code condition.tag("condition1").data("{...}")}）。</li>
+ *       </ul></li>
      * </ul>
      *
      * @param jsonEl          待渲染单元
@@ -319,18 +320,27 @@ public abstract class AbstractExpressParser implements ExpressParser {
         } else {
             // 普通节点处理
             if (StringUtils.equals(NodeTypeEnum.COMMON.getMappingClazz().getSimpleName(), jsonEl.getType())) {
-                // 节点组件标签处理 a.tag("dog")
-                // String nodeIdAndTag = id + getELNodeTag(jsonEl);
-                String nodeIdAndTag = StringUtils.appendIfMissing(id, getELNodeTag(jsonEl));
-                nodeIdAndTag = StringUtils.appendIfMissing(nodeIdAndTag, getELNodeData(jsonEl));
-                nodeComponentId = nodeComponentId + nodeIdAndTag;
+                // 节点组件标签处理 a.tag("dog").data("{...}")
+                nodeComponentId = appendNodeIdTagData(jsonEl, nodeComponentId);
             }
-            // 条件节点处理
+            // 条件节点处理：布尔组件同样允许 tag（数据空间）与 data（path/op/value 参数）
             else if (StringUtils.equals(NodeTypeEnum.BOOLEAN.getMappingClazz().getSimpleName(), jsonEl.getType())) {
-                nodeComponentId = nodeComponentId + id;
+                nodeComponentId = appendNodeIdTagData(jsonEl, nodeComponentId);
             }
         }
         return nodeComponentId;
+    }
+
+    /**
+     * 取节点片段：有 id 时依次拼 id、tag、data；id/tag/data 为 null 的片段自动跳过。
+     * 普通节点与布尔节点统一走此逻辑（布尔组件同样支持 tag/data，
+     * 如 {@code IF(condition.tag("condition1").data("{...}"), a, b)}）。
+     */
+    protected String appendNodeIdTagData(CmpProperty jsonEl, String prefix) {
+        String result = StringUtils.appendIfMissing(prefix, jsonEl.getId());
+        result = StringUtils.appendIfMissing(result, getELNodeTag(jsonEl));
+        result = StringUtils.appendIfMissing(result, getELNodeData(jsonEl));
+        return result;
     }
 
     /**

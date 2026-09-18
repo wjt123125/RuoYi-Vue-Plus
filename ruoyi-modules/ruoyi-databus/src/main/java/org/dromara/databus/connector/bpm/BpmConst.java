@@ -21,8 +21,20 @@ public final class BpmConst {
     /** BO_CREATE 端点 cmd（创建 BO 数据） */
     public static final String CMD_BO_CREATE = "com.awspaas.databus.connector.BO_CREATE";
 
+    /** BO_UPDATE 端点 cmd（更新 BO 数据） */
+    public static final String CMD_BO_UPDATE = "com.awspaas.databus.connector.BO_UPDATE";
+
+    /** BO_DELETE 端点 cmd（删除 BO 数据） */
+    public static final String CMD_BO_DELETE = "com.awspaas.databus.connector.BO_DELETE";
+
+    /** BO_QUERY 端点 cmd（查询 BO 数据） */
+    public static final String CMD_BO_QUERY = "com.awspaas.databus.connector.BO_QUERY";
+
     /** PROCESS_START 端点 cmd（启动流程） */
     public static final String CMD_PROCESS_START = "com.awspaas.databus.connector.PROCESS_START";
+
+    /** PROCESS_TERMINATE 端点 cmd（终止流程） */
+    public static final String CMD_PROCESS_TERMINATE = "com.awspaas.databus.connector.PROCESS_TERMINATE";
 
     /** TASK_COMPLETE 端点 cmd（提交任务） */
     public static final String CMD_TASK_COMPLETE = "com.awspaas.databus.connector.TASK_COMPLETE";

@@ -7,7 +7,11 @@ import org.dromara.databus.connector.Connector;
 import org.dromara.databus.connector.ConnectorDescriptor;
 import org.dromara.databus.connector.ConnectorException;
 import org.dromara.databus.connector.bpm.dto.BoCreateRequest;
+import org.dromara.databus.connector.bpm.dto.BoDeleteRequest;
+import org.dromara.databus.connector.bpm.dto.BoQueryRequest;
+import org.dromara.databus.connector.bpm.dto.BoUpdateRequest;
 import org.dromara.databus.connector.bpm.dto.ProcessStartRequest;
+import org.dromara.databus.connector.bpm.dto.ProcessTerminateRequest;
 import org.dromara.databus.connector.bpm.dto.SessionCreateRequest;
 import org.dromara.databus.connector.bpm.dto.TaskCompleteRequest;
 import org.dromara.databus.context.JsonCodec;
@@ -91,13 +95,21 @@ public class BpmHttpConnector implements Connector {
         desc.getConfigSchema().put("ipWhiteList",
                 ConnectorDescriptor.ConfigField.ofArray("IP 白名单", false, null));
 
-        // 4 个操作定义
+        // 8 个操作定义
         desc.getOperations().add(buildOperation("createSession", "创建会话",
                 "sessionCreate", List.of("sessionId", "idCard")));
         desc.getOperations().add(buildOperation("boCreate", "创建 BO 数据",
                 "boCreate", List.of("boResults")));
+        desc.getOperations().add(buildOperation("boUpdate", "更新 BO 数据",
+                "boUpdate", List.of("boResults")));
+        desc.getOperations().add(buildOperation("boDelete", "删除 BO 数据",
+                "boDelete", List.of("boResults")));
+        desc.getOperations().add(buildOperation("boQuery", "查询 BO 数据",
+                "boQuery", List.of("boName", "method", "records", "count")));
         desc.getOperations().add(buildOperation("processStart", "启动流程",
                 "processStart", List.of("processInstanceId", "isProcess", "activeTaskIds")));
+        desc.getOperations().add(buildOperation("processTerminate", "终止流程",
+                "processTerminate", List.of("processInstanceId", "terminated", "alreadyEnded")));
         desc.getOperations().add(buildOperation("taskComplete", "提交任务",
                 "taskComplete", List.of("processInstanceId", "processEnded",
                         "completedTaskIds", "failedTaskIds", "failedErrors")));
@@ -155,12 +167,49 @@ public class BpmHttpConnector implements Connector {
     }
 
     /**
+     * BO_UPDATE 操作：调 BPM 端 BO_UPDATE 端点（records 每条必须含 ID）。
+     *
+     * @return BPM 端响应的 data 字段 {@code {boResults: [{boName, updatedCount}, ...]}}
+     */
+    public Object boUpdate(Connection connection, BoUpdateRequest request) {
+        return callBpm(connection, BpmConst.CMD_BO_UPDATE, request);
+    }
+
+    /**
+     * BO_DELETE 操作：调 BPM 端 BO_DELETE 端点（method=remove/removeByBindId）。
+     *
+     * @return BPM 端响应的 data 字段 {@code {boResults: [{boName, removedCount}, ...]}}
+     */
+    public Object boDelete(Connection connection, BoDeleteRequest request) {
+        return callBpm(connection, BpmConst.CMD_BO_DELETE, request);
+    }
+
+    /**
+     * BO_QUERY 操作：调 BPM 端 BO_QUERY 端点（list/listPage/count + 关联表/子表挂载）。
+     *
+     * @return BPM 端响应的 data 字段 {@code {boName, method, records|count}}
+     */
+    public Object boQuery(Connection connection, BoQueryRequest request) {
+        return callBpm(connection, BpmConst.CMD_BO_QUERY, request);
+    }
+
+    /**
      * PROCESS_START 操作：调 BPM 端 PROCESS_START 端点。
      *
      * @return BPM 端响应的 data 字段 {@code {processInstanceId, isProcess, activeTaskIds}}
      */
     public Object processStart(Connection connection, ProcessStartRequest request) {
         return callBpm(connection, BpmConst.CMD_PROCESS_START, request);
+    }
+
+    /**
+     * PROCESS_TERMINATE 操作：调 BPM 端 PROCESS_TERMINATE 端点。
+     * 流程已结束时 BPM 端返回 terminated=false + alreadyEnded=true（幂等，非错误）。
+     *
+     * @return BPM 端响应的 data 字段 {@code {processInstanceId, terminated, alreadyEnded}}
+     */
+    public Object processTerminate(Connection connection, ProcessTerminateRequest request) {
+        return callBpm(connection, BpmConst.CMD_PROCESS_TERMINATE, request);
     }
 
     /**

@@ -1,8 +1,8 @@
 # BPM Connector 端点 Service 设计
 
 > 模块：1D-P0 BPM 端总线 app（新建独立仓库）
-> 主题：4 个 mapping 端点的 service 入参/出参 schema、公共基类、老系统取舍
-> 更新：2026-09-17
+> 主题：10 个 mapping 端点的 service 入参/出参 schema、公共基类、老系统取舍
+> 更新：2026-09-19（§17 增补 RDS_EXECUTE / IDCARD_TO_USERID 两批次端点）
 
 ## 1. 背景与问题
 
@@ -923,3 +923,53 @@ private void injectConnections(DatabusContext context) {
 验证：`mvnw -pl ruoyi-modules/ruoyi-databus -am -o compile` BUILD SUCCESS（首轮因缺 common-encrypt 依赖失败，补依赖后通过）；前端无文件改动，未重复跑前端检查。
 
 用户实测前置（相比 §15.6 的差异项）：①**重新执行 databus_connection.sql**（表结构已变，脚本含 drop table，旧数据会清空——1D-P0 无生产数据）②重启后端使 yml 加密开关生效 ③验证点新增：DB 中直接查看 credentials 列应为带加密头前缀的密文、config 列可读；编辑回显密码正常；保存后执行链路 5 步全过（证明 config+credentials 合并反序列化 BpmHttpConnectionCfg 正确）。
+
+## 17. RDS_EXECUTE / IDCARD_TO_USERID 端点（2026-09-19 同批落地）
+
+> 状态：代码完成（BPM app 独立仓 + RuoYi feature/databus + plus-ui feature/databus），action.xml 两份部署副本已同步为 10 端点版；待用户在 IDEA 编译部署 class、重启 BPM 后实测。
+
+老系统组件盘点结论：旧 RdsConfigProcessor 与规则引擎 @sqlValue（SqlValueProcessor）合并为一个 RDS_EXECUTE 组件（一需求一 comp，SQL 执行是同一原子能力）；旧 IdCardToUserIdProcessor 用户确认仍在用，单独成 IDCARD_TO_USERID 组件。
+
+### 17.1 RDS_EXECUTE
+
+请求体（`RdsExecuteRequest`，两端 DTO 字段一致）：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| rdsId | String | 是 | BPM 后台「注册数据源」中配置的 RDS ID |
+| method | String | 是 | 见下表 8 值；非法 method 抛 BPM_RDS_METHOD_INVALID |
+| sql | String / String[] | 是 | SQL 原样透传（不做路径解析）；batch 多 SQL 模式传数组 |
+| args | Object[] / Object[][] | 否 | 参数值（自包含，全部在 RuoYi 组件层 resolve 后传入）；batch 单 SQL 批量参数时为数组的数组 |
+| fetchSize | Integer | 否 | >0 才应用（Spring JdbcTemplate） |
+| maxRows | Integer | 否 | >0 才应用 |
+
+| method | 返回 data |
+|---|---|
+| getString | String 标量 |
+| getInt / getLong / getDouble | 数值标量 |
+| getMap | 单行 Map |
+| getMaps | List<Map> |
+| update | 影响行数 int |
+| batch | int[]，每次执行行数；两模式：多 SQL 无参 / 单 SQL + List<List> 批量参数（DynamicBatchSetter 从旧代码平移） |
+
+响应：`{method, data}`（data 由 BPM 端 JSON.toJSON 后透传）。异常不吞（旧 RdsConfigProcessor catch 只 log 的问题修正），统一由 invokeService 转 ResponseObject。
+
+RuoYi 侧组件 `rdsExecute`（`RdsExecuteComponent` + `RdsExecuteCfg`）：method 默认 getMaps；args 递归走 resolveParam（裸路径/混合模板/常量，嵌套 List 递归以支持批量参数）；响应存 `$.<tag>.method` 与 `$.<tag>.data`。
+
+### 17.2 IDCARD_TO_USERID
+
+老系统语义：字段级组件，meta 配多个 path，每个 path 是逗号分隔的身份证号串，查 BPM 组织用户表换 userId 后原地写回同一路径。
+
+- 请求体：`{idCards: String[], separator: String}`（separator 默认 ","）
+- BPM 端走 `com.actionsoft.bpms.util.DBSql` 执行 `select userid from orguser where ext1=?`（系统表不能用 BOAPI；工具类 IdCardQueryUtil 现为 userId↔idCard 双向查询），逐个查、查不到进 missed，不报错
+- 响应：`{userIds: String（按 separator join）, matched: [{idCard, userId}], missed: [idCard...]}`；idCards 为空抛 BPM_PARAM_MISSING
+
+RuoYi 侧组件 `idCardToUserId`（`IdCardToUserIdCfg.fields[].path/separator`）逐字段处理：path 值为空只 warn 跳过（与旧系统一致）；**全部未命中抛 ServiceException**（比旧系统静默 log 收紧，防空值覆盖业务字段）；部分未命中 warn 并照常写回命中 userId 到原 path。
+
+### 17.3 落地清单与验证
+
+- BPM app 仓：BpmErrorCode +2、2 DTO、2 Service、IdCardQueryUtil +1 方法、Controller +2 @Mapping、action.xml 源文件 +2 cmd-bean；两份部署副本（apps/install 与 webserver/webapps/portal/apps，后者为运行时实际加载）已同步，均含 `<param name="body" type="body"/>`（2026-09-18 缺 body param 导致"request 不能为空"的教训）
+- RuoYi：2 DTO、BpmConst +2 常量、BpmHttpConnector +2 方法（describe 同步）、component/bpm 下 2 Cfg + 2 Component；`mvnw -pl ruoyi-modules/ruoyi-databus -am compile` BUILD SUCCESS
+- plus-ui：cmp-defs 业务组件组 +2 物料（rdsExecute/ph:table/绿、idCardToUserId/ph:identification-card/青），CmpProps DATA_HINTS +2 示例 JSON；oxlint 0 error；vue-tsc databus 无新增报错（仅 monitor/logininfo 2 个历史 TS1149 基线）
+
+用户实测要点：①IDEA 编译部署 BPM app class + 重启 BPM（action.xml 重启才加载）②rdsId 必须是 BPM 后台已注册的数据源 ID ③idCard 用 ORGUSER.EXT1 真实数据测，覆盖命中/部分未命中/全未命中（全未命中链路应报错中断）三场景。

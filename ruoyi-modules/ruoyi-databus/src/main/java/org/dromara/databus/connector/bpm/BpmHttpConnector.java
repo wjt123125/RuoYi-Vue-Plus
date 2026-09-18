@@ -10,8 +10,10 @@ import org.dromara.databus.connector.bpm.dto.BoCreateRequest;
 import org.dromara.databus.connector.bpm.dto.BoDeleteRequest;
 import org.dromara.databus.connector.bpm.dto.BoQueryRequest;
 import org.dromara.databus.connector.bpm.dto.BoUpdateRequest;
+import org.dromara.databus.connector.bpm.dto.IdCardToUserIdRequest;
 import org.dromara.databus.connector.bpm.dto.ProcessStartRequest;
 import org.dromara.databus.connector.bpm.dto.ProcessTerminateRequest;
+import org.dromara.databus.connector.bpm.dto.RdsExecuteRequest;
 import org.dromara.databus.connector.bpm.dto.SessionCreateRequest;
 import org.dromara.databus.connector.bpm.dto.TaskCompleteRequest;
 import org.dromara.databus.context.JsonCodec;
@@ -23,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * BPM HTTP 连接器：通过 HTTP 调用 BPM 端总线 app 的 4 个 @Mapping 端点。
+ * BPM HTTP 连接器：通过 HTTP 调用 BPM 端总线 app 的 10 个 @Mapping 端点。
  *
  * <p>三层物料模型（决策 2.2）的第一层实现：物料市场注册（{@code @Component} 自动注册到 {@link org.dromara.databus.connector.ConnectorRegistry}），
  * 描述能力清单（{@link #describe()}）驱动前端 cmp-defs 物料与连接管理表单。
@@ -31,13 +33,19 @@ import java.util.Map;
  * <p>URL 拼接（决策 9.1.2 + 9.3）：{@code cfg.getEndpoint() + "/portal/r/jd?cmd=" + BpmConst.CMD_XXX}
  * （不带 sid，因 session=false 无鉴权）。
  *
- * <p>本类自己暴露 4 操作方法（决策 9.3：Connector 接口不包含 4 操作方法，
+ * <p>本类自己暴露 10 个操作方法（决策 9.3：Connector 接口不包含操作方法，
  * 因不同 Connector 操作集合不同；具体业务方法在具体实现类声明）：
  * <ul>
  *   <li>{@link #createSession(Connection, SessionCreateRequest)}</li>
  *   <li>{@link #boCreate(Connection, BoCreateRequest)}</li>
+ *   <li>{@link #boUpdate(Connection, BoUpdateRequest)}</li>
+ *   <li>{@link #boDelete(Connection, BoDeleteRequest)}</li>
+ *   <li>{@link #boQuery(Connection, BoQueryRequest)}</li>
  *   <li>{@link #processStart(Connection, ProcessStartRequest)}</li>
+ *   <li>{@link #processTerminate(Connection, ProcessTerminateRequest)}</li>
  *   <li>{@link #taskComplete(Connection, TaskCompleteRequest)}</li>
+ *   <li>{@link #rdsExecute(Connection, RdsExecuteRequest)}</li>
+ *   <li>{@link #idCardToUserId(Connection, IdCardToUserIdRequest)}</li>
  * </ul>
  *
  * <p>HTTP 调用用 Spring {@link RestClient}（与 {@link HttpRequestComponent} 范式一致）。
@@ -95,7 +103,7 @@ public class BpmHttpConnector implements Connector {
         desc.getConfigSchema().put("ipWhiteList",
                 ConnectorDescriptor.ConfigField.ofArray("IP 白名单", false, null));
 
-        // 8 个操作定义
+        // 10 个操作定义
         desc.getOperations().add(buildOperation("createSession", "创建会话",
                 "sessionCreate", List.of("sessionId", "idCard")));
         desc.getOperations().add(buildOperation("boCreate", "创建 BO 数据",
@@ -113,6 +121,10 @@ public class BpmHttpConnector implements Connector {
         desc.getOperations().add(buildOperation("taskComplete", "提交任务",
                 "taskComplete", List.of("processInstanceId", "processEnded",
                         "completedTaskIds", "failedTaskIds", "failedErrors")));
+        desc.getOperations().add(buildOperation("rdsExecute", "RDS SQL 执行",
+                "rdsExecute", List.of("method", "data")));
+        desc.getOperations().add(buildOperation("idCardToUserId", "身份证换 userId",
+                "idCardToUserId", List.of("userIds", "matched", "missed")));
         return desc;
     }
 
@@ -219,6 +231,24 @@ public class BpmHttpConnector implements Connector {
      */
     public Object taskComplete(Connection connection, TaskCompleteRequest request) {
         return callBpm(connection, BpmConst.CMD_TASK_COMPLETE, request);
+    }
+
+    /**
+     * RDS_EXECUTE 操作：执行 BPM 后台注册的 RDS 数据源 SQL。
+     *
+     * @return BPM 端响应的 data 字段 {@code {method, data}}，data 为标量/Map/List/影响行数/int[]
+     */
+    public Object rdsExecute(Connection connection, RdsExecuteRequest request) {
+        return callBpm(connection, BpmConst.CMD_RDS_EXECUTE, request);
+    }
+
+    /**
+     * IDCARD_TO_USERID 操作：身份证号批量换 userId（BPM 端查 ORGUSER.EXT1）。
+     *
+     * @return BPM 端响应的 data 字段 {@code {userIds, matched, missed}}
+     */
+    public Object idCardToUserId(Connection connection, IdCardToUserIdRequest request) {
+        return callBpm(connection, BpmConst.CMD_IDCARD_TO_USERID, request);
     }
 
     /**

@@ -132,7 +132,8 @@ public class BpmHttpConnector implements Connector {
         req.setClientIp("0.0.0.0");
         req.setIpWhiteList(cfg.getIpWhiteList() != null ? cfg.getIpWhiteList() : List.of());
         Object result = createSession(connection, req);
-        return "BPM 连接测试成功: " + JsonCodec.toJson(result);
+        // 仅返回简洁成功文案给用户；BPM 端响应（sessionId/idCard 等敏感字段）由 callBpm 的 log.info 记录留痕
+        return "BPM 连接成功";
     }
 
     /**
@@ -195,7 +196,7 @@ public class BpmHttpConnector implements Connector {
         } catch (Exception e) {
             log.error("[bpmHttp] HTTP 调用失败 cmd={} url={}", cmd, url, e);
             throw new ConnectorException("BPM_HTTP_CALL_FAILED",
-                    "BPM HTTP 调用失败 cmd=" + cmd + " url=" + url + " err=" + e.getMessage(), e);
+                    "BPM 服务连接失败: " + e.getMessage(), e);
         }
 
         // 解析 BPM 端 ResponseObject
@@ -211,8 +212,9 @@ public class BpmHttpConnector implements Connector {
             String msg = stringOf(((Map<String, Object>) respMap).get(RESP_MSG));
             String code = errorCode.isEmpty() ? "BPM_" + cmd + "_FAILED" : errorCode;
             log.error("[bpmHttp] BPM 端返回失败 cmd={} code={} msg={}", cmd, code, msg);
+            // 用户可见消息直接用 BPM 端返回的 msg（已是业务文案）；cmd 仅日志留痕，不拼进异常消息
             throw new ConnectorException(code,
-                    "BPM 端 " + cmd + " 失败: " + (msg.isEmpty() ? result : msg));
+                    msg.isEmpty() ? "BPM 端调用失败: " + result : msg);
         }
         Object data = ((Map<String, Object>) respMap).get(RESP_DATA);
         log.info("[bpmHttp] 调用成功 cmd={} data={}", cmd, JsonCodec.toJson(data));

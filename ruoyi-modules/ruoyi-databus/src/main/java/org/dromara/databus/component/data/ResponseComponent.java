@@ -34,6 +34,11 @@ public class ResponseComponent extends DatabusNodeComponent {
             data = getOptional(cfg.getDataPath());
         }
         save("$.response.data", data);
+        // 成败表格列已有，只有业务消息 msg 是增量信息；无 msg 不写，前端兜底「完成」
+        String msgText = resolvedMsg == null ? null : resolvedMsg.toString();
+        if (msgText != null && !msgText.isBlank()) {
+            resultSummary(msgText);
+        }
         log.debug("[databus] response 组装完成 success={}, tag={}", success, this.getTag());
     }
 

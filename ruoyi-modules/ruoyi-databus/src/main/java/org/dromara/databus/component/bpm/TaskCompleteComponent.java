@@ -70,6 +70,19 @@ public class TaskCompleteComponent extends DatabusNodeComponent {
         // 平铺 processInstanceId / processEnded / completedTaskIds / failedTaskIds / failedErrors
         resultMap.forEach((key, value) -> save("$." + tag + "." + key, value));
 
+        int completedCount = resultMap.get("completedTaskIds") instanceof List<?> completedList
+                ? completedList.size() : 0;
+        int failedCount = resultMap.get("failedTaskIds") instanceof List<?> failedIdList
+                ? failedIdList.size() : 0;
+        String taskSummary = "任务提交：成功 " + completedCount + " 个";
+        if (failedCount > 0) {
+            taskSummary += "，失败 " + failedCount + " 个";
+        }
+        if (Boolean.TRUE.equals(resultMap.get("processEnded"))) {
+            taskSummary += "，流程已结束";
+        }
+        resultSummary(taskSummary);
+
         // 部分失败语义翻译（决策 9.1.3）
         Object failedTaskIdsRaw = resultMap.get("failedTaskIds");
         if (failedTaskIdsRaw instanceof List<?> failedList && !failedList.isEmpty()) {

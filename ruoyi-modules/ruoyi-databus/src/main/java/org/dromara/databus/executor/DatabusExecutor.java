@@ -162,6 +162,11 @@ public class DatabusExecutor {
         if (step.getException() != null) {
             nodeStep.setErrorMessage(step.getException().getMessage());
         }
+        // NodeStepResultCollector 挂在 CmpStep 上的本步观测载荷
+        if (step.getStepData() instanceof StepResultPayload payload) {
+            nodeStep.setSummary(payload.getSummary());
+            nodeStep.setDetailJson(payload.getDetailJson());
+        }
         return nodeStep;
     }
 

@@ -85,6 +85,7 @@ public class SessionCreateComponent extends DatabusNodeComponent {
         }
         // 平铺 sessionId / idCard 到数据空间
         resultMap.forEach((key, value) -> save("$." + tag + "." + key, value));
+        resultSummary("会话：" + resultMap.get("sessionId"));
         log.info("[databus] sessionCreate 完成 tag={} sessionId={}", tag, resultMap.get("sessionId"));
     }
 

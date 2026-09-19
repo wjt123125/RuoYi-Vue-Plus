@@ -62,6 +62,13 @@ public class ProcessTerminateComponent extends DatabusNodeComponent {
 
         // 响应存到 $.<tag>.result（{processInstanceId, terminated, alreadyEnded}）
         save("$." + tag + ".result", resultMap);
+        if (Boolean.TRUE.equals(resultMap.get("terminated"))) {
+            resultSummary("终止流程：" + instanceId);
+        } else if (Boolean.TRUE.equals(resultMap.get("alreadyEnded"))) {
+            resultSummary("流程此前已结束：" + instanceId);
+        } else {
+            resultSummary("终止未生效：" + instanceId);
+        }
         log.info("[databus] processTerminate 完成 tag={} instanceId={} terminated={}",
                 tag, instanceId, resultMap.get("terminated"));
     }

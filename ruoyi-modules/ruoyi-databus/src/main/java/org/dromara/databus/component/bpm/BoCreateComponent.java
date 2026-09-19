@@ -121,36 +121,62 @@ public class BoCreateComponent extends DatabusNodeComponent {
             throw new ServiceException("BO_CREATE 响应 boResults 数量(" + boResults.size()
                     + ")与配置 boList 数量(" + cfg.getBoList().size() + ")不一致");
         }
+        int rewriteCount = 0;
         for (int i = 0; i < cfg.getBoList().size(); i++) {
             BoCreateCfg.BoItemCfg itemCfg = cfg.getBoList().get(i);
             BoCreateCfg.RewriteCfg rewrite = itemCfg.getRewrite();
-            if (rewrite == null) {
-                continue;
+            if (rewrite != null) {
+                rewriteCount += applyRewrite(rewrite, boResults.get(i), tag, i);
             }
-            applyRewrite(rewrite, boResults.get(i), tag, i);
         }
+
+        long createdCount = boResults.stream()
+            .filter(r -> r.get("records") instanceof List<?> records)
+            .mapToLong(records -> ((List<?>) records).size())
+            .sum();
+        List<String> sampleIds = new ArrayList<>();
+        for (Map<String, Object> boResult : boResults) {
+            if (boResult.get("records") instanceof List<?> records) {
+                for (Object item : records) {
+                    if (item instanceof Map<?, ?> record && record.get("ID") != null && sampleIds.size() < 2) {
+                        sampleIds.add(String.valueOf(record.get("ID")));
+                    }
+                }
+            }
+        }
+        StringBuilder summary = new StringBuilder("新建 BO ").append(createdCount).append(" 个");
+        if (!sampleIds.isEmpty()) {
+            summary.append("：").append(String.join("、", sampleIds));
+        }
+        if (rewriteCount > 0) {
+            summary.append("，回写来源 ").append(rewriteCount).append(" 条");
+        }
+        resultSummary(summary.toString());
+
         log.info("[databus] boCreate 完成 tag={} 共 {} 项 BO", tag, boResults.size());
     }
 
     /**
      * 执行单条 BO 的回写策略（6 策略，与老系统 BoCreateProcessor 一致）。
+     *
+     * @return 实际回写的记录条数（供步骤摘要统计），未回写返回 0
      */
     @SuppressWarnings("unchecked")
-    private void applyRewrite(BoCreateCfg.RewriteCfg rewrite, Map<String, Object> boResult,
+    private int applyRewrite(BoCreateCfg.RewriteCfg rewrite, Map<String, Object> boResult,
                              String tag, int index) {
         String strategy = rewrite.getStrategy();
         if (strategy == null || strategy.isBlank() || "no".equals(strategy)) {
-            return;
+            return 0;
         }
         String path = rewrite.getPath();
         if (path == null || path.isBlank()) {
             log.warn("[databus] boCreate tag={} 第 {} 项策略 {} 缺少 path，跳过回写", tag, index, strategy);
-            return;
+            return 0;
         }
         Object recordsRaw = boResult.get("records");
         if (!(recordsRaw instanceof List<?> rawList)) {
             log.warn("[databus] boCreate tag={} 第 {} 项 records 非 List，跳过回写", tag, index);
-            return;
+            return 0;
         }
         List<Map<String, Object>> records = new ArrayList<>(rawList.size());
         for (Object item : rawList) {
@@ -162,18 +188,34 @@ public class BoCreateComponent extends DatabusNodeComponent {
         }
 
         switch (strategy) {
-            case "all" -> save(path, records);
-            case "boId" -> writeFieldsPerRecord(path, records, List.of("ID"), tag, index);
-            case "add" -> writeFieldsPerRecord(path, records, rewrite.getAddFields(), tag, index);
-            case "exclude" -> save(path, filterRecords(records, rewrite.getExcludes(), false));
+            case "all" -> {
+                save(path, records);
+                return records.size();
+            }
+            case "boId" -> {
+                writeFieldsPerRecord(path, records, List.of("ID"), tag, index);
+                return records.size();
+            }
+            case "add" -> {
+                writeFieldsPerRecord(path, records, rewrite.getAddFields(), tag, index);
+                return records.size();
+            }
+            case "exclude" -> {
+                save(path, filterRecords(records, rewrite.getExcludes(), false));
+                return records.size();
+            }
             case "include" -> {
                 if (rewrite.getIncludes() == null || rewrite.getIncludes().isEmpty()) {
                     save(path, records);
                 } else {
                     save(path, filterRecords(records, rewrite.getIncludes(), true));
                 }
+                return records.size();
             }
-            default -> log.warn("[databus] boCreate tag={} 第 {} 项未知策略 {}，跳过", tag, index, strategy);
+            default -> {
+                log.warn("[databus] boCreate tag={} 第 {} 项未知策略 {}，跳过", tag, index, strategy);
+                return 0;
+            }
         }
     }
 

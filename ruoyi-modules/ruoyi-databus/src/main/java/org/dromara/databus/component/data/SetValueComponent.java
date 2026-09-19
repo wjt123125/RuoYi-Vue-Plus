@@ -24,6 +24,7 @@ public class SetValueComponent extends DatabusNodeComponent {
         }
         Object resolved = resolveParam(cfg.getValue());
         save(cfg.getPath(), resolved);
+        resultSummary("赋值：" + cfg.getPath());
         log.debug("[databus] setValue 写入 path={}, tag={}", cfg.getPath(), this.getTag());
     }
 }

@@ -75,4 +75,20 @@ public abstract class DatabusNodeComponent extends NodeComponent {
     protected Object resolveParam(Object input) {
         return getDatabusContext().resolve(input);
     }
+
+    /**
+     * 自报一句「人话执行结果」，显示在试运行结果步骤表的「执行结果」列。
+     * <p>风格：动宾 + 数量 + 关键标识（必要时附带对 tag 外数据的影响，如「ID 已回写来源 N 条」），
+     * 一句长中文 30 字以内；在 {@link #process()} 收尾处调用，不调用时前端兜底显示「完成」。
+     * <p><b>只写同一行表格上没有的增量信息</b>——步骤表已有数据空间 tag、组件名、成败、耗时四列，
+     * 摘要中禁止出现：成败词（成功/失败/完成/已创建/已启动等）、耗时、tag 与组件名，
+     * 以及无行动意义的流水信息（如「响应 N 字节」）。区分业务分支状态的词不算违规
+     * （如「此前已结束」「成功 N 个任务」）。准则与反例见
+     * {@code docs/wiki/databus-preview-step-result.md} §3。
+     *
+     * @param text 结果摘要，如 {@code "新建 BO 2 个：BO-001、BO-002"}
+     */
+    protected void resultSummary(String text) {
+        getDatabusContext().reportStepSummary(text);
+    }
 }

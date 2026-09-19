@@ -87,6 +87,7 @@ public class DataPatchComponent extends DatabusNodeComponent {
         }
 
         save("$." + tag + ".patchedCount", targets.size());
+        resultSummary("补丁命中 " + targets.size() + " 个对象，合并 " + cfg.getPatch().size() + " 个字段");
         log.info("[databus] dataPatch 完成 tag={} target={} 命中 {} 个对象，补丁 {} 个顶层字段",
             tag, target, targets.size(), cfg.getPatch().size());
     }

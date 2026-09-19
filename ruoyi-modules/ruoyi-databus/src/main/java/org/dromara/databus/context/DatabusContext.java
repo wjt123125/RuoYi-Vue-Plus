@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * 数据总线执行上下文。
@@ -50,6 +51,19 @@ public class DatabusContext {
      * <p>Connector 类型注册表不放这里（Connector 是无状态单例，放 {@code ConnectorRegistry} Spring Bean）。
      */
     private final Map<String, Connection> connections = new LinkedHashMap<>();
+
+    /**
+     * 组件自报的本步人话摘要。
+     * <p>必须用 ThreadLocal 而非普通字段：WHEN 并行时多个节点共享同一个 DatabusContext，
+     * 但 process 与执行后采集钩子在同一工作线程内成对执行，线程隔离即节点隔离。
+     * 采集钩子消费后立即 remove，避免线程池线程复用造成摘要串台。
+     */
+    private final ThreadLocal<String> stepSummary = new ThreadLocal<>();
+
+    /**
+     * 合法数据空间名（EL tag 形如 {@code http1}/{@code boCreate2}），命中可直接拼 {@code $.tag}。
+     */
+    private static final Pattern SAFE_TAG = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     private final DocumentContext document;
 
@@ -228,6 +242,44 @@ public class DatabusContext {
      */
     public String toJsonString() {
         return document.jsonString();
+    }
+
+    /**
+     * 组件在 process 收尾时自报一句「人话执行结果」（如「新建 BO 2 个」），
+     * 由执行后采集钩子在同一线程消费。
+     */
+    public void reportStepSummary(String summary) {
+        if (summary != null && !summary.isBlank()) {
+            stepSummary.set(summary);
+        }
+    }
+
+    /**
+     * 采集钩子消费本线程的步骤摘要并清空（取走后即删，防线程复用串台）。
+     */
+    public String consumeStepSummary() {
+        String value = stepSummary.get();
+        stepSummary.remove();
+        return value;
+    }
+
+    /**
+     * 当场拍摄指定数据空间 {@code $.<tag>} 子树的 JSON 快照。
+     * <p>必须在节点执行结束的当下调用并序列化为字符串：循环中同一 tag 会执行多轮，
+     * 事后再读只能看到最后一轮的状态。
+     *
+     * @param tag 组件数据空间标识
+     * @return 子树 JSON；tag 为空或该子树不存在时返回 null
+     */
+    public String snapshotDataSpace(String tag) {
+        if (tag == null || tag.isBlank()) {
+            return null;
+        }
+        String path = SAFE_TAG.matcher(tag).matches()
+            ? "$." + tag
+            : "$['" + tag.replace("'", "\\'") + "']";
+        Object subtree = readOptional(path);
+        return subtree == null ? null : JsonCodec.toJson(subtree);
     }
 
     /**

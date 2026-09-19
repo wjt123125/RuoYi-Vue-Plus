@@ -97,6 +97,23 @@ public class BoUpdateComponent extends DatabusNodeComponent {
 
         // boResults 存到 $.<tag>.boResults（[{boName, updatedCount}]）
         save("$." + tag + ".boResults", boResultsRaw);
+        long updatedTotal = 0;
+        String firstBoName = null;
+        for (Object item : (List<?>) boResultsRaw) {
+            if (item instanceof Map<?, ?> boResult) {
+                if (firstBoName == null && boResult.get("boName") != null) {
+                    firstBoName = String.valueOf(boResult.get("boName"));
+                }
+                if (boResult.get("updatedCount") instanceof Number number) {
+                    updatedTotal += number.longValue();
+                }
+            }
+        }
+        String summaryText = "更新 BO " + updatedTotal + " 条";
+        if (firstBoName != null) {
+            summaryText += "（" + firstBoName + "）";
+        }
+        resultSummary(summaryText);
         log.info("[databus] boUpdate 完成 tag={} 共 {} 项 BO", tag, ((List<?>) boResultsRaw).size());
     }
 

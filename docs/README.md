@@ -13,6 +13,8 @@ docs/
     ├── databus-context-design.md          # DatabusContext 执行上下文设计（JSONPath/混合路径/动态变量）
     ├── databus-bpm-connector-service-design.md  # BPM Connector 端点 Service 设计（10 端点 schema/基类/取舍）
     ├── databus-data-components.md         # 数据类组件登记本（setValue/fieldMap/dataPatch/response 契约与边界）
+    ├── databus-http-component.md          # HTTP 请求组件完善化规格（单组件参数化/五动词/三媒介/出口/错误/超时/auth）
+    ├── databus-preview-step-result.md     # 试运行步骤结果展示（人话摘要+数据明细抽屉，含 LiteFlow 2.16.1 升级）
     └── liteflow-el-normalize-bug.md       # LiteFlow execute2RespWithEL 篡改字符串字面量缺陷（issue 草稿+项目绕行方案）
 ```
 
@@ -32,4 +34,6 @@ docs/
 | [wiki/databus-context-design.md](wiki/databus-context-design.md) | DatabusContext 执行上下文设计（JSONPath 读写/混合路径/动态变量机制与决策） | ruoyi-databus (`org.dromara.databus.context`) | 2026-09-16 |
 | [wiki/databus-bpm-connector-service-design.md](wiki/databus-bpm-connector-service-design.md) | BPM Connector 端点 Service 设计（10 端点入参/出参 schema、公共基类、老系统取舍、原子化原则，含 RDS_EXECUTE/IDCARD_TO_USERID） | 1D-P0 BPM 端总线 app + ruoyi-databus | 2026-09-19 |
 | [wiki/databus-data-components.md](wiki/databus-data-components.md) | 数据类组件登记本：setValue/fieldMap/dataPatch/response 契约、职责边界与旧 Doc*Processor 迁移映射 | ruoyi-databus (`org.dromara.databus.component.data`) | 2026-09-18 |
+| [wiki/databus-http-component.md](wiki/databus-http-component.md) | HTTP 请求组件完善化规格：单组件参数化粒度决策、五动词+三媒介、响应出口/错误容错/超时/轻量 auth 与推后清单 | ruoyi-databus (`org.dromara.databus.component.protocol`) | 2026-09-19 |
 | [wiki/liteflow-el-normalize-bug.md](wiki/liteflow-el-normalize-bug.md) | LiteFlow execute2RespWithEL 经 ElRegexUtil.normalize 篡改 data/tag 字符串字面量（删空格、单引号转双引号）：根因、复现、修复建议与项目绕行方案 | LiteFlow 2.16.x 第三方缺陷（issue 草稿） | 2026-09-19 |
+| [wiki/databus-preview-step-result.md](wiki/databus-preview-step-result.md) | 试运行步骤结果展示：组件人话摘要进表格、名下 JSON 快照进抽屉明细；2.16.1 全局节点监听器采集、NodeStep VO 扩展、前端末列改造与升级注意 | ruoyi-databus + plus-ui `views/databus/editor` | 2026-09-19 |

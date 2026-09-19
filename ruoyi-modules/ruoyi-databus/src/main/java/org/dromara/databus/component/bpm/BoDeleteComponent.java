@@ -109,6 +109,23 @@ public class BoDeleteComponent extends DatabusNodeComponent {
 
         // boResults 存到 $.<tag>.boResults（[{boName, removedCount}]）
         save("$." + tag + ".boResults", boResultsRaw);
+        long removedTotal = 0;
+        String firstBoName = null;
+        for (Object item : (List<?>) boResultsRaw) {
+            if (item instanceof Map<?, ?> boResult) {
+                if (firstBoName == null && boResult.get("boName") != null) {
+                    firstBoName = String.valueOf(boResult.get("boName"));
+                }
+                if (boResult.get("removedCount") instanceof Number number) {
+                    removedTotal += number.longValue();
+                }
+            }
+        }
+        String summaryText = "删除 BO " + removedTotal + " 条";
+        if (firstBoName != null) {
+            summaryText += "（" + firstBoName + "）";
+        }
+        resultSummary(summaryText);
         log.info("[databus] boDelete 完成 tag={} method={} 共 {} 项 BO", tag, method, ((List<?>) boResultsRaw).size());
     }
 

@@ -110,12 +110,14 @@ public class BoQueryComponent extends DatabusNodeComponent {
                 throw new ServiceException("BO_QUERY 响应缺少 count 字段: " + result);
             }
             save("$." + tag + ".count", count);
+            resultSummary("查询 " + main.getBoName() + "：共 " + count + " 条");
         } else {
             Object records = resultMap.get("records");
-            if (!(records instanceof List<?>)) {
+            if (!(records instanceof List<?> recordList)) {
                 throw new ServiceException("BO_QUERY 响应 records 非 List: " + records);
             }
             save("$." + tag + ".records", records);
+            resultSummary("查询 " + main.getBoName() + "：命中 " + recordList.size() + " 条");
         }
         log.info("[databus] boQuery 完成 tag={} boName={} method={}", tag, main.getBoName(), method);
     }

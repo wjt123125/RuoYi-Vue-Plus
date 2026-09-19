@@ -253,6 +253,12 @@ liteflow:
   rule-source: classpath:liteflow/*.el.xml
   # 开启虚拟线程
   enable-virtual-thread: true
+  # 2.16.1+ 起 liteflow-metrics 随 starter 引入且默认开启：会采集链路/节点计时指标，
+  # 并注册 /actuator/liteflow 端点（返回链元数据，含 EL 原文）。本项目不接入指标平台，
+  # 而 management 端点开了 include='*'，开启即等于对外暴露编排细节，故关闭。
+  # 将来接入 Prometheus 时改 true，并同步收紧 management 暴露面。
+  metrics:
+    enabled: false
 
 --- # mqtt 配置
 # 具体配置还需查看文档

@@ -65,6 +65,16 @@ public class DatabusExecutionResult {
         /** 失败时的错误信息。 */
         private String errorMessage;
 
+        /**
+         * 人话执行结果（组件自报，如「新建 BO 2 个」；未报为 null，前端兜底「完成」）。
+         */
+        private String summary;
+
+        /**
+         * 该步数据空间 {@code $.<tag>} 子树的当场 JSON 快照（点击行在抽屉中展示全量明细）。
+         */
+        private String detailJson;
+
         /** 节点耗时（毫秒）。 */
         private Long timeSpent;
 

@@ -9,6 +9,7 @@ import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.ProcessStartRequest;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -70,6 +71,12 @@ public class ProcessStartComponent extends DatabusNodeComponent {
         }
         // 平铺 processInstanceId / isProcess / activeTaskIds
         resultMap.forEach((key, value) -> save("$." + tag + "." + key, value));
+        Object activeTaskIds = resultMap.get("activeTaskIds");
+        String summaryText = "流程：" + resultMap.get("processInstanceId");
+        if (activeTaskIds instanceof List<?> tasks && !tasks.isEmpty()) {
+            summaryText += "，待办 " + tasks.size() + " 个";
+        }
+        resultSummary(summaryText);
         log.info("[databus] processStart 完成 tag={} processInstanceId={} isProcess={}",
                 tag, resultMap.get("processInstanceId"), resultMap.get("isProcess"));
     }

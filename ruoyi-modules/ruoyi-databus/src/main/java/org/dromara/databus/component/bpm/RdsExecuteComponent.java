@@ -76,8 +76,36 @@ public class RdsExecuteComponent extends DatabusNodeComponent {
             throw new ServiceException("RDS_EXECUTE 响应缺少 method 字段: " + result);
         }
         save("$." + tag + ".method", methodEcho);
-        save("$." + tag + ".data", resultMap.get("data"));
+        Object data = resultMap.get("data");
+        save("$." + tag + ".data", data);
+        resultSummary(buildRdsSummary(String.valueOf(methodEcho), data));
         log.info("[databus] rdsExecute 完成 tag={} rdsId={} method={}", tag, rdsId, methodEcho);
+    }
+
+    /**
+     * 按 method 生成步骤人话摘要：查询类报行数、更新类报影响行数、标量报取值、批量报累计影响。
+     */
+    private String buildRdsSummary(String method, Object data) {
+        return switch (method) {
+            case "getMaps" -> data instanceof List<?> list
+                    ? "查询返回 " + list.size() + " 行" : "查询返回非列表结果";
+            case "getMap" -> data == null ? "查询未命中行" : "查询命中 1 行";
+            case "update" -> "更新影响 " + data + " 行";
+            case "batch" -> {
+                long sum = 0;
+                if (data instanceof List<?> list) {
+                    for (Object item : list) {
+                        if (item instanceof Number number) {
+                            sum += number.longValue();
+                        }
+                    }
+                    yield "批量执行 " + list.size() + " 条，影响 " + sum + " 行";
+                }
+                yield "批量返回非列表结果";
+            }
+            case "getString", "getInt", "getLong", "getDouble" -> "取值（" + method + "）：" + data;
+            default -> "SQL 执行：" + method;
+        };
     }
 
     /**

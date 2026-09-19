@@ -64,6 +64,7 @@ public class FieldMapComponent extends DatabusNodeComponent {
                 count++;
             }
         }
+        resultSummary("搬运 " + count + " 个字段");
         log.debug("[databus] fieldMap 完成 {} 条映射，tag={}", count, this.getTag());
     }
 

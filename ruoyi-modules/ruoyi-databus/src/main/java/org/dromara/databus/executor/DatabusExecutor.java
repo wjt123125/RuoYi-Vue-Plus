@@ -1,5 +1,6 @@
 package org.dromara.databus.executor;
 
+import com.yomahub.liteflow.builder.el.LiteFlowChainELBuilder;
 import com.yomahub.liteflow.core.FlowExecutor;
 import com.yomahub.liteflow.flow.LiteflowResponse;
 import com.yomahub.liteflow.flow.entity.CmpStep;
@@ -67,7 +68,17 @@ public class DatabusExecutor {
     /**
      * 按 EL 字符串直接执行（不落库、不依赖规则源），供编辑器试运行使用。
      * <p>
-     * 自定义上下文必须走 {@code execute2RespWithEL} 的四参重载（第三参 requestId 传 null）。
+     * <b>不能用 {@code flowExecutor.execute2RespWithEL}</b>：它内部会先执行
+     * {@code ElRegexUtil.normalize}（{@code replace("'", "\"").replaceAll("\\s","")}），
+     * 该处理不区分字符串字面量内外，会把 {@code .data("...")} 值里的空格删掉
+     * （SQL 会被粘成 {@code selectuserid...}）、把单引号替换成双引号破坏 JSON。
+     * 此问题在 LiteFlow 2.16.0/2.16.1 及当前 master 均存在（旧 issue #I5ZS8I
+     * 的修复在 2.11.2 重写后回归丢失）。
+     * <p>
+     * 绕行方式：用 {@link LiteFlowChainELBuilder} 以<b>原始 EL 文本</b>建链——其
+     * {@code setEL} 把原文存入 chain（normalize 仅用于计算缓存 MD5），{@code build}
+     * 编译时 qlexpress4 拿到的也是原文——再按 chainId 调普通的 {@code execute2Resp}，
+     * 与 execute2RespWithEL 缓存未命中分支的最终执行路径完全等价。
      *
      * @param elStr       EL 表达式（调用方负责已通过语法校验）
      * @param requestData 执行入参（任意对象，内部转为 DatabusContext 的初始 JSON 文档，即文档根 {@code $}）
@@ -81,7 +92,13 @@ public class DatabusExecutor {
         DatabusContext context = DatabusContext.fromObject(requestData);
         injectConnections(context);
 
-        LiteflowResponse response = flowExecutor.execute2RespWithEL(elStr, requestData, null, context);
+        // 每次试运行使用独立 chainId，避免 FlowBus 中同名 chain 被反复重编译
+        String runtimeChainId = PREVIEW_CHAIN_ID + "-" + executionId;
+        LiteFlowChainELBuilder.createChain()
+            .setChainId(runtimeChainId)
+            .setEL(elStr)
+            .build();
+        LiteflowResponse response = flowExecutor.execute2Resp(runtimeChainId, requestData, context);
 
         Date endTime = new Date();
         long costTime = endTime.getTime() - startTime.getTime();

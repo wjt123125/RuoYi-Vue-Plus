@@ -376,6 +376,12 @@ public abstract class AbstractExpressParser implements ExpressParser {
     /**
      * 将字符串转义为可嵌入 EL 表达式双引号内的形式。
      * 等价于原 commons-lang StringEscapeUtils.escapeJava。
+     * <p>
+     * 注意：不能在这里用 Unicode 转义（反斜杠加 u 加四位十六进制）保护空格/单引号
+     * ——LiteFlow 2.16.x 使用的 qlexpress4 字符串转义表（QLStringUtils.parseStringEscape）
+     * 只认 b/t/n/f/r/双引号/单引号/反斜杠/美元符，遇到反斜杠加 u 会把这两个字符
+     * 直接吞掉。data 值内空格被 ElRegexUtil.normalize 删除的问题改由 DatabusExecutor
+     * 绕过 execute2RespWithEL、用 LiteFlowChainELBuilder 按原始 EL 建链解决。
      */
     protected static String escapeJava(String str) {
         if (str == null) {

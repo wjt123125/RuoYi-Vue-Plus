@@ -10,7 +10,11 @@ import org.dromara.databus.component.DatabusNodeComponent;
  * 链路的标准出口：把执行结果统一写入上下文固定位置
  * {@code $.response.result}（布尔）、{@code $.response.msg}（字符串）、
  * {@code $.response.data}（dataPath 指向的数据，缺省为 null）。
- * 与其他组件不同，它不往自己的数据空间（tag）下写产出。
+ * <p>
+ * 同时镜像一份到节点 tag 命名空间（{@code $.<tag>.result/msg/data}），
+ * 遵循"每个节点产出在自己 tag 下"的统一契约，供 {@link
+ * org.dromara.databus.executor.NodeStepResultCollector} 按统一规则采集
+ * 数据明细快照；{@code $.response.*} 仍是链路总响应出口，不受影响。
  *
  * @author databus
  */
@@ -25,17 +29,26 @@ public class ResponseComponent extends DatabusNodeComponent {
         Object resolvedResult = resolveParam(cfg == null ? null : cfg.getResult());
         boolean success = toBoolean(resolvedResult);
         Object resolvedMsg = resolveParam(cfg == null ? null : cfg.getMsg());
+        String msgText = resolvedMsg == null ? null : resolvedMsg.toString();
 
         save("$.response.result", success);
-        save("$.response.msg", resolvedMsg == null ? null : resolvedMsg.toString());
+        save("$.response.msg", msgText);
 
         Object data = null;
         if (cfg != null && cfg.getDataPath() != null && !cfg.getDataPath().isBlank()) {
             data = getOptional(cfg.getDataPath());
         }
         save("$.response.data", data);
+
+        // 镜像到 tag 命名空间，供 collector 按统一契约采集节点产出快照
+        String tag = this.getTag();
+        if (tag != null && !tag.isBlank()) {
+            String prefix = "$." + tag + ".";
+            save(prefix + "result", success);
+            save(prefix + "msg", msgText);
+            save(prefix + "data", data);
+        }
         // 成败表格列已有，只有业务消息 msg 是增量信息；无 msg 不写，前端兜底「完成」
-        String msgText = resolvedMsg == null ? null : resolvedMsg.toString();
         if (msgText != null && !msgText.isBlank()) {
             resultSummary(msgText);
         }

@@ -109,7 +109,95 @@
 3. 行内截断由前端 CSS 处理（max-width 240px + ellipsis，非字符数截断）；后端快照不做体积截断。
 4. 抽屉内不展示全量上下文——全局终局仍看弹窗底部原 JSON 区，定位不重叠。
 
-## 5. 升级注意与验证边界
+## 5. 节点标题（2026-09-20 拍板）
+
+### 5.1 要解决的问题
+
+步骤表 6 列（# / 数据空间 tag / 组件 nodeId / 结果 / 耗时 / 执行结果）只说明「这一步产生了什么效果」，看不出「这一步要做什么」。业界主流（n8n / Node-RED / Camunda / NiFi / Step Functions / Make / Zapier / Airflow）共识：**用户可改的 name/title 字段，缺省值 = 组件类型 label + 关键参数摘要，用户可覆盖**。LiteFlow 官方 `NodeStep` / `CmpStep` 不维护此字段（只有 nodeId / tag / timeSpent / success / stepData），属 Databus 扩展层范畴。
+
+### 5.2 双层存储
+
+- **画布层正本**：`CmpProperty.properties.title` 字段，与已有 `outletLabels` 同范式（前端编辑态字段、后端 EL 生成时忽略、后端往返保留未知字段）。
+- **执行结果透传**：后端 `DatabusExecutionResult.NodeStep` 新增 `title` 字段；`DatabusExecutor` 解析画布树时建 `Map<tag, title>`（tag 实例唯一，nodeId 可重复），`toNodeStep()` 时把 title 灌进 `NodeStep.title`。
+
+意义：试运行面板 / 已发布 chain 执行日志 / 未来监控审计场景口径统一，前端无需画布 cfg 也能显示业务标题。
+
+### 5.3 展示位置与列名
+
+- **合并到现有「组件」列**，不新增列：单元格内上行小字显 `nodeId`（注册类型），下行主显 `title`（或推断默认）。视觉层次与 n8n 一致。
+- **列名定为「节点标题」**：中文里「节点名称」与「nodeId 节点标识」语义重叠易混；「节点标题」清晰三层——`nodeId`（注册类型，列名「组件」）/ `tag`（数据空间实例，列名「数据空间」）/ `title`（业务名，列名「节点标题」）。比「业务标题」更通用（算子节点也适用），比「任务名称」更准（Airflow task_id 是强标识，这里只是 UI 标签）。
+
+### 5.4 默认推断：前端 cmp-defs.ts
+
+- **位置**：`CmpDef` 接口加 `defaultTitle?: (cfg: any) => string`，16 个业务组件各自填推断函数；后端只透传用户填的 title，不计算默认。
+- **理由**：物料化 jar 时前端 cmp-defs 一并注册 `defaultTitle` 函数，规则单点维护，后端无需复制一份；画布编辑 cfg 时即时预览默认；与 `summary` 未报时前端兜底「完成」同范式。
+
+### 5.5 推断范围：三档分层
+
+| 类型 | 推断策略 |
+| --- | --- |
+| 虚拟节点（start/end） | 用 `cmp-defs.label` 兜底（「开始」/「结束」），不推断 |
+| 算子（THEN/IF/SWITCH/FOR/AND/OR/NOT/CATCH/CHAIN/...） | 用 `cmp-defs.label` 兜底（「条件(IF)」），不读 cfg |
+| 业务组件（httpRequest/boCreate/...） | 按 comp 类型 + cfg 推断 |
+
+理由（与 n8n / Node-RED 对齐）：算子无「参数」语义、配置是复杂结构无可摘短文案、画布上视觉已区分（菱形/网关）雷同不影响识别；业务组件才是用户需要业务名消歧的——两个 httpRequest 同框默认都叫「Http 请求」区分不出。
+
+### 5.6 动态语义
+
+- **用户留空** `title` 时：UI 实时按当前 cfg 算默认（cfg 变 → 默认变），画布节点 / 步骤表 / 属性面板三处都跟着 cfg 变。
+- **用户填了** `title`：锁死用填的，cfg 变 title 不变。
+- **画布 JSON 正本**：`properties.title` 字段空就不存，正本永远是用户填的——cfg 是单独字段不混进 title。
+- **后端 `NodeStep.title`**：用户填了传填的，没填传 null；前端步骤表展示时若 null 再用画布节点 cfg + `defaultTitle(cfg)` 兜底算临时默认。
+
+### 5.7 恢复默认 UI
+
+`el-input` 不开 `:clearable`（去掉默认叉叉），用 `#suffix` slot 放一个 refresh icon（Element Plus `Refresh` 图标）；点击该 icon 即清空用户填的 title，恢复实时按 cfg 算的默认。比 n8n 的「手动清空输入框再到外面看默认」更直观，少一步操作。
+
+### 5.8 文案风格 A：动宾 + 参数值
+
+约束：≤15 字（比 summary 的 30 字短一半，因合并到「组件」列后空间更窄）；动宾结构；不带运行时数量（数量归 summary）、不带 tag/nodeId（已有列）。
+
+| comp | 默认 title | 备注 |
+| --- | --- | --- |
+| httpRequest | `GET /auth/code` | method + url 路径 |
+| condition | `条件判定` | 固定（布尔件本身） |
+| setValue | `赋值 $.user.name` | 动作 + path |
+| fieldMap | `搬运 N 字段` | 动作 + 静态字段数 |
+| dataPatch | `补丁合并` | 固定 |
+| response | `流程响应` | 固定 |
+| sessionCreate | `创建会话` | 固定 |
+| processStart | `启动流程` | 固定 |
+| boCreate | `新建 <boName>` | 动作 + boName |
+| boQuery | `查询 <boName>` | 动作 + boName |
+| boUpdate | `更新 <boName>` | 动作 + boName |
+| boDelete | `删除 <boName>` | 动作 + boName |
+| processTerminate | `终止流程` | 固定 |
+| taskComplete | `提交任务` | 固定 |
+| rdsExecute | `SQL: <method>` | SQL: + 方法名 |
+| idCardToUserId | `身份证换 ID` | 固定 |
+
+### 5.9 与 summary 的职责区分
+
+| 列 | 语义 | 示例 |
+| --- | --- | --- |
+| 节点标题（title） | **静态意图**：这一步要做什么 | `新建 用户表` |
+| 执行结果（summary） | **动态结果**：这一步做了什么 | `新建 BO 2 个：xxx，回写来源 1 条` |
+
+### 5.10 落地清单（待「动手」指令后开工）
+
+**前端**：
+- `cmp-defs.ts`：`CmpDef` 加 `defaultTitle?: (cfg: any) => string`，16 个业务组件各自填推断函数
+- `api/databus/el/types.ts`：`CmpProperties` 加 `title?: string`、`NodeStep` 加 `title?: string`
+- `CmpProps.vue`：顶部加「节点标题」el-input，`:clearable=false`，`#suffix` slot 放 Refresh icon
+- `index.vue` 步骤表「组件」列：上行 nodeId，下行 title（或推断默认）
+- `useElTreeModel.ts`：序列化/反序列化保留 `title` 字段
+
+**后端**：
+- `CmpProperty` bean 加 `title` 字段（保留未知字段那套逻辑）
+- `DatabusExecutionResult.NodeStep` VO 加 `title` 字段
+- `DatabusExecutor`：解析画布树建 `Map<tag, title>`，`toNodeStep()` 时透传
+
+## 6. 升级注意与验证边界
 
 - EL normalize 空格/单引号 bug 在 2.16.1.3 仍存在，`DatabusExecutor.executeByEl` 的 `LiteFlowChainELBuilder` 绕行**已确认保留未动**（见 [liteflow-el-normalize-bug.md](./liteflow-el-normalize-bug.md)）。
 - liteflow-metrics 风险已处置：2.16.1.3 的 starter 把 `liteflow-metrics` 作为**非 optional 编译依赖**引入（2.16.0 无此依赖），其 AutoConfiguration 上 `@ConditionalOnProperty(liteflow.metrics.enabled)` 缺省为 **true**，且 RuoYi classpath 上有 micrometer + actuator（ruoyi-common-web），`management.endpoints.web.exposure.include='*'` 会把 `/actuator/liteflow` 端点暴露出去，返回内容含 chain 元数据与 **EL 原文**。已在 `ruoyi-admin/application.yml` 显式设置 `liteflow.metrics.enabled: false`（指标采集与端点一并关闭）；将来接 Prometheus 时再开并同步收紧 actuator 暴露面。

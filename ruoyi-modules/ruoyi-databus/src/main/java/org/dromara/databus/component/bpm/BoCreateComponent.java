@@ -131,8 +131,7 @@ public class BoCreateComponent extends DatabusNodeComponent {
         }
 
         long createdCount = boResults.stream()
-            .filter(r -> r.get("records") instanceof List<?> records)
-            .mapToLong(records -> ((List<?>) records).size())
+            .mapToLong(r -> r.get("records") instanceof List<?> records ? records.size() : 0)
             .sum();
         List<String> sampleIds = new ArrayList<>();
         for (Map<String, Object> boResult : boResults) {

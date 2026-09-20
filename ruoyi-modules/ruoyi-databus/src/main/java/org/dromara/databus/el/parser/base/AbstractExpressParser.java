@@ -158,7 +158,8 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (null == propertyId && null == tag) {
             return null;
         }
-        return new Properties(propertyId, tag, null);
+        // title 为纯编辑态字段，EL 反向解析不产出，恒为 null
+        return new Properties(propertyId, tag, null, null);
     }
 
     /**
@@ -172,7 +173,8 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (null == propertyId && null == tag && null == data) {
             return null;
         }
-        return new Properties(propertyId, tag, data);
+        // title 为纯编辑态字段，EL 反向解析不产出，恒为 null
+        return new Properties(propertyId, tag, data, null);
     }
 
     /**

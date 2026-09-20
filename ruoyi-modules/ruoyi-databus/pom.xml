@@ -83,6 +83,15 @@
             <artifactId>ruoyi-common-liteflow</artifactId>
         </dependency>
 
+        <!-- LiteFlow 脚本引擎：Groovy 一期；版本对齐 liteflow 主版本（${liteflow.version}=2.16.1.3）
+             脚本节点 SPI 由 META-INF/services/com.yomahub.liteflow.script.ScriptExecutor 自动注册，
+             ScriptEngineController 用 ServiceLoader 枚举已装引擎供前端 language 下拉 -->
+        <dependency>
+            <groupId>com.yomahub</groupId>
+            <artifactId>liteflow-script-groovy</artifactId>
+            <version>${liteflow.version}</version>
+        </dependency>
+
         <!-- JSONPath：DatabusContext 内部持 jayway DocumentContext，完整 JSONPath 读写；版本由 spring-boot-dependencies 管理 -->
         <dependency>
             <groupId>com.jayway.jsonpath</groupId>

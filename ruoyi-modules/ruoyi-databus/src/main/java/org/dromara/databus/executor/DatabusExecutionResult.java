@@ -59,6 +59,12 @@ public class DatabusExecutionResult {
         /** 节点 tag。 */
         private String tag;
 
+        /**
+         * 节点标题（用户在画布上填写的业务名，未填为 null；
+         * null 时前端按组件类型与 cfg 推断默认标题，后端不计算默认值）。
+         */
+        private String title;
+
         /** 执行是否成功。 */
         private boolean success;
 

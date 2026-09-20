@@ -48,6 +48,11 @@ public class DatabusEditorController extends BaseController {
         CmpProperty jsonEl = bo.getJsonEl();
         String elStr = null;
         try {
+            // 脚本节点（script/booleanScript）没有 @LiteflowComponent，EL 引用的 nodeId 必须先在
+            // FlowBus 中注册才能通过 LiteFlowChainELBuilder.validate / setEL 编译；故在 generateEL
+            // 之前先把画布上的脚本节点预注册（其他业务组件已由 Spring 扫描自动注册）。
+            databusExecutor.registerScriptNodes(jsonEl);
+
             ELInfo elInfo = expressGenerator.generateEL(jsonEl);
             elStr = elInfo == null ? null : elInfo.getElStr();
             boolean valid = expressGenerator.verifyELExpression(jsonEl);
@@ -56,7 +61,7 @@ public class DatabusEditorController extends BaseController {
             }
 
             Object requestData = JsonCodec.parse(bo.getRequestJson());
-            DatabusExecutionResult executionResult = databusExecutor.executeByEl(elStr, requestData);
+            DatabusExecutionResult executionResult = databusExecutor.executeByEl(elStr, requestData, jsonEl);
             return R.ok(PreviewRunVo.executed(elStr, executionResult));
         } catch (Exception e) {
             log.warn("preview-run 生成/执行失败: {}", e.getMessage());

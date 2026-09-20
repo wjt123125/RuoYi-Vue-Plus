@@ -10,6 +10,8 @@ import org.dromara.databus.connector.bpm.dto.BoCreateRequest;
 import org.dromara.databus.connector.bpm.dto.BoDeleteRequest;
 import org.dromara.databus.connector.bpm.dto.BoQueryRequest;
 import org.dromara.databus.connector.bpm.dto.BoUpdateRequest;
+import org.dromara.databus.connector.bpm.dto.FileDownloadRequest;
+import org.dromara.databus.connector.bpm.dto.FileUploadRequest;
 import org.dromara.databus.connector.bpm.dto.IdCardToUserIdRequest;
 import org.dromara.databus.connector.bpm.dto.ProcessStartRequest;
 import org.dromara.databus.connector.bpm.dto.ProcessTerminateRequest;
@@ -25,7 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * BPM HTTP 连接器：通过 HTTP 调用 BPM 端总线 app 的 10 个 @Mapping 端点。
+ * BPM HTTP 连接器：通过 HTTP 调用 BPM 端总线 app 的 12 个 @Mapping 端点。
  *
  * <p>三层物料模型（决策 2.2）的第一层实现：物料市场注册（{@code @Component} 自动注册到 {@link org.dromara.databus.connector.ConnectorRegistry}），
  * 描述能力清单（{@link #describe()}）驱动前端 cmp-defs 物料与连接管理表单。
@@ -46,6 +48,8 @@ import java.util.Map;
  *   <li>{@link #taskComplete(Connection, TaskCompleteRequest)}</li>
  *   <li>{@link #rdsExecute(Connection, RdsExecuteRequest)}</li>
  *   <li>{@link #idCardToUserId(Connection, IdCardToUserIdRequest)}</li>
+ *   <li>{@link #fileUpload(Connection, FileUploadRequest)}</li>
+ *   <li>{@link #fileDownload(Connection, FileDownloadRequest)}</li>
  * </ul>
  *
  * <p>HTTP 调用用 Spring {@link RestClient}（与 {@link HttpRequestComponent} 范式一致）。
@@ -125,6 +129,10 @@ public class BpmHttpConnector implements Connector {
                 "rdsExecute", List.of("method", "data")));
         desc.getOperations().add(buildOperation("idCardToUserId", "身份证换 userId",
                 "idCardToUserId", List.of("userIds", "matched", "missed")));
+        desc.getOperations().add(buildOperation("fileUpload", "上传附件",
+                "fileUpload", List.of("uploadedCount", "files")));
+        desc.getOperations().add(buildOperation("fileDownload", "下载附件",
+                "fileDownload", List.of("fileCount", "files")));
         return desc;
     }
 
@@ -249,6 +257,24 @@ public class BpmHttpConnector implements Connector {
      */
     public Object idCardToUserId(Connection connection, IdCardToUserIdRequest request) {
         return callBpm(connection, BpmConst.CMD_IDCARD_TO_USERID, request);
+    }
+
+    /**
+     * FILE_UPLOAD 操作：base64 文件列表上传到 BO 记录附件字段。
+     *
+     * @return BPM 端响应的 data 字段 {@code {uploadedCount, files: [{fileName, fileSize, id?}]}}
+     */
+    public Object fileUpload(Connection connection, FileUploadRequest request) {
+        return callBpm(connection, BpmConst.CMD_FILE_UPLOAD, request);
+    }
+
+    /**
+     * FILE_DOWNLOAD 操作：读取 BO 记录附件字段全部文件转 base64。
+     *
+     * @return BPM 端响应的 data 字段 {@code {fileCount, files: [{id, fileName, securityLevel, fileSize, createUser, fileContent}]}}
+     */
+    public Object fileDownload(Connection connection, FileDownloadRequest request) {
+        return callBpm(connection, BpmConst.CMD_FILE_DOWNLOAD, request);
     }
 
     /**

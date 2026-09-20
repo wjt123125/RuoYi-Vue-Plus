@@ -160,6 +160,16 @@ public class DatabusContext {
     }
 
     /**
+     * {@code write(path, value)} 的别名，专供脚本节点调用。
+     * <p>规格档 {@code docs/wiki/databus-script-component.md} §6：脚本约定以
+     * {@code databusContext.save('$.xxx', value)} 读写数据空间，故补此别名对齐脚本约定；
+     * 不改 {@code write} 名字以免破坏既有 Java 组件（{@link org.dromara.databus.component.DatabusNodeComponent#save}）。
+     */
+    public void save(String path, Object value) {
+        write(path, value);
+    }
+
+    /**
      * 判断路径是否存在。
      */
     public boolean exists(String path) {

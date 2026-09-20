@@ -15,7 +15,10 @@ docs/
     ├── databus-data-components.md         # 数据类组件登记本（setValue/fieldMap/dataPatch/response 契约与边界）
     ├── databus-http-component.md          # HTTP 请求组件完善化规格（单组件参数化/五动词/三媒介/出口/错误/超时/auth）
     ├── databus-preview-step-result.md     # 试运行步骤结果展示（人话摘要+数据明细抽屉，含 LiteFlow 2.16.1 升级）
-    └── liteflow-el-normalize-bug.md       # LiteFlow execute2RespWithEL 篡改字符串字面量缺陷（issue 草稿+项目绕行方案）
+    ├── liteflow-el-normalize-bug.md       # LiteFlow execute2RespWithEL 篡改字符串字面量缺陷（issue 草稿+项目绕行）
+    ├── databus-file-component.md          # 附件两件：FILE_UPLOAD/FILE_DOWNLOAD 端点与组件规格（base64/本地摘要校验）
+    ├── databus-script-component.md          # 脚本组件：script/booleanScript 两物料、SPI 引擎热插拔、一期 Groovy
+    └── databus-bpm-endpoint-auth.md         # BPM 端点鉴权：平台 openapi/session 实证 + HMAC 方案（待拍板）
 ```
 
 ## 写新文档时请遵循
@@ -37,3 +40,6 @@ docs/
 | [wiki/databus-http-component.md](wiki/databus-http-component.md) | HTTP 请求组件完善化规格：单组件参数化粒度决策、五动词+三媒介、响应出口/错误容错/超时/轻量 auth 与推后清单 | ruoyi-databus (`org.dromara.databus.component.protocol`) | 2026-09-19 |
 | [wiki/liteflow-el-normalize-bug.md](wiki/liteflow-el-normalize-bug.md) | LiteFlow execute2RespWithEL 经 ElRegexUtil.normalize 篡改 data/tag 字符串字面量（删空格、单引号转双引号）：根因、复现、修复建议与项目绕行方案 | LiteFlow 2.16.x 第三方缺陷（issue 草稿） | 2026-09-19 |
 | [wiki/databus-preview-step-result.md](wiki/databus-preview-step-result.md) | 试运行步骤结果展示：组件人话摘要进表格、名下 JSON 快照进抽屉明细；2.16.1 全局节点监听器采集、NodeStep VO 扩展、前端末列改造与升级注意 | ruoyi-databus + plus-ui `views/databus/editor` | 2026-09-19 |
+| [wiki/databus-file-component.md](wiki/databus-file-component.md) | 附件两件：FILE_UPLOAD/FILE_DOWNLOAD 端点与组件契约（base64 形态、逐文件本地摘要校验、旧 processor 反向命名映射） | BPM 端总线 app + ruoyi-databus + plus-ui | 2026-09-20 |
+| [wiki/databus-script-component.md](wiki/databus-script-component.md) | 脚本组件：script/booleanScript 两物料、SPI 引擎探测热插拔、LiteFlowNodeBuilder 动态注册、一期 Groovy 与安全边界 | ruoyi-databus + plus-ui | 2026-09-20 |
+| [wiki/databus-bpm-endpoint-auth.md](wiki/databus-bpm-endpoint-auth.md) | BPM 12 端点鉴权：裸奔现状与 IP 白名单绕过、平台 sid/OpenAPI(access_key+HmacMD5) 能力实证、B/C/D 方案对比与推荐（待拍板） | BPM 端总线 app + ruoyi-databus + plus-ui | 2026-09-20 |

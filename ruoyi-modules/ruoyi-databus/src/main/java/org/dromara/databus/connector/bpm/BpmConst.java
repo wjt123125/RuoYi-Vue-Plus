@@ -45,6 +45,12 @@ public final class BpmConst {
     /** IDCARD_TO_USERID 端点 cmd（身份证号批量换 userId） */
     public static final String CMD_IDCARD_TO_USERID = "com.awspaas.databus.connector.IDCARD_TO_USERID";
 
+    /** FILE_UPLOAD 端点 cmd（base64 文件上传到 BO 附件字段） */
+    public static final String CMD_FILE_UPLOAD = "com.awspaas.databus.connector.FILE_UPLOAD";
+
+    /** FILE_DOWNLOAD 端点 cmd（读取 BO 附件字段文件转 base64） */
+    public static final String CMD_FILE_DOWNLOAD = "com.awspaas.databus.connector.FILE_DOWNLOAD";
+
     /** BPM 端 ResponseObject 的字段名（fastjson 序列化后的 key） */
     public static final String RESP_RESULT = "result";
     public static final String RESP_DATA = "data";

@@ -1,12 +1,13 @@
 package org.dromara.databus.connector.bpm;
 
 /**
- * BPM HTTP 连接器常量：4 个 BPM 端点 cmd 字符串（决策 9.1.2）。
+ * BPM HTTP 连接器常量：BPM 端点 cmd 字符串。
  *
- * <p>BPM 端 URL 形如 {@code http://localhost:8088/portal/r/jd?cmd=<MAPPING_VALUE>}，
- * 不带 sid（因 session=false 无鉴权，决策 9.1.2 + 9.1.3）。
+ * <p>所有 cmd 走平台 OpenAPI 网关：{@code http://<host>:<port>/portal/openapi}，
+ * POST application/x-www-form-urlencoded，公共参数 cmd/access_key/timestamp/sig_method/format + sig
+ * （access_key + HmacMD5 签名，见 {@link BpmOpenApiSigner}）。
  *
- * <p>对应 BPM 端 DataBusConnectorController 的 4 个 @Mapping value。
+ * <p>对应 BPM 端 DataBusConnectorController 的 @Mapping value（type=OPENAPI）。
  *
  * @author databus
  */
@@ -51,7 +52,10 @@ public final class BpmConst {
     /** FILE_DOWNLOAD 端点 cmd（读取 BO 附件字段文件转 base64） */
     public static final String CMD_FILE_DOWNLOAD = "com.awspaas.databus.connector.FILE_DOWNLOAD";
 
-    /** BPM 端 ResponseObject 的字段名（fastjson 序列化后的 key） */
+    /** PING 端点 cmd（网关连通性自检，无业务参数；测试连接使用） */
+    public static final String CMD_PING = "com.awspaas.databus.connector.PING";
+
+    /** BPM 端响应信封的字段名（ApiResponse fastjson 序列化后的 key） */
     public static final String RESP_RESULT = "result";
     public static final String RESP_DATA = "data";
     public static final String RESP_MSG = "msg";

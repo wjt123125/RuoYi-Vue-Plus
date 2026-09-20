@@ -15,14 +15,8 @@ import java.io.Serializable;
 /**
  * 数据总线连接管理业务对象 sys_databus_connection。
  *
- * <p>前端提交时字段平铺：endpoint / username / password / ipWhiteList 等
+ * <p>前端提交时字段平铺：endpoint / accessKey / apiSecret 等
  * 直接作为 BO 字段（不需要再嵌套 config 子对象），Service 层负责转 Connection.config Map。
- *
- * <p>{@code ipWhiteList} 接受两种形态：
- * <ul>
- *   <li>JSON 数组字符串：{@code ["192.168.1.1","10.0.0.0/24"]}（推荐，直接落库）</li>
- *   <li>空 / null：无白名单约束</li>
- * </ul>
  *
  * @author databus
  */
@@ -67,22 +61,17 @@ public class SysDatabusConnectionBo implements Serializable {
     private String endpoint;
 
     /**
-     * 默认用户名
+     * OpenAPI access_key（CC 身份策略访问凭证）
      */
-    @Size(max = 64, message = "用户名长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
-    private String username;
+    @NotBlank(message = "AccessKey 不能为空", groups = {AddGroup.class, EditGroup.class})
+    @Size(max = 128, message = "access_key 长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
+    private String accessKey;
 
     /**
-     * 默认密码
+     * OpenAPI secret（CC 身份策略私钥，敏感字段落 credentials 加密列；编辑时留空表示不修改）
      */
-    @Size(max = 128, message = "密码长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
-    private String password;
-
-    /**
-     * IP 白名单（JSON 数组字符串）
-     */
-    @Size(max = 1024, message = "IP 白名单长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
-    private String ipWhiteList;
+    @Size(max = 128, message = "secret 长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
+    private String apiSecret;
 
     /**
      * HTTP 超时（毫秒）

@@ -38,7 +38,7 @@ public class Connection {
 
     /**
      * 连接配置：Map 形式存储，key 由 {@link ConnectorDescriptor#getConfigSchema()} 定义。
-     * 如 bpmHttp 连接含 {@code endpoint / authUser / authPassword / timeoutMs / retryCount / ipWhiteList}。
+     * 如 bpmHttp 连接含 {@code endpoint / accessKey / apiSecret / timeoutMs / retryCount}（apiSecret 落 credentials）。
      */
     private Map<String, Object> config = new LinkedHashMap<>();
 

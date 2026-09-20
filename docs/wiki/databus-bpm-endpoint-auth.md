@@ -1,6 +1,6 @@
 # BPM Connector 端点鉴权方案设计
 
-> 状态：**调研完成，待用户拍板**（2026-09-20）。本文只做方案设计，不含代码改动。
+> 状态：**调研完成，推荐 B（/portal/openapi 网关）为主线、C 兜底**（2026-09-20 修订：按用户准则"长远技术合理性优先、不考虑改造量"翻转推荐）。剩两项网关实测后拍板，本文不含代码改动。
 > 关联：[databus-bpm-connector-service-design.md](databus-bpm-connector-service-design.md) §9（四端点架构决策）、work-state.md「BPM 端点鉴权方案」待办。
 
 ## 1. 背景：现在为什么是裸奔
@@ -61,27 +61,33 @@ BPM 端 connector app 的 12 个端点全部声明 `session=false`：
   - `SSOUtil.refreshSession(sid)`、`destroySession(sid)`、`registerClientSessionNoPassword(...)`——会话续期/注销/免密注册。
 - `@Mapping` 注解实际还有两个文档未记载的属性：`authInfo()`、`scopeAccess()`（javap 实证），语义未在官方文档中查到，不纳入设计依赖。
 
-### 3.2 平台 OpenAPI 网关（/openapi + access_key + HmacMD5）
+### 3.2 平台 OpenAPI 网关（/portal/openapi + access_key + HmacMD5）
+
+> 2026-09-20 补充：已抓取官方文档六页核实（docs.awspaas.com《AWS PaaS API Guide》HTTP 章节，2024-11-27 更新：获取密钥 / 浏览服务 / 签名 URL 请求 / Java 客户端 / 附录·发布 Web API / 附录·发布 RESTful API）。
+> **用户已在本现场 63ga 控制台确认"身份策略（Secret Identity）"功能存在**，并创建 HTTP 类型策略：access_key=`databus`，绑定总线连接器 app（com.awspaas.user.apps.databus.connector 1.0.1）。secret 为现场自设值，**上线前应轮换为强随机串**。
 
 平台自带一套面向外部系统集成的签名网关，**本机部署存在其服务端代码**：
 
-- 服务端入口：`com.actionsoft.webframework.servlet.DispatcherOpenAPIServlet`，注解 `@WebServlet(urlPatterns="/openapi", asyncSupported=true)`（javap -v 实证），即 URL 为 `http://<bpm-host>:<port>/openapi`（注意不带 `/portal/r/jd` 前缀）。
-- 该 servlet 接受两种凭证形态：表单参数 `access_key`+`sig`，或 HTTP `Authorization` 头（prepareMessage 字节码实证）。
-- 引擎侧存在配套类型：`HandlerType { NORMAL, OPENAPI, RESTFUL }`、`AppCmd.isApi()`、`AppCmd.getIgnoreSign()`（aws-infrastructure-core.jar 实证），表明平台的 cmd 分发器原生区分 OPENAPI 处理器，且支持逐参数豁免签名。
-- 官方客户端：`com.actionsoft.bpms.api.OpenApiClient`（aws-api-client.jar，随平台分发），官方文档：《OpenAPI使用方法》（[看云 AWS_OpenAPI 文档](https://www.kancloud.cn/youngheart/awsopenapi/1374258)）。
+- 服务端入口：`com.actionsoft.webframework.servlet.DispatcherOpenAPIServlet`，注解 `@WebServlet(urlPatterns="/openapi")`（javap 实证）+ portal 应用 context 路径 → 实际 URL `http://<bpm-host>:<port>/portal/openapi`（官方文档示例一致；6.4.1+ 另提供 `/portal/api`）。
+- 该 servlet 接受两种凭证形态：表单参数 `access_key`+`sig`，或 HTTP `Authorization` 头（prepareMessage 字节码实证：`sig` 参数缺失时读 `Authorization` 头放入交换报文）。
+- 引擎侧配套：`HandlerType { NORMAL, OPENAPI, RESTFUL }`（javap 实证枚举三值）；`@Controller.type()` 默认值 = **NORMAL**（注解 AnnotationDefault 实证）——我们 connector app 现在的 `@Controller` 无参写法即 NORMAL，这正是 12 个端点不在网关体系内、从而裸奔的根因。
+- **自定义 app cmd 是网关一等公民（官方文档正面确认，此前"未实证"销账）**：`@Controller(type = HandlerType.OPENAPI, apiName = "...")` + `@Mapping("xxx.yyy")`，jar 放应用 lib 后在 **CC 连接服务 > 发布 > HTTP API** 发布并绑定身份策略，即可经网关调用；官方还提供 API 在线文档浏览与上下线开关（6.4.1+ 增加访控/流控策略与 swagger 在线测试，63ga 可用性以现场为准）。
+- **官方 HTTP API（BO API、Process API、ORG API 等）同样经此网关**，需管理员手动发布并绑定身份策略；官方明确"Web API 不支持无身份策略调用"——调用必须携带某身份策略的 access_key（被调 API 未绑定特定策略时，任意有效策略均可通过）。这意味着总线将来直连平台原生能力时，认证体系与本方案无缝衔接。
+- RESTFUL 通道（6.3.GA+）：JAX-RS 风格，认证为 HTTP Basic 且不支持无身份策略调用——Basic 每次传输凭据、无时间窗、无防重放，是签名机制的技术下位替代（评估见 §4 方案 B2 备注）。
+- 客户端：`com.actionsoft.bpms.api.OpenApiClient`（aws-api-client.jar 在 63ga 介质三处随附：aws_lib、bin/lib、portal/commons/web-api）；官方文档将 Java 客户端章节标注为 6.4.1+ 适用，63ga 上自实现签名（约 30 行）最稳。
 
 官方协议规格（官方文档 + 客户端字节码双向核实）：
 
 | 项 | 值 |
 | --- | --- |
-| 入口 | `Portal URL + /openapi` |
-| 方法 | POST（form-urlencoded），GET 也可 |
-| 公共参数 | `cmd`（必填）、`access_key`（必填）、`sig`（必填）、`sig_method=HmacMD5`、`format=json`、`timestamp`（毫秒，**与服务器时差不得超过 6 分钟**） |
-| 业务参数 | 按字段 form 提交，复杂对象序列化为 JSON 字符串 |
-| 防重放 | timestamp 6 分钟窗口（官方未提 nonce） |
-| 密钥发放 | 管理员在控制台的密钥身份（AWS CC 连接服务-策略）中创建，access_key 与 secret **均自定义**，secret 只用于签名、不上链路 |
+| 入口 | `http://<bpm-host>:<port>/portal/openapi`（63ga；6.4.1+ 亦可用 `/portal/api`） |
+| 方法 | **POST（application/x-www-form-urlencoded;charset=UTF-8）**——OpenApiClient.exec 字节码实证：全部参数（公共+业务）拼 form body 发送，非 URL query、非 JSON body |
+| 公共参数 | `cmd`（必填）、`access_key`（必填）、`sig`（必填）、`sig_method=HmacMD5`、`format=json`、`timestamp`（毫秒） |
+| 防重放 | **时间窗 5 分钟**（官方签名文档："被签名的 URL 必须在 5 分钟内到达，逾期返回 403"；早期社区文档写 6 分钟，实际容差以现场实测为准——客户端每次调用现算 timestamp 则不受影响）；官方无 nonce |
+| 业务参数 | form 字段提交；**复杂对象/数组 JSON 序列化为一个参数值**（官方明示的标准模式——我们现有 `body` JSON 串恰好就是该形态，且作为参数参与签名，完整性受保护） |
+| 密钥发放 | 管理员在 CC 连接服务 > 策略创建"身份策略"（控制台 UI 名 Secret Identity，类型 HTTP/SOAP），access_key 与 secret 均自定义；secret 只用于签名、不上链路 |
 
-签名算法（反编译 `ApiUtils.makeSig` 逐指令核实）：
+签名算法（反编译 `ApiUtils.makeSig` 逐指令核实，与官方签名文档一致）：
 
 1. 取除 `sig` 及豁免集合外的全部参数，剔除 key/value 为空者；
 2. 按参数名 **ASCII 升序**排序；
@@ -106,16 +112,26 @@ BPM 端 connector app 的 12 个端点全部声明 `session=false`：
   - sid 是"设备会话"语义（createClientSessionByDevice），长生命周期被服务调用持有，泄露即等于账号失窃；
   - 仍然没有消息防重放/防篡改。
 
-### 方案 B：走平台 /openapi 网关（access_key + HmacMD5）
+### 方案 B：走平台 /openapi 网关（access_key + HmacMD5）——**长远技术合理性最优，推荐主线**
 
-做法：BPM 端不再直接暴露 `/portal/r/jd`，RuoYi 侧用 OpenApiClient 同款协议调 `/openapi`；管理员在 BPM 控制台发一个 access_key/secret，存入 Connection credentials。
+做法：BPM 端 Controller 改为 `@Controller(type = HandlerType.OPENAPI)`，12 个端点在 CC 连接服务 > 发布 > HTTP API 发布并绑定「databus」身份策略（过渡期全量发布，SESSION_CREATE 后续退役）；RuoYi 侧 callBpm 改调 `/portal/openapi`，form-urlencoded 提交 + 手工 HmacMD5 签名（约 30 行，JDK 原生 Mac，零新依赖）。
 
-- 优点：平台原生、为服务间集成设计；secret 不上链路；自带 6 分钟时间窗防重放；密钥在控制台管理、与应用代码解耦；我们几乎不用在 BPM app 里写鉴权代码。
-- 缺点/未实证点（**三处必须先实测**，见 §9）：
-  1. 该客户部署的 /openapi 是否可用（老版本可能依赖 license/未安装的 CC 组件；servlet 类存在≠功能已开通）；
-  2. **自定义 app 的 cmd 能否通过 /openapi 调用**——引擎有 HandlerType.OPENAPI 支持，但自定义 @Mapping 的开放方式（应用安装描述符开关？自动开放？）在混淆代码里无法静态确认；
-  3. 请求形态适配：openapi 收 form 字段（业务对象为 JSON 字符串），我们现在靠 action.xml `<param type="body">` 注入**原始 body**，12 个端点的取参方式和 action.xml（含三份部署副本）都要改。
-- 附带弱点：HmacMD5 算法老旧（HMAC-MD5 目前无实用碰撞攻击，可接受，但不是最佳实践）；无 nonce，6 分钟窗口内可重放。
+此前三处"未实证"点，官方文档已销账两处半（见 §3.2）：
+
+1. ~~网关是否开通~~ → 用户已确认 63ga 控制台有身份策略功能并成功创建密钥；剩"网关连通性"一项 Postman 实测（§9）。
+2. ~~自定义 cmd 能否走网关~~ → **官方文档明示的正式用法**（type=OPENAPI + CC 发布 + 绑定策略），不再是未知机制；剩"本 build 发布/绑定 UI 实操确认"。
+3. ~~请求形态适配~~ → 复杂参数 JSON 串化是官方明示的标准模式，现有 `body` 串恰好是该形态且参与签名；action.xml 的 body 注册改普通 param（三份部署副本同步）。
+
+长期技术收益（按"不考虑改造量"准则选它的核心理由）：
+
+- **密钥生命周期归平台**：发放/轮换/吊销是管理员控制台操作，与代码发版解耦（C 方案轮换要改配置文件随 app 重启）；secret 不上链路。
+- **一套机制通吃未来**：官方 HTTP API（bo.query、process、ORG…）可发布到同一网关用同一把密钥；升级 6.4.1+ 后自动获得官方 Java SDK、访控/流控/上下线策略、swagger 在线测试。
+- **架构净化**：签名接管传输认证后，SESSION_CREATE 的模拟会话与可绕过 IP 白名单（§1.1）整体退役成为候选——机机调用不再需要持有 sid，需要业务身份时 DTO 传 uid/idCard、服务内 UserContext 取用。
+- 切 `type=OPENAPI` 后 12 个 cmd 预期从 `/portal/r/jd` 的 NORMAL 分发空间移除，裸奔路径自然消失（切换后实测确认）。
+
+明确接受的弱点：HmacMD5 老旧（HMAC 构造不依赖 MD5 抗碰撞，叠加 HTTPS 后无实用攻击面，但非现代最佳实践，随平台演进）；无 nonce，**5 分钟窗内理论可重放**（内网 + D 网络收敛下风险可接受）；63ga 无访控/流控策略（6.4.1+ 才有）。
+
+> 附：方案 B2（RESTFUL 通道 + HTTP Basic）——JAX-RS 风格重写端点，认证为 Basic：每次传输凭据、无时间窗、无防重放，技术上是签名机制的下位替代，仅作记录不采用。
 
 ### 方案 C：应用层共享密钥 + HMAC-SHA256 自验（自研薄层）
 
@@ -136,26 +152,29 @@ Tomcat `RemoteAddrFilter`、Apache httpd 或防火墙限制来源 IP；不暴露
 | 维度 | A sid 会话 | B /openapi 网关 | C 自研 HMAC | D 网络层 |
 | --- | --- | --- | --- | --- |
 | 调用方认证 | ✅ 平台会话 | ✅ 密钥签名 | ✅ 密钥签名 | ❌ 只认 IP |
-| 防篡改 | ❌ | ✅ 签名 | ✅ 签名 | ❌ |
-| 防重放 | ❌ | △ 6 分钟窗 | ✅ 时间窗+nonce | ❌ |
-| 本现场可落地 | ✅ | ⚠️ 三处未实证 | ✅ | ✅ |
-| BPM 端自研量 | 无 | 无（若直接支持自定义 cmd） | 小（一个守卫类） | 无 |
-| 改造面 | RuoYi 侧会话管理 | 12 端点取参 + action.xml 三副本 + RuoYi 调用层 | Controller 入口 + RuoYi 调用层 | 部署配置 |
-| 密钥/凭证管理 | BPM 用户密码 | 控制台发放 | 双方各自配置 | 无 |
+| 防篡改 | ❌ | ✅ 签名（含 body 参数） | ✅ 签名（body 摘要） | ❌ |
+| 防重放 | ❌ | △ 5 分钟窗、无 nonce | ✅ 时间窗+nonce | ❌ |
+| 本现场可落地 | ✅ | ⚠️ 密钥已建（databus），剩网关连通 + 自定义 cmd 两项实测 | ✅ | ✅ |
+| BPM 端自研量 | 无 | 无自研鉴权（注解 + CC 发布） | 小（一个守卫类） | 无 |
+| 密钥/凭证管理 | BPM 用户密码 | ✅ 控制台身份策略（轮换/吊销免发版） | 双方各自配置（轮换随 app 重启） | 无 |
+| 长期演进 | ❌ 机机调用滥用会话语义 | ✅ 平台主干：官方 API 同网关同密钥、6.4.1+ SDK/访控/流控 | △ 永久自维护迷你网关 | 无 |
+| 改造面（按用户准则不作决策权重） | RuoYi 侧会话管理 | 注解/返回类型 + CC 发布 + action.xml 三副本 + RuoYi 调用层 | Controller 入口 + RuoYi 调用层 | 部署配置 |
 | 与未来物料化/热插拔 | 一般 | 好 | 好 | 无影响 |
 
-## 5. 推荐：B 优先实证、C 兜底，D 与 HTTPS 必做
+## 5. 推荐：B（/portal/openapi 网关）为主线，C 兜底，D 与 HTTPS 必做
 
-建议的决策分叉：
+> 2026-09-20 修订：用户拍定决策准则——**长远技术合理性优先，不考虑当下改造量**。在此准则下，推荐由"B/C 等权待实证"修订为 **B 主线**：机器认证是平台已经设计好的领域，OPENAPI 网关 + 身份策略在密钥生命周期管理、演进路线（官方 API 同网关同密钥、6.4.1+ SDK/访控/流控）、架构净化（SESSION_CREATE 与可绕过 IP 白名单退役）上全面占优；C 仅剩的两处边际优势（HMAC-SHA256 算法、nonce 防重放）在 HTTPS + 内网收敛下接近于零，长期代价却是永久自维护一个迷你网关（密钥文件、轮换机制、错误码、文档全要自己养）。
 
-1. **先花十几分钟做 §9 的 B 方案实证**（用户在 BPM 环境操作，AI 不代跑）。
-2. 若 /openapi 在本现场可用且自定义 cmd 可达 → **选 B**：平台原生、免自研、密钥由平台管，长期最省心。取参适配工作量可控。
-3. 若任一实证不通过 → **落 C**：方案细节见 §6，全部基于已核实的事实设计，没有平台能力假设。
-4. 无论 B/C：上线前都要叠加 D（网络层限制来源 IP）和 HTTPS（或在内网网段由反向代理终结 TLS）。
+决策分叉：
 
-下文 §6 把 C 写到可直接实施的粒度；§7 列出选 B 时的差异点，避免到时候重新调研。
+1. 用户做 §9 的两项 Postman 实测（网关连通 + 自定义 cmd 试验包）；
+2. 通过 → **B 主线**，实施要点见 §7；
+3. 不通（网关 404/机制性不可用）→ **落 C**：§6 细节已备，全部基于已核实事实，没有平台能力假设；
+4. 无论 B/C：上线前叠加 D（网络层限制来源 IP）+ HTTPS（或内网网段由反向代理终结 TLS）。
 
-## 6. 方案 C 详细设计（兜底主线）
+下文 §6 保留 C 的可实施粒度（兜底备用）；§7 为 B 主线实施要点。
+
+## 6. 方案 C 详细设计（兜底，仅当 B 实测不通时启用）
 
 ### 6.1 协议
 
@@ -227,33 +246,40 @@ databus.auth.key.ruoyi-prod=<32字节随机secret>,*,10.20.30.40
 3. 联调签名通过后，BPM 端切 mode=hmac 重启；
 4. 上线前：httpd/防火墙收敛来源 IP，uid 白名单从 `*` 收敛为服务账号，HTTP 视网段情况升级 TLS。
 
-## 7. 若选方案 B 的差异点备忘
+## 7. 方案 B（主线）实施要点备忘
 
-- RuoYi 侧不用自己写签名算法，可直接把 aws-api-client.jar 作为 BPM connector 的编译依赖（该 jar 在 BPM 安装介质中，非中央仓库依赖，需手工 install 到本地仓或 shade 进模块）；不想引 jar 则按 §3.2 的 4 步算法自行实现（约 50 行）。
-- BPM 端 12 个 Controller 方法的取参从"原始 body"改为"form 字段 body（JSON 字符串）"，action.xml 的 `<param name="body" type="body"/>` 改为普通 param（**三份部署副本同步**：源文件、apps/install、webserver）；需回归文件上传这类大 body 场景在 form 编码下的体积与编码。
-- access_key/secret 由管理员在 BPM 控制台创建（老版本控制台菜单位置需现场找，新版在"应用开发-连接服务-策略"，见集简云授权文档截图描述）。
-- 防重放只有 6 分钟时间窗、无 nonce；如不满足安全要求则仍需退回 C 或在 C 之外再包一层。
+- **BPM 端**：
+  - `@Controller(type = HandlerType.OPENAPI, apiName = "Databus API")`；12 个 `@Mapping` 名已是点分全局唯一，直接可用；
+  - 方法返回类型迁到 `ApiResponse` 子类（StringResponse/MapResponse/ObjectResponse…，`ResponseObject` 不在官方 OPENAPI 契约内），错误经 `errorCode/msg` 表达（ErrorType）；
+  - 取参从原始 body 改为 form 字段（复杂结构仍收 `body` JSON 串一个字段，`@Param` 声明）；action.xml `<param name="body" type="body"/>` 改普通 param，**三份部署副本同步**（源文件、apps/install、webserver）；
+  - CC 连接服务 > 发布 > HTTP API 逐个发布并绑定「databus」身份策略；文件上传大 body 在 form 编码下的体积/编码需回归。
+- **RuoYi 侧**：callBpm 从 POST JSON `/portal/r/jd?cmd=` 改为 POST form-urlencoded `/portal/openapi`，公共参数 cmd/access_key/timestamp/sig_method/format + 业务参数（含 `body` JSON 串）+ sig；签名按 §3.2 四步用 JDK `Mac`（HmacMD5）自实现约 30 行——63ga 不建议引 aws-api-client.jar（官方 Java 客户端章节标 6.4.1+，引介质内旧 jar 有版本错配风险）；access_key/secret 存 Connection credentials（`@EncryptField` 已加密）。
+- **组件层零改动（connectId 引用模型的隔离红利）**：11 个 BPM 原子 comp 统一走 `cfg.getConnectionId()` → `databusContext.getConnection(id)` → `BpmHttpConnector`，协议/签名/密钥细节全部封在 Connector 内；过渡期 authType（jd/openapi）双协议分支同样只存在于 callBpm 内部。存量链路组件参数里的 connectionId 全部继续有效——切换只需编辑同一条 Connection 补密钥字段，不重建链路/物料。Cfg 字段增减：+accessKey/apiSecret（credentials），authUser/authPassword 过渡期保留、随 SESSION_CREATE 退役，ipWhiteList 删除（SESSION_CREATE body 传参专用）。
+- **防重放**：5 分钟窗、无 nonce，接受（内网 + D 收敛 + HTTPS）；不建议在服务端再自加 nonce 校验——那等于把 C 混进 B，两头维护。
+- **T5（业务 uid 由 DTO 声明）**：63ga 无访控策略，一期靠"唯一调用方密钥 + 网络收敛"约束；升级 6.4.1+ 后可用访控注解（@PermUser 等）收编。
+- **过渡节奏**：切 type 后旧 `/portal/r/jd` 路径预期失效，会打断正在跑的 mock 全量实测——**等主线 mock 收尾后再切**；或 RuoYi 侧 callBpm 先做 authType 分支（jd/openapi 双协议并存一期），再切 BPM 端。
+- **SESSION_CREATE**：网关上线后为退役候选（见方案 B 优点）；过渡期保留，testConnection 可继续用它，或改 ping 网关极简 cmd。
 
 ## 8. 影响面清单
 
 | 仓库/位置 | 方案 C 改动 | 方案 B 改动 |
 | --- | --- | --- |
-| com.awspaas.databus.connector（独立仓） | 新增 AuthGuard + 鉴权错误码 ×6；invokeService 接入；配置文件示例；（可选）AUTH_PING 第 13 端点 | 12 端点取参改造 + action.xml |
+| com.awspaas.databus.connector（独立仓） | 新增 AuthGuard + 鉴权错误码 ×6；invokeService 接入；配置文件示例；（可选）AUTH_PING 第 13 端点 | 注解改 OPENAPI + 返回类型 ApiResponse 化 + 取参 form 化 + action.xml 改普通 param |
 | connector 部署副本（mldataboard 大仓工作区，**只同步不提交**） | class/action.xml/配置文件副本同步 | 同左 |
-| RuoYi-Vue-Plus（ruoyi-databus） | Cfg + descriptor schema + callBpm 签名 | callBpm 改 openapi 协议（依赖 jar 或自实现） |
-| plus-ui | 连接管理表单加 authType/accessKey/apiSecret 三项 | 同左（字段名换成 access_key/secret） |
-| BPM 控制台 | 无 | 发放 access_key/secret |
+| RuoYi-Vue-Plus（ruoyi-databus） | Cfg + descriptor schema + callBpm 签名 | callBpm 改 /portal/openapi form 协议 + 手工 HmacMD5 签名（自实现约 30 行） |
+| plus-ui | 连接管理表单加 authType/accessKey/apiSecret 三项 | 连接管理表单加 access_key/secret 字段 |
+| BPM 控制台 | 无 | 发布 12 个 cmd 并绑定 databus 身份策略（策略已建 2026-09-20；SESSION_CREATE 后续随退役下线） |
 | 网络部署 | httpd/防火墙来源 IP 收敛（D） | 同左 |
 
-## 9. 待用户拍板 / 实证的问题
+## 9. 待办：两项网关实测 + 拍板
 
-1. **B 方案实证（决定 B/C 分叉，用户在 BPM 环境操作）**：
-   - 控制台能否找到创建 API 密钥（access_key/secret）的入口；
-   - 用 Postman 按 §3.2 协议对 `http://<bpm>/openapi` 调一个内置 cmd（如文档里的 `app.install.check`）能否通——确认网关已开通；
-   - 再对我们的一个自定义 cmd（如 `com.awspaas.databus.connector.SESSION_CREATE`）按 form 形态试调，确认自定义 app cmd 可达。
-2. 方案 C 的一期取舍：uid 白名单上线时是否收敛为固定服务账号？IP 白名单放在应用层还是只做网络层 D？
-3. SESSION_CREATE 端点在鉴权上线后的定位：它继续作为"链路业务组件"保留（链路里需要 sid/idCard 的场景），但传输认证不再依赖它；testConnection 是否改为新增 AUTH_PING。
-4. BPM 与 RuoYi 之间是否有上 TLS 的网段条件（httpd 反代终结 or 直连 HTTP + 网络层兜底）。
+1. **网关连通实测（用户 Postman，AI 不代跑，纯控制台操作零代码）**：
+   - 在 CC 连接服务 > 文档 > Web API 里挑一个（或按官方文档"发布官方 HTTP API"流程发布一个）内置 cmd，如 `app.install.check`，绑定 databus 身份策略；
+   - 按 §3.2 协议 POST `http://<bpm>/portal/openapi`（form-urlencoded，手工算 sig）；
+   - **返回 JSON（非 404）即网关可用**；401/签名错则核对算法与时钟；404/机制性不可用 → 直接落 C。
+2. **自定义 cmd 实测（需要我出一个 type=OPENAPI 试验包，动手前等你指令）**：CC 发布 SESSION_CREATE（或 BO_QUERY）绑定策略后按协议试调，确认 63ga 发布/绑定 UI 与文档一致、ApiResponse 迁移形态可行。
+3. 实测通过 → 按 §7 实施 B；排期**避让主线 mock 全量实测**（过渡节奏见 §7）。
+4. 保留事项：TLS 网段条件（httpd 反代终结 or 直连 HTTP + 网络层兜底）；secret 上线前轮换强随机；SESSION_CREATE/testConnection 定位随实施细化。
 
 ## 10. 明确不做
 

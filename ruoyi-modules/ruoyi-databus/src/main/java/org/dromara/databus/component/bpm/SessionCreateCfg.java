@@ -15,7 +15,8 @@ import lombok.Data;
  * }
  * </pre>
  * 字符串字段支持裸路径 / 混合字符串 / 字面量，组件解析后传入 BPM 端 SESSION_CREATE 端点。
- * ipWhiteList 不在此配置，由组件从 Connection 配置（BpmHttpConnectionCfg）自动塞入请求体。
+ * 网关签名鉴权（/portal/openapi）已在连接层完成；请求体 ipWhiteList 旧机制随 jd 通道删除，
+ * 组件固定传空列表，无需在此配置。
  *
  * @author databus
  */

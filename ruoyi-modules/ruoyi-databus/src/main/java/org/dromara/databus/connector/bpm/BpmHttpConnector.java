@@ -32,8 +32,8 @@ import java.util.Map;
  * <p>三层物料模型（决策 2.2）的第一层实现：物料市场注册（{@code @Component} 自动注册到 {@link org.dromara.databus.connector.ConnectorRegistry}），
  * 描述能力清单（{@link #describe()}）驱动前端 cmp-defs 物料与连接管理表单。
  *
- * <p>URL 拼接（决策 9.1.2 + 9.3）：{@code cfg.getEndpoint() + "/portal/r/jd?cmd=" + BpmConst.CMD_XXX}
- * （不带 sid，因 session=false 无鉴权）。
+ * <p>URL 拼接：{@code cfg.getEndpoint() + "/portal/openapi"}（固定入口，cmd 为签名表单参数），
+ * POST application/x-www-form-urlencoded，access_key + HmacMD5 签名（{@link BpmOpenApiSigner}）。
  *
  * <p>本类自己暴露 10 个操作方法（决策 9.3：Connector 接口不包含操作方法，
  * 因不同 Connector 操作集合不同；具体业务方法在具体实现类声明）：
@@ -53,10 +53,12 @@ import java.util.Map;
  * </ul>
  *
  * <p>HTTP 调用用 Spring {@link RestClient}（与 {@link HttpRequestComponent} 范式一致）。
- * 错误时解析 BPM 端 ResponseObject 的 result/errorCode/msg 转 {@link ConnectorException}。
+ * 错误时解析 BPM 端 ApiResponse 的 result/errorCode/msg 转 {@link ConnectorException}。
  *
- * <p>1D-P0 不实现重试（{@link BpmHttpConnectionCfg#getRetryCount()} 保留字段供未来）；
- * 不实现鉴权（{@code session=false} 无鉴权，待办见 work-state.md）。
+ * <p>1D-P0 不实现重试（{@link BpmHttpConnectionCfg#getRetryCount()} 保留字段供未来）。
+ *
+ * <p>鉴权：唯一通道为平台 /portal/openapi 签名网关（2026-09-20 全量切换，旧 jd 免会话通道已删）。
+ * 协议细节封在本类内，组件层零感知。设计文档：docs/wiki/databus-bpm-endpoint-auth.md。
  *
  * @author databus
  */
@@ -67,7 +69,7 @@ public class BpmHttpConnector implements Connector {
     /** Connector 类型标识，全局唯一 */
     public static final String TYPE = "bpmHttp";
 
-    /** BPM 端 ResponseObject 的字段名（与 BPM 端 BpmConst 保持一致语义） */
+    /** BPM 端 ApiResponse 的字段名（与 BPM 端 BpmConst 保持一致语义） */
     private static final String RESP_RESULT = "result";
     private static final String RESP_DATA = "data";
     private static final String RESP_MSG = "msg";
@@ -95,17 +97,17 @@ public class BpmHttpConnector implements Connector {
         // 连接配置 schema（驱动连接管理页表单动态渲染）
         desc.getConfigSchema().put("endpoint",
                 ConnectorDescriptor.ConfigField.ofString("BPM 容器地址", true, null));
-        desc.getConfigSchema().put("authUser",
-                ConnectorDescriptor.ConfigField.ofString("默认 BPM 用户（连接级默认 uid）", false, null));
-        // authPassword 标记敏感：连接管理服务据此拆入 credentials 加密列，不落明文 config
-        desc.getConfigSchema().put("authPassword",
-                ConnectorDescriptor.ConfigField.ofString("默认 BPM 密码", false, null).sensitive());
+        desc.getConfigSchema().put("accessKey",
+                ConnectorDescriptor.ConfigField.ofString(
+                        "OpenAPI access_key（CC 身份策略访问凭证）", true, null));
+        // apiSecret 标记敏感：连接管理服务据此拆入 credentials 加密列，不落明文 config
+        desc.getConfigSchema().put("apiSecret",
+                ConnectorDescriptor.ConfigField.ofString(
+                        "OpenAPI secret（CC 身份策略私钥）", true, null).sensitive());
         desc.getConfigSchema().put("timeoutMs",
                 ConnectorDescriptor.ConfigField.ofInt("HTTP 超时（毫秒）", false, 30000));
         desc.getConfigSchema().put("retryCount",
                 ConnectorDescriptor.ConfigField.ofInt("失败重试次数（1D-P0 未实现，保留字段）", false, 0));
-        desc.getConfigSchema().put("ipWhiteList",
-                ConnectorDescriptor.ConfigField.ofArray("IP 白名单", false, null));
 
         // 10 个操作定义
         desc.getOperations().add(buildOperation("createSession", "创建会话",
@@ -147,25 +149,13 @@ public class BpmHttpConnector implements Connector {
     }
 
     /**
-     * 测试连接：调 SESSION_CREATE 端点，传 authUser/authPassword，看返回 result=ok 即视为连通。
-     * <p>不实际创建会话也不保留 sid，仅验证 BPM 容器可达 + 鉴权信息正确。
-     * <p>若 BPM 端用户名密码错误，BPM 端会抛 BpmConnectorException 并通过 ResponseObject 返回错误码。
+     * 测试连接：调网关 PING 端点（无业务参数），验签通过即网关可达、access_key/secret 正确。
+     * <p>若密钥错误或网关不可达，BPM 端返回错误码/HTTP 异常，经 callBpm 解析后抛 ConnectorException。
      */
     @Override
     public String testConnection(Connection connection) {
-        BpmHttpConnectionCfg cfg = fromConnection(connection);
-        if (cfg.getAuthUser() == null || cfg.getAuthUser().isBlank()) {
-            throw new ConnectorException("CONNECTOR_CFG_MISSING",
-                    "测试连接缺少 authUser，请在连接配置中填写 BPM 用户名");
-        }
-        SessionCreateRequest req = new SessionCreateRequest();
-        req.setUserName(cfg.getAuthUser());
-        req.setPassword(cfg.getAuthPassword());
-        req.setClientIp("0.0.0.0");
-        req.setIpWhiteList(cfg.getIpWhiteList() != null ? cfg.getIpWhiteList() : List.of());
-        Object result = createSession(connection, req);
-        // 仅返回简洁成功文案给用户；BPM 端响应（sessionId/idCard 等敏感字段）由 callBpm 的 log.info 记录留痕
-        return "BPM 连接成功";
+        callBpm(connection, BpmConst.CMD_PING, null);
+        return "BPM OpenAPI 网关连接成功";
     }
 
     /**
@@ -278,7 +268,12 @@ public class BpmHttpConnector implements Connector {
     }
 
     /**
-     * 通用 BPM HTTP 调用：序列化请求 DTO → POST → 解析 BPM 端 ResponseObject → result=ok 返回 data / 失败抛 ConnectorException。
+     * 通用 BPM 网关调用：POST form-urlencoded {@code /portal/openapi}，
+     * access_key + HmacMD5 签名（{@link BpmOpenApiSigner}）；
+     * 响应信封 ApiResponse（result/errorCode/msg/data）由 {@link #parseBpmResponse} 解析：
+     * result=ok 返回 data；失败抛 ConnectorException。
+     *
+     * @param requestDto 请求 DTO；允许为 null（如 PING 无业务参数）
      */
     @SuppressWarnings("unchecked")
     private Object callBpm(Connection connection, String cmd, Object requestDto) {
@@ -287,15 +282,23 @@ public class BpmHttpConnector implements Connector {
             throw new ConnectorException("CONNECTOR_CFG_MISSING",
                     "BPM 连接 endpoint 未配置（connectionId=" + connection.getId() + "）");
         }
-        String url = cfg.getEndpoint().replaceAll("/+$", "") + "/portal/r/jd?cmd=" + cmd;
-        log.info("[bpmHttp] 调用 {} 入参={}", cmd, JsonCodec.toJson(requestDto));
+        if (cfg.getAccessKey() == null || cfg.getAccessKey().isBlank()
+                || cfg.getApiSecret() == null || cfg.getApiSecret().isBlank()) {
+            throw new ConnectorException("CONNECTOR_CFG_MISSING",
+                    "BPM 连接 accessKey/apiSecret 未配置（connectionId=" + connection.getId() + "）");
+        }
+        String url = cfg.getEndpoint().replaceAll("/+$", "") + "/portal/openapi";
+        String bodyJson = requestDto == null ? null : JsonCodec.toJson(requestDto);
+        Map<String, String> form = BpmOpenApiSigner.buildSignedForm(
+                cmd, bodyJson, cfg.getAccessKey(), cfg.getApiSecret());
+        log.info("[bpmHttp] 调用 {} 入参={}", cmd, bodyJson);
 
         String responseText;
         try {
             responseText = restClient.post()
                     .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(JsonCodec.toJson(requestDto))
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(BpmOpenApiSigner.toFormUrlEncoded(form))
                     .retrieve()
                     .body(String.class);
         } catch (Exception e) {
@@ -304,7 +307,14 @@ public class BpmHttpConnector implements Connector {
                     "BPM 服务连接失败: " + e.getMessage(), e);
         }
 
-        // 解析 BPM 端 ResponseObject
+        return parseBpmResponse(cmd, responseText);
+    }
+
+    /**
+     * 解析 BPM 端 ApiResponse 响应信封（字段与旧 ResponseObject 同构）。
+     */
+    @SuppressWarnings("unchecked")
+    private Object parseBpmResponse(String cmd, String responseText) {
         Object parsed = JsonCodec.parse(responseText);
         if (!(parsed instanceof Map<?, ?> respMap)) {
             log.error("[bpmHttp] BPM 端响应非 JSON 对象 cmd={} raw={}", cmd, responseText);

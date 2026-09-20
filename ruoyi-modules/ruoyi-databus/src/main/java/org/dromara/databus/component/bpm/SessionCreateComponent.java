@@ -6,7 +6,6 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
 import org.dromara.databus.connector.Connection;
-import org.dromara.databus.connector.bpm.BpmHttpConnectionCfg;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.SessionCreateRequest;
 
@@ -15,12 +14,11 @@ import java.util.Map;
 
 /**
  * SESSION_CREATE 组件（注册名 {@code sessionCreate}）。
- * <p>
- * 调 BPM 端 SESSION_CREATE 端点，创建 BPM 客户端会话。响应 {@code {sessionId, idCard}}
+ * <p>调 BPM 端 SESSION_CREATE 端点，创建 BPM 客户端会话。响应 {@code {sessionId, idCard}}
  * 按字段平铺写入数据空间 {@code $.<tag>.sessionId} / {@code $.<tag>.idCard}。
  *
- * <p>ipWhiteList 由本组件从 {@link BpmHttpConnectionCfg}（Connection 配置）取出后塞入
- * {@link SessionCreateRequest}，BPM 端校验 clientIp 是否在白名单内（详见决策 9.1.7）。
+ * <p>网关鉴权（/portal/openapi 签名）已在连接层完成；ipWhiteList 旧机制随 jd 通道删除，
+ * 请求固定传空列表（不限制）。
  *
  * @author databus
  */
@@ -66,18 +64,14 @@ public class SessionCreateComponent extends DatabusNodeComponent {
         BpmHttpConnector connector = SpringUtils.getBean(BpmHttpConnector.class);
         Connection conn = getDatabusContext().getConnection(connectionId);
 
-        // 从 Connection 配置取 ipWhiteList 塞入请求体（决策 9.1.7）
-        BpmHttpConnectionCfg connCfg = connector.fromConnection(conn);
-        List<String> ipWhiteList = connCfg.getIpWhiteList() != null
-                ? connCfg.getIpWhiteList() : List.of();
-
         SessionCreateRequest request = new SessionCreateRequest();
         request.setUserName(userName);
         request.setPassword(password);
         request.setClientIp(clientIp);
         request.setLang(lang);
         request.setDevice(device);
-        request.setIpWhiteList(ipWhiteList);
+        // ipWhiteList 旧机制随 jd 免会话通道删除（网关签名鉴权已替代），固定空列表
+        request.setIpWhiteList(List.of());
 
         Object result = connector.createSession(conn, request);
         if (!(result instanceof Map<?, ?> resultMap)) {

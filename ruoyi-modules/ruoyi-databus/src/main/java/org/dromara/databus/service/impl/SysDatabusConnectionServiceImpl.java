@@ -41,7 +41,7 @@ import java.util.stream.Collectors;
  * </ul>
  *
  * <p>1D-P0 过渡形态：前端写死 BPM 平铺表单，BO/VO 仍是平铺字段
- * （endpoint/username/password/ipWhiteList/timeout/retryCount），本类集中负责
+ * （endpoint/accessKey/apiSecret/timeout/retryCount），本类集中负责
  * 平铺字段 ↔ 运行时 config Map（key 与 {@link org.dromara.databus.connector.bpm.BpmHttpConnectionCfg}
  * 及 descriptor configSchema 对齐）↔ config/credentials 两份 JSON 的组装拆解。
  * 哪些 key 进加密列由 connector descriptor 的 {@code ConfigField.sensitive} 声明驱动，
@@ -58,11 +58,10 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
 
     /** 运行时 Connection.config 的 key（与 BpmHttpConnectionCfg / BpmHttpConnector.describe() 一致）。 */
     private static final String CFG_ENDPOINT = "endpoint";
-    private static final String CFG_AUTH_USER = "authUser";
-    private static final String CFG_AUTH_PASSWORD = "authPassword";
+    private static final String CFG_ACCESS_KEY = "accessKey";
+    private static final String CFG_API_SECRET = "apiSecret";
     private static final String CFG_TIMEOUT_MS = "timeoutMs";
     private static final String CFG_RETRY_COUNT = "retryCount";
-    private static final String CFG_IP_WHITE_LIST = "ipWhiteList";
 
     private static final int DEFAULT_TIMEOUT_MS = 30000;
     private static final int DEFAULT_RETRY_COUNT = 0;
@@ -244,11 +243,10 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     private Map<String, Object> boToRuntimeMap(SysDatabusConnectionBo bo) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put(CFG_ENDPOINT, bo.getEndpoint());
-        config.put(CFG_AUTH_USER, bo.getUsername());
-        config.put(CFG_AUTH_PASSWORD, bo.getPassword());
+        config.put(CFG_ACCESS_KEY, bo.getAccessKey());
+        config.put(CFG_API_SECRET, bo.getApiSecret());
         config.put(CFG_TIMEOUT_MS, bo.getTimeout() == null ? DEFAULT_TIMEOUT_MS : bo.getTimeout());
         config.put(CFG_RETRY_COUNT, bo.getRetryCount() == null ? DEFAULT_RETRY_COUNT : bo.getRetryCount());
-        config.put(CFG_IP_WHITE_LIST, parseIpWhiteList(bo.getIpWhiteList()));
         return config;
     }
 
@@ -300,13 +298,10 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
         vo.setUpdateTime(entity.getUpdateTime());
 
         vo.setEndpoint(asString(config.get(CFG_ENDPOINT)));
-        vo.setUsername(asString(config.get(CFG_AUTH_USER)));
-        vo.setPassword(asString(credentials.get(CFG_AUTH_PASSWORD)));
+        vo.setAccessKey(asString(config.get(CFG_ACCESS_KEY)));
+        vo.setApiSecret(asString(credentials.get(CFG_API_SECRET)));
         vo.setTimeout(asInteger(config.get(CFG_TIMEOUT_MS), DEFAULT_TIMEOUT_MS));
         vo.setRetryCount(asInteger(config.get(CFG_RETRY_COUNT), DEFAULT_RETRY_COUNT));
-        Object ipWhiteList = config.get(CFG_IP_WHITE_LIST);
-        // List 形态回填为 JSON 数组字符串，供前端 textarea 直接编辑
-        vo.setIpWhiteList(ipWhiteList == null ? "" : JsonCodec.toJson(ipWhiteList));
         return vo;
     }
 
@@ -325,27 +320,6 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
         }
         log.warn("连接配置 JSON 不是对象，按空配置处理 raw={}", json);
         return new LinkedHashMap<>();
-    }
-
-    /**
-     * 把 IP 白名单 JSON 字符串解析为 List；空值返回空列表（不返回 null，避免 BPM 端 NPE）。
-     */
-    private List<String> parseIpWhiteList(String json) {
-        if (StringUtils.isBlank(json)) {
-            return new ArrayList<>();
-        }
-        Object parsed = JsonCodec.parse(json);
-        if (parsed instanceof List<?> list) {
-            List<String> result = new ArrayList<>(list.size());
-            for (Object item : list) {
-                if (item != null) {
-                    result.add(String.valueOf(item));
-                }
-            }
-            return result;
-        }
-        log.warn("IP 白名单 JSON 解析失败，返回空列表 raw={}", json);
-        return new ArrayList<>();
     }
 
     private String asString(Object value) {

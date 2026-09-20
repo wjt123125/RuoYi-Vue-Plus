@@ -8,11 +8,13 @@ import java.util.List;
  * SESSION_CREATE 请求入参（对应 BPM 端 {@code SessionCreateRequest}）。
  * <p>
  * 所有字段从 Component 层显式传入（决策 §1：上下文原子化，BPM 端无共享上下文）。
- * {@code ipWhiteList} 由 Component 层从 {@code BpmHttpConnectionCfg} 取后塞入请求体
- * （决策 §9.1.7：ipWhiteList 由总线层 Connection 配置传入）。
+ *
+ * @deprecated 旧 jd 通道时期的参数类，当前无引用（SESSION_CREATE 实际使用
+ * {@link SessionCreateRequest}）；保留待后续清理。
  *
  * @author databus
  */
+@Deprecated
 @Data
 public class BpmSessionCreateParam {
 

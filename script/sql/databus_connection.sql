@@ -13,8 +13,8 @@ create table sys_databus_connection (
     connection_id     varchar(64)     not null                  comment '连接ID（全局唯一，组件层引用）',
     connection_name   varchar(100)    not null                  comment '连接名称（用户可读）',
     connector_type    varchar(32)     not null                  comment 'Connector 类型标识（如 bpmHttp）',
-    config            text            default null              comment '连接配置（明文 JSON，非敏感参数；字段 schema 由 connector describe 声明，如 endpoint/authUser/timeoutMs/retryCount/ipWhiteList）',
-    credentials       text            default null              comment '凭据（AES 字段级加密 JSON，敏感字段如 authPassword/token/secretKey）',
+    config            text            default null              comment '连接配置（明文 JSON，非敏感参数；字段 schema 由 connector describe 声明，如 endpoint/accessKey/timeoutMs/retryCount）',
+    credentials       text            default null              comment '凭据（AES 字段级加密 JSON，敏感字段如 apiSecret/token/secretKey）',
     enabled           char(1)         default 'Y'               comment '是否启用（Y启用 N禁用，启用时执行链路自动注入 DatabusContext）',
     create_dept       bigint(20)      default null              comment '创建部门',
     create_by         bigint(20)      default null              comment '创建者',
@@ -54,17 +54,21 @@ insert into sys_menu values
 
 -- ----------------------------
 -- BPM HTTP 连接实例种子数据（三层物料第二层：Connection 实例）
--- connection_id = bpm-default，与前端 CmpProps.vue 组件默认参数引用的 ID 对齐；
+-- connection_id = bpm-default，与前端 mock-presets / CmpProps.vue 引用的 ID 对齐；
 -- config 字段名与 BpmHttpConnectionCfg / BpmHttpConnector describe() 的 configSchema 对齐，
--- authPassword 属敏感字段（describe 标 sensitive），落 credentials 列。
+-- apiSecret 属敏感字段（describe 标 sensitive），落 credentials 列。
+-- 鉴权：2026-09-20 起唯一通道 /portal/openapi（access_key + HmacMD5 签名），
+--       种子值 databus/databus 为现场 CC 身份策略弱值，仅本地开发用，上线前必须轮换强随机串。
 -- 注意：手写 INSERT 不经过 MyBatis @EncryptField 加密拦截器，credentials 为明文 JSON；
 --       无密文头值读取时原样返回（兼容），在连接管理页重新保存一次即转为 AES 密文。
---       endpoint/authUser/authPassword 按实际 BPM 容器环境修改。
+--       endpoint/access_key/apiSecret 按实际 BPM 容器环境修改。
+-- 幂等：先按主键删旧种子（旧 jd 形态 config 一并清掉），再插入 openapi 形态。
 -- ----------------------------
+delete from sys_databus_connection where id = 1762000000000020001;
 insert into sys_databus_connection
   (id, connection_id, connection_name, connector_type, config, credentials, enabled, create_time, del_flag, remark)
 values
   (1762000000000020001, 'bpm-default', 'BPM 本地容器', 'bpmHttp',
-   '{"endpoint":"http://localhost:8088","authUser":"admin","timeoutMs":30000,"retryCount":0,"ipWhiteList":[]}',
-   '{"authPassword":"1"}',
-   'Y', sysdate(), '0', 'BPM 端总线 app 种子连接；endpoint/账号密码按实际环境修改');
+   '{"endpoint":"http://localhost:8088","accessKey":"databus","timeoutMs":30000,"retryCount":0}',
+   '{"apiSecret":"databus"}',
+   'Y', sysdate(), '0', 'BPM 端总线 app 种子连接（OpenAPI 签名网关）；endpoint/密钥按实际环境修改');

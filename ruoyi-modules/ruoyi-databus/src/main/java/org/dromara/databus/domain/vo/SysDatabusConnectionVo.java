@@ -46,19 +46,14 @@ public class SysDatabusConnectionVo implements Serializable {
     private String endpoint;
 
     /**
-     * 默认用户名
+     * OpenAPI access_key
      */
-    private String username;
+    private String accessKey;
 
     /**
-     * 默认密码
+     * OpenAPI secret（回显用，前端密码框）
      */
-    private String password;
-
-    /**
-     * IP 白名单（JSON 数组字符串）
-     */
-    private String ipWhiteList;
+    private String apiSecret;
 
     /**
      * HTTP 超时（毫秒）

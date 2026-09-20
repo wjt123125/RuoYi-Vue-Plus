@@ -16,8 +16,8 @@ import org.dromara.common.mybatis.core.domain.BaseEntity;
  * <ol>
  *   <li>通用列：connectionId / connectionName / connectorType / enabled + 审计列，所有 connector 共用</li>
  *   <li>{@link #config}：非敏感参数的明文 JSON（字段 schema 由 connector 的 describe() 声明），
- *       如 bpmHttp 的 endpoint / authUser / timeoutMs / retryCount / ipWhiteList</li>
- *   <li>{@link #credentials}：敏感参数 JSON（如 authPassword / token / secretKey），
+ *       如 bpmHttp 的 endpoint / accessKey / timeoutMs / retryCount</li>
+ *   <li>{@link #credentials}：敏感参数 JSON（如 apiSecret / token / secretKey），
  *       经 MyBatis 字段级加密落库（依赖 mybatis-encryptor.enable=true，算法/密钥走全局 yml 配置）</li>
  * </ol>
  *
@@ -56,7 +56,7 @@ public class SysDatabusConnection extends BaseEntity {
     /**
      * 非敏感连接配置（明文 JSON）。
      * <p>key 与 connector descriptor 的 configSchema 对齐，
-     * bpmHttp 含 endpoint / authUser / timeoutMs / retryCount / ipWhiteList。
+     * bpmHttp 含 endpoint / accessKey / timeoutMs / retryCount。
      */
     private String config;
 

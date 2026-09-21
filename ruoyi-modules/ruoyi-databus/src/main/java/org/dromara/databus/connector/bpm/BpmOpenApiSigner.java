@@ -15,7 +15,8 @@ import java.util.TreeMap;
  * docs/wiki/databus-bpm-endpoint-auth.md §3.2。
  *
  * <p>公共参数：cmd / access_key / timestamp（毫秒）/ sig_method=HmacMD5 / format=json，
- * 业务参数（本连接器固定为单个 {@code body}：请求 DTO 的 JSON 串，与旧 /portal/r/jd 的原始 body 同文）。
+ * 业务参数（本连接器固定为单个 {@code payload}：请求 DTO 的 JSON 串；不用 "body" 是为避开
+ * 平台 ParameterHelper type=body 验签分支，详见 docs/wiki/databus-bpm-endpoint-auth.md）。
  *
  * <p>签名算法：
  * <ol>
@@ -40,8 +41,8 @@ public final class BpmOpenApiSigner {
     /** 响应格式（公共参数 format 的值） */
     public static final String FORMAT_JSON = "json";
 
-    /** form body 业务参数名（BPM 端 @Param("body") 绑定，JSON 字符串参与签名） */
-    public static final String PARAM_BODY = "body";
+    /** form 业务参数名（BPM 端 @Param("payload") 绑定，JSON 字符串参与签名；不用 "body" 避开平台 type=body 验签分支） */
+    public static final String PARAM_PAYLOAD = "payload";
 
     private static final String HMAC_MD5 = "HmacMD5";
 
@@ -49,7 +50,7 @@ public final class BpmOpenApiSigner {
     }
 
     /**
-     * 组装一次 openapi 调用的完整 form 参数（公共参数 + body + sig）。
+     * 组装一次 openapi 调用的完整 form 参数（公共参数 + payload + sig）。
      *
      * @param cmd        BPM 端 @Mapping 值，如 com.awspaas.databus.connector.PING
      * @param bodyJson   请求 DTO 的 JSON 串；null/空串表示该调用无业务参数（如 PING），不参与签名
@@ -66,7 +67,7 @@ public final class BpmOpenApiSigner {
         params.put("sig_method", SIG_METHOD);
         params.put("format", FORMAT_JSON);
         if (bodyJson != null && !bodyJson.isEmpty()) {
-            params.put(PARAM_BODY, bodyJson);
+            params.put(PARAM_PAYLOAD, bodyJson);
         }
         params.put("sig", sign(params, secret));
         return params;

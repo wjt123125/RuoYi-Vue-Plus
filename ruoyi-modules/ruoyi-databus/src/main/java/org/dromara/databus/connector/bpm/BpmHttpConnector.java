@@ -297,7 +297,8 @@ public class BpmHttpConnector implements Connector {
         try {
             responseText = restClient.post()
                     .uri(url)
-                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .contentType(MediaType.parseMediaType(
+                            "application/x-www-form-urlencoded;charset=UTF-8"))
                     .body(BpmOpenApiSigner.toFormUrlEncoded(form))
                     .retrieve()
                     .body(String.class);

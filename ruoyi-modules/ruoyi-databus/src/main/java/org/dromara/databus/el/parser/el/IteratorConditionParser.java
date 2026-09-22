@@ -51,14 +51,20 @@ public class IteratorConditionParser extends AbstractLoopExpressParser {
         return elIteratorMethod;
     }
 
-    /** 第 2 步：填迭代器节点 id（第一个 {}） */
+    /**
+     * 第 2 步：填迭代器节点（第一个 {}）。
+     * 迭代器是 NodeIteratorComponent 类型的普通节点，必须带 tag（实例唯一/数据空间）
+     * 与 data（source/indexVar 参数），故走 appendNodeIdTagData 而非裸 id。
+     */
     @Override
     public String generateCondition(CmpProperty jsonEl, String elExpress) {
         if (Objects.isNull(jsonEl.getCondition())) {
             return elExpress;
         }
         CmpProperty condition = jsonEl.getCondition();
-        return StrUtil.replaceFirst(elExpress, "{}", condition.getId());
+        String nodeComponentId = appendNodeIdTagData(condition, "");
+        // ITERATOR({}).DO({}) -> ITERATOR(iteratorLoop.tag("iteratorLoop1").data("{...}")).DO({})
+        return StrUtil.replaceFirst(elExpress, "{}", nodeComponentId);
     }
 
     /** 第 3 步：填 DO 内容（第二个 {}），排除 BREAK 后递归生成 */

@@ -2,6 +2,7 @@ package org.dromara.databus;
 
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.ELInfo;
+import org.dromara.databus.el.bean.Properties;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import com.yomahub.liteflow.common.ChainConstant;
 import org.junit.jupiter.api.Tag;
@@ -138,6 +139,49 @@ class ExpressGeneratorTest {
 
         assertNotNull(elInfo);
         assertEquals("ITERATOR(iteratorCmp).DO(THEN(hello,delay)).BREAK(breakCmp);",
+            elInfo.getElStr());
+    }
+
+    /**
+     * 构造 FOR(forCmp).DO(hello) 对应的画布 JSON——循环体是<b>单个普通节点</b>
+     * （id 非空），而不是 THEN(...) 子表达式；计数器节点与循环体节点均带 tag/data，
+     * 对齐画布里「FOR 计数循环内直接放 setValue」的真实结构。
+     * <p>
+     * 回归点：早期 generateDoEL 无条件走 abstractGenerateEL，普通节点类型
+     * （NodeComponent）在 ParserSelector 中没有关键字解析器，直接抛 RuntimeException。
+     */
+    private CmpProperty buildForDoSingleNode() {
+        CmpProperty forNode = CmpProperty.builder()
+            .id("forCmp")
+            .type("NodeForComponent")
+            .properties(Properties.builder()
+                .tag("forLoop1")
+                .data("{\"count\":3}")
+                .build())
+            .build();
+        CmpProperty doNode = CmpProperty.builder()
+            .id("hello")
+            .type("NodeComponent")
+            .properties(Properties.builder()
+                .tag("setValue1")
+                .data("{\"path\":\"$.forLoop1.cursor\",\"value\":\"$i\"}")
+                .build())
+            .build();
+        return CmpProperty.builder()
+            .type("FOR")
+            .condition(forNode)
+            .children(new ArrayList<>(Arrays.asList(doNode)))
+            .build();
+    }
+
+    @Test
+    void generateEL_forWithSingleNodeBody_shouldProduceExpectedExpression() {
+        ELInfo elInfo = expressGenerator.generateEL(buildForDoSingleNode());
+
+        assertNotNull(elInfo);
+        assertEquals(
+            "FOR(forCmp.tag(\"forLoop1\").data(\"{\\\"count\\\":3}\")).DO("
+                + "hello.tag(\"setValue1\").data(\"{\\\"path\\\":\\\"$.forLoop1.cursor\\\",\\\"value\\\":\\\"$i\\\"}\"));",
             elInfo.getElStr());
     }
 

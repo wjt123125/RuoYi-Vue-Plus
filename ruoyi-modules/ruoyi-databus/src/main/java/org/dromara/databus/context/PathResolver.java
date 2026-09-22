@@ -14,7 +14,8 @@ import java.util.regex.Pattern;
  * <ul>
  *     <li>纯路径读写直接走 jayway 原生 {@link DocumentContext#read(String)}/{@code set}，本类只做类型判断</li>
  *     <li>保留「混合路径解析」能力：字符串模板中嵌入 {@code ${$.path}} 做替换，这是数据总线参数绑定的特有需求，LiteFlow {@code getContextValue} 不支持</li>
- *     <li>动态变量 {@code [$i]} 暂不在此处展开，由数据映射组件（原 AbstractFieldProcessor）按需延迟解析</li>
+ *     <li>循环索引占位符 {@code $i} 不在本类处理：由 {@link DatabusContext}
+ *     按当前线程已注册的循环变量做注册制替换（见 substituteLoopVars）</li>
  * </ul>
  *
  * @author databus
@@ -34,9 +35,6 @@ public final class PathResolver {
      */
     private static final Pattern PATH_FRAGMENT_PATTERN =
         Pattern.compile("\\$\\{(\\$\\.[\\w.$\\[\\]]+)\\}|(\\$\\.[\\w.$\\[\\]]+)");
-
-    /** 匹配动态变量，如 {@code $index}、{@code $i}（非 JSONPath，属于循环索引占位）。 */
-    private static final Pattern DYNAMIC_VAR_PATTERN = Pattern.compile("\\$[a-zA-Z_]\\w*");
 
     private PathResolver() {
     }
@@ -69,16 +67,6 @@ public final class PathResolver {
             return false;
         }
         return !isPureJsonPath(str) && containsPathExpression(str);
-    }
-
-    /**
-     * 判断是否包含动态变量（如 {@code $index}、{@code $i}），含动态变量的参数需延迟解析。
-     */
-    public static boolean containsDynamicVariable(Object input) {
-        if (!(input instanceof String str)) {
-            return false;
-        }
-        return DYNAMIC_VAR_PATTERN.matcher(str).find();
     }
 
     /**

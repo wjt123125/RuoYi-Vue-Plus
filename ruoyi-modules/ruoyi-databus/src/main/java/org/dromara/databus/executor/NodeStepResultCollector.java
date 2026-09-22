@@ -7,6 +7,7 @@ import com.yomahub.liteflow.flow.entity.CmpStep;
 import com.yomahub.liteflow.lifecycle.PostProcessNodeExecuteLifeCycle;
 import com.yomahub.liteflow.slot.Slot;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.databus.component.flow.LoopSupport;
 import org.dromara.databus.context.DatabusContext;
 import org.springframework.stereotype.Component;
 
@@ -40,7 +41,16 @@ public class NodeStepResultCollector implements PostProcessNodeExecuteLifeCycle 
 
     @Override
     public void postProcessBeforeNodeExecute(NodeComponent cmp) {
-        // 不需要前置处理
+        try {
+            DatabusContext context = resolveDatabusContext(cmp.getSlot());
+            if (context != null) {
+                // 按当前节点探测到的循环深度对账 $i/$j/$k 索引表（进层/出层/逐轮刷新）
+                LoopSupport.syncBeforeNode(cmp, context);
+            }
+        } catch (Exception ex) {
+            // 观测/索引逻辑任何异常都只记录，绝不影响业务执行
+            log.error("[databus] 循环索引同步失败 nodeId={}", cmp.getNodeId(), ex);
+        }
     }
 
     @Override

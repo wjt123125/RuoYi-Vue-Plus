@@ -81,38 +81,102 @@ public class SwitchConditionParser extends AbstractExpressParser {
         return children;
     }
 
+    /**
+     * EL→JSON：在公共外壳基础上，把各分支表达式的 tag 收集成 properties.outletLabels，
+     * 即画布上的 case 名列表（与 children 下标一一对应；无 tag 的分支为 null）。
+     * JSON→EL 时再由 outletLabels 反向挂回分支表达式，保证往返一致。
+     */
+    @Override
+    public CmpProperty builderVO(Condition condition) {
+        CmpProperty vo = super.builderVO(condition);
+        SwitchCondition switchCondition = (SwitchCondition) condition;
+        List<String> outletLabels = switchCondition.getTargetList().stream()
+            .map(Executable::getTag)
+            .toList();
+        if (outletLabels.stream().anyMatch(StringUtils::isNotBlank)) {
+            Properties properties = Optional.ofNullable(vo.getProperties()).orElseGet(Properties::new);
+            properties.setOutletLabels(outletLabels);
+            vo.setProperties(properties);
+        }
+        return vo;
+    }
+
     /** 第 1 步：SWITCH 模板（两个占位符：选择器 + to 列表） */
     @Override
     public String generateELMethod(CmpProperty jsonEl) {
         return elSwitchMethod;
     }
 
-    /** 第 2 步：填选择器（第一个 {}），直接用选择器节点的 id */
+    /**
+     * 第 2 步：填选择器（第一个 {}）。
+     * 选择器是 NodeSwitchComponent 类型的普通节点，必须带 tag（实例唯一/数据空间）
+     * 与 data（source/cases 参数），故走 appendNodeIdTagData 而非裸 id。
+     */
     @Override
     public String generateCondition(CmpProperty jsonEl, String elExpress) {
         if (Objects.isNull(jsonEl.getCondition())) {
             return elExpress;
         }
         CmpProperty condition = jsonEl.getCondition();
-        return StrUtil.replaceFirst(elExpress, "{}", condition.getId());
+        String nodeComponentId = appendNodeIdTagData(condition, "");
+        // SWITCH({}).to({}) -> SWITCH(switchRoute.tag("switchRoute1").data("{...}")).to({})
+        return StrUtil.replaceFirst(elExpress, "{}", nodeComponentId);
     }
 
-    /** 第 3 步：填 to 分支列表（第二个 {}），"逐项拼 + 掐尾逗号"节奏 */
+    /**
+     * 第 3 步：填 to 分支列表（第二个 {}），逐项生成并按 outletLabels[i]
+     * 给每个分支挂 {@code .tag("case名")}，供 switchRoute 返回 {@code ":case名"} 命中。
+     * <ul>
+     *     <li>单节点分支：先包一层 THEN 再挂 tag，避免 tag 落到节点自身（那是它的数据空间名）；</li>
+     *     <li>子表达式分支：tag 直接挂表达式末尾；若该表达式已自带同名 tag
+     *     （EL→JSON→EL 往返：tag 已落在子表达式 properties 上），不重复挂。</li>
+     * </ul>
+     */
     @Override
     public String generateCmp(CmpProperty jsonEl, String elExpress) {
-        if (CollectionUtil.isNotEmpty(jsonEl.getChildren())) {
-            String nodeComponentId = "";
-            for (CmpProperty child : jsonEl.getChildren()) {
-                nodeComponentId = generateNodeComponent(child, nodeComponentId);
-                // 这里会多拼接一个逗号
-                nodeComponentId = StrUtil.appendIfMissing(nodeComponentId, elSeparate);
-            }
-            // 去除多的逗号
-            nodeComponentId = StringUtils.substringBeforeLast(nodeComponentId, elSeparate);
-            // 填充EL组件, SWITCH(a).to({}) -> SWITCH(a).to(b, c)
-            elExpress = StrUtil.format(elExpress, nodeComponentId);
+        if (CollectionUtil.isEmpty(jsonEl.getChildren())) {
+            return elExpress;
         }
-        return elExpress;
+        List<String> outletLabels = Optional.ofNullable(jsonEl.getProperties())
+            .map(Properties::getOutletLabels)
+            .orElse(null);
+        String nodeComponentId = "";
+        List<CmpProperty> children = jsonEl.getChildren();
+        for (int i = 0; i < children.size(); i++) {
+            String fragment = generateNodeComponent(children.get(i), "");
+            fragment = appendOutletTag(children.get(i), fragment, outletLabels, i);
+            nodeComponentId = StringUtils.appendIfMissing(nodeComponentId, fragment);
+            // 这里会多拼接一个逗号
+            nodeComponentId = StrUtil.appendIfMissing(nodeComponentId, elSeparate);
+        }
+        // 去除多的逗号
+        nodeComponentId = StringUtils.substringBeforeLast(nodeComponentId, elSeparate);
+        // 填充EL组件, SWITCH(a).to({}) -> SWITCH(a).to(THEN(b).tag("x"), c)
+        return StrUtil.format(elExpress, nodeComponentId);
+    }
+
+    /**
+     * 给单个 SWITCH 分支片段挂 outlet tag（case 名），规则见 {@link #generateCmp}。
+     */
+    private String appendOutletTag(CmpProperty child, String fragment, List<String> outletLabels, int index) {
+        if (outletLabels == null || index >= outletLabels.size()) {
+            return fragment;
+        }
+        String label = outletLabels.get(index);
+        if (StringUtils.isBlank(label)) {
+            return fragment;
+        }
+        String tagFragment = StrUtil.format(elNodeTag, label);
+        if (child.getId() != null) {
+            // 单节点：THEN(a.tag("a1")) 外包一层，case tag 挂在 THEN 表达式上
+            return StringUtils.appendIfMissing(StrUtil.format(elThenMethod, fragment), tagFragment);
+        }
+        // 子表达式已自带 tag（EL 往返场景）时不重复挂
+        String existingTag = child.getProperties() == null ? null : child.getProperties().getTag();
+        if (StringUtils.isBlank(existingTag)) {
+            return StringUtils.appendIfMissing(fragment, tagFragment);
+        }
+        return fragment;
     }
 
     /** 第 4 步：拼表达式级 id/tag/data */

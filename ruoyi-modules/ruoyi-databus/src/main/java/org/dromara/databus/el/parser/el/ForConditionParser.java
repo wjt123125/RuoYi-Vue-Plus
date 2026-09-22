@@ -57,14 +57,20 @@ public class ForConditionParser extends AbstractLoopExpressParser {
         return elForMethod;
     }
 
-    /** 第 2 步：填计数器节点 id（第一个 {}） */
+    /**
+     * 第 2 步：填计数器节点（第一个 {}）。
+     * 计数器是 NodeForComponent 类型的普通节点，同样必须带 tag（实例唯一/数据空间）
+     * 与 data（count/indexVar 参数），故走 appendNodeIdTagData 而非裸 id。
+     */
     @Override
     public String generateCondition(CmpProperty jsonEl, String elExpress) {
         if (Objects.isNull(jsonEl.getCondition())) {
             return elExpress;
         }
         CmpProperty condition = jsonEl.getCondition();
-        return StrUtil.replaceFirst(elExpress, "{}", condition.getId());
+        String nodeComponentId = appendNodeIdTagData(condition, "");
+        // FOR({}).DO({}) -> FOR(forLoop.tag("forLoop1").data("{...}")).DO({})
+        return StrUtil.replaceFirst(elExpress, "{}", nodeComponentId);
     }
 
     /** 第 3 步：填 DO 内容（第二个 {}）——递归生成循环体表达式 */

@@ -7,7 +7,6 @@ import org.dromara.databus.el.bean.Properties;
 import org.dromara.databus.el.enums.ExpressParserEnum;
 import org.dromara.databus.el.parser.selector.ParserSelector;
 import com.yomahub.liteflow.enums.ConditionTypeEnum;
-import com.yomahub.liteflow.enums.NodeTypeEnum;
 import com.yomahub.liteflow.flow.element.*;
 import org.apache.commons.lang3.StringUtils;
 
@@ -158,8 +157,8 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (null == propertyId && null == tag) {
             return null;
         }
-        // title 为纯编辑态字段，EL 反向解析不产出，恒为 null
-        return new Properties(propertyId, tag, null, null);
+        // title / outletLabels 为纯编辑态字段，EL 反向解析不产出，恒为 null
+        return new Properties(propertyId, tag, null, null, null);
     }
 
     /**
@@ -173,8 +172,8 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (null == propertyId && null == tag && null == data) {
             return null;
         }
-        // title 为纯编辑态字段，EL 反向解析不产出，恒为 null
-        return new Properties(propertyId, tag, data, null);
+        // title / outletLabels 为纯编辑态字段，EL 反向解析不产出，恒为 null
+        return new Properties(propertyId, tag, data, null, null);
     }
 
     /**
@@ -301,36 +300,24 @@ public abstract class AbstractExpressParser implements ExpressParser {
      *   <li><b>id == null → 子表达式</b>（THEN/IF/AND...）：
      *       递归调用 {@link #abstractGenerateEL} 生成整段表达式，
      *       例如 THEN(b,c)、AND(x,y)；</li>
-     *   <li><b>id != null → 普通节点</b>：
- *       <ul>
- *         <li>普通节点（type=NodeComponent）：拼 {@code a.tag("x").data("y")}，
- *             tag/data 为 null 时自动跳过；</li>
- *         <li>布尔节点（type=NodeBooleanComponent）：同样拼 id/tag/data
- *             （出现在 IF/WHILE 条件位，布尔组件也需要数据空间与参数，
- *             如 {@code condition.tag("condition1").data("{...}")}）。</li>
- *       </ul></li>
+     *   <li><b>id != null → 节点</b>：无论何种 LiteFlow 节点类型
+     *       （NodeComponent 普通节点 / NodeBooleanComponent 布尔节点 /
+     *       NodeForComponent 计数循环 / NodeIteratorComponent 迭代循环 /
+     *       NodeSwitchComponent 选择路由），统一拼 {@code id.tag("x").data("y")}，
+     *       tag/data 为 null 时自动跳过。控制类节点同样依赖 tag 保证画布实例唯一、
+     *       依赖 data 携带组件参数（count/source/cases 等）。</li>
      * </ul>
      *
      * @param jsonEl          待渲染单元
      * @param nodeComponentId 已累积的片段（在本片段尾部继续拼接后返回）
      */
     protected String generateNodeComponent(CmpProperty jsonEl, String nodeComponentId) {
-        String id = jsonEl.getId();
-        if (null == id) {
+        if (null == jsonEl.getId()) {
             // 说明是一个 condition
-            nodeComponentId = nodeComponentId + abstractGenerateEL(jsonEl);
-        } else {
-            // 普通节点处理
-            if (StringUtils.equals(NodeTypeEnum.COMMON.getMappingClazz().getSimpleName(), jsonEl.getType())) {
-                // 节点组件标签处理 a.tag("dog").data("{...}")
-                nodeComponentId = appendNodeIdTagData(jsonEl, nodeComponentId);
-            }
-            // 条件节点处理：布尔组件同样允许 tag（数据空间）与 data（path/op/value 参数）
-            else if (StringUtils.equals(NodeTypeEnum.BOOLEAN.getMappingClazz().getSimpleName(), jsonEl.getType())) {
-                nodeComponentId = appendNodeIdTagData(jsonEl, nodeComponentId);
-            }
+            return nodeComponentId + abstractGenerateEL(jsonEl);
         }
-        return nodeComponentId;
+        // 节点（普通/布尔/循环控制/选择路由）统一拼 id.tag("x").data("y")
+        return appendNodeIdTagData(jsonEl, nodeComponentId);
     }
 
     /**

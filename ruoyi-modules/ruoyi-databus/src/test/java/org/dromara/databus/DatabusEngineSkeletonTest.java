@@ -40,7 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
     classes = DatabusSmokeTestApplication.class,
     properties = {
         "liteflow.enable=true",
-        "liteflow.rule-source=classpath:liteflow/*.el.xml"
+        "liteflow.rule-source=classpath:liteflow/*.el.xml",
+        // rule-db-sql 已进 classpath（生产走 Rule-DB），测试继续用本地规则文件需显式关掉 rule-db（官方逃生开关，二者互斥）
+        "liteflow.rule-db.enabled=false"
     }
 )
 public class DatabusEngineSkeletonTest {

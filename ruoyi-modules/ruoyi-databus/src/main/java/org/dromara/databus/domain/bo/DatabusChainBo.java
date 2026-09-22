@@ -60,6 +60,13 @@ public class DatabusChainBo implements Serializable {
     private CmpProperty cmpProperty;
 
     /**
+     * 执行记录档位（OFF/BASIC/FULL，默认 BASIC）
+     * <p>
+     * 草稿阶段可配置；发布后下线再重新发布时仍可调整。
+     */
+    private String logLevel;
+
+    /**
      * 备注
      */
     private String remark;

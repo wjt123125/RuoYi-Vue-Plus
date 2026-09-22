@@ -249,8 +249,6 @@ warm-flow:
 liteflow:
   # 跟随工作流模块开关，避免禁用工作流时仍加载任务办理链
   enable: ${warm-flow.enabled:true}
-  # 工作流模块用于编排任务办理链路
-  rule-source: classpath:liteflow/*.el.xml
   # 开启虚拟线程
   enable-virtual-thread: true
   # 2.16.1+ 起 liteflow-metrics 随 starter 引入且默认开启：会采集链路/节点计时指标，
@@ -259,6 +257,16 @@ liteflow:
   # 将来接入 Prometheus 时改 true，并同步收紧 management 暴露面。
   metrics:
     enabled: false
+  # Rule-DB 统一规则数据库（与 rule-source 互斥，故原 classpath:liteflow/*.el.xml 已移除，
+  # 工作流 4 条静态链改由 WorkflowChainInitializer 在启动时用 LiteFlowChainELBuilder 建链）。
+  # 数据总线链路发布时经 RulePublisher 推 EL 到 lf_chain，作为执行期权威源：
+  # 框架接管多节点一致性（3s 轮询 + 60s 对账）、last-good 兜底、重启零感知。
+  rule-db:
+    # 多应用共库隔离维度，必须与发布侧 RulePublishService 的 applicationName 完全一致
+    application-name: ${spring.application.name}
+    sql:
+      # 留空自动复用容器 DataSource bean（连接池化）；lf_* 四表启动时自动建（首次部署）
+      auto-init-table: true
 
 --- # mqtt 配置
 # 具体配置还需查看文档

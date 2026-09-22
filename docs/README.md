@@ -18,7 +18,9 @@ docs/
     ├── liteflow-el-normalize-bug.md       # LiteFlow execute2RespWithEL 篡改字符串字面量缺陷（issue 草稿+项目绕行）
     ├── databus-file-component.md          # 附件两件：FILE_UPLOAD/FILE_DOWNLOAD 端点与组件规格（base64/本地摘要校验）
     ├── databus-script-component.md          # 脚本组件：script/booleanScript 两物料、SPI 引擎热插拔、一期 Groovy
-    └── databus-bpm-endpoint-auth.md         # BPM 端点鉴权：平台 openapi/session 实证 + HMAC 方案（待拍板）
+    ├── databus-loop-component.md            # 循环/路由组件：forLoop/iteratorLoop/switchRoute 规格、$i 索引栈、SWITCH tag
+    ├── databus-bpm-endpoint-auth.md         # BPM 端点鉴权：官方文档实证 openapi 网关，推荐 B 主线（C 兜底），待两项实测
+    └── databus-formula-engine-research.md   # 公式引擎调研：结论不建独立引擎，三层模型 + QLExpress4 内联表达式储备方案
 ```
 
 ## 写新文档时请遵循
@@ -41,5 +43,7 @@ docs/
 | [wiki/liteflow-el-normalize-bug.md](wiki/liteflow-el-normalize-bug.md) | LiteFlow execute2RespWithEL 经 ElRegexUtil.normalize 篡改 data/tag 字符串字面量（删空格、单引号转双引号）：根因、复现、修复建议与项目绕行方案 | LiteFlow 2.16.x 第三方缺陷（issue 草稿） | 2026-09-19 |
 | [wiki/databus-preview-step-result.md](wiki/databus-preview-step-result.md) | 试运行步骤结果展示：组件人话摘要进表格、名下 JSON 快照进抽屉明细；2.16.1 全局节点监听器采集、NodeStep VO 扩展、前端末列改造与升级注意 | ruoyi-databus + plus-ui `views/databus/editor` | 2026-09-19 |
 | [wiki/databus-file-component.md](wiki/databus-file-component.md) | 附件两件：FILE_UPLOAD/FILE_DOWNLOAD 端点与组件契约（base64 形态、逐文件本地摘要校验、旧 processor 反向命名映射） | BPM 端总线 app + ruoyi-databus + plus-ui | 2026-09-20 |
-| [wiki/databus-script-component.md](wiki/databus-script-component.md) | 脚本组件：script/booleanScript 两物料、SPI 引擎探测热插拔、LiteFlowNodeBuilder 动态注册、一期 Groovy 与安全边界 | ruoyi-databus + plus-ui | 2026-09-20 |
-| [wiki/databus-bpm-endpoint-auth.md](wiki/databus-bpm-endpoint-auth.md) | BPM 12 端点鉴权：裸奔现状与 IP 白名单绕过、平台 sid/OpenAPI(access_key+HmacMD5) 能力实证、B/C/D 方案对比与推荐（待拍板） | BPM 端总线 app + ruoyi-databus + plus-ui | 2026-09-20 |
+| [wiki/databus-script-component.md](wiki/databus-script-component.md) | 脚本组件：script/booleanScript 两物料、SPI 引擎探测热插拔、LiteFlowNodeBuilder 动态注册、一期 Groovy 与安全边界 | ruoyi-databus + plus-ui `views/databus/editor` | 2026-09-20 |
+| [wiki/databus-loop-component.md](wiki/databus-loop-component.md) | 循环/路由组件：forLoop/iteratorLoop/switchRoute 三物料契约、$i/$j/$k ThreadLocal 索引栈、EL 条件位 tag/data 修复与 SWITCH 分支 tag、前端护栏与小表单、BREAK/DEFAULT/parallel 推后清单 | ruoyi-databus + plus-ui `views/databus/editor` | 2026-09-20 |
+| [wiki/databus-bpm-endpoint-auth.md](wiki/databus-bpm-endpoint-auth.md) | BPM 12 端点鉴权：裸奔现状与 IP 白名单绕过、官方文档实证 /portal/openapi 签名网关（5 分钟窗、自定义 cmd 一等公民）、推荐 B 主线 C 兜底（待网关实测） | BPM 端总线 app + ruoyi-databus + plus-ui | 2026-09-20 |
+| [wiki/databus-formula-engine-research.md](wiki/databus-formula-engine-research.md) | 公式引擎调研：旧 5 公式归宿、业界三层模型（结构化/内联表达式/脚本）、JVM 引擎横评、QLExpress4 已随 LiteFlow 在 classpath；结论当前不建引擎，给触发信号与储备设计 | ruoyi-databus（调研，无代码改动） | 2026-09-20 |

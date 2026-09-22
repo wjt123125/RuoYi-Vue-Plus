@@ -3,18 +3,25 @@
 > 阶段 1E 并行讨论产出（2026-09-20 拍板，代码未启动）。画布新增 2 个脚本物料，
 > 承接长尾、一次性、不规则的值转换；语言引擎走 SPI 热插拔，一期只装 Groovy。
 
-## 1. 定位：双层能力模型
+## 1. 定位：三层能力模型
 
-平台能力分两层，不全做成 Java 组件、也不全脚本化：
+> 2026-09-20 公式引擎调研后由「双层」升级为「三层」（决策档：[databus-formula-engine-research.md](databus-formula-engine-research.md)）。
+> 平台能力分三层，不全做成 Java 组件、也不全脚本化：
 
-| 层 | 适用 | 参照 |
-| --- | --- | --- |
-| Java 原子组件 | 高频、稳定、需要明确参数契约的能力（fileUpload、rdsExecute 等） | LiteFlow 官方：固定逻辑用 Java 组件 |
-| 脚本节点 | 长尾、一次性、不规则的值转换 | n8n Code 节点、Zapier Code by Zapier |
+| 层 | 适用 | 现状 | 参照 |
+| --- | --- | --- | --- |
+| Java 原子组件 | 高频、稳定、需要明确参数契约的能力（fileUpload、rdsExecute 等） | 已建成，condition 含 10 个结构化操作符 | LiteFlow 官方：固定逻辑用 Java 组件 |
+| 参数槽内联表达式 | 一行算术/三元/字符串函数/复合条件（如 `= $.amount * 0.8`） | **缺口，当前不实施**；储备方案 QLExpress4（已随 liteflow-core 在 classpath）`=` 前缀，触发信号与设计见调研档 §6 | n8n 表达式、Node-RED JSONata、Camunda JUEL |
+| 脚本节点 | 长尾、一次性、不规则的值转换、多行逻辑 | 本期落地（Groovy） | n8n Code 节点、Zapier Code by Zapier |
+
+中间层未实施前，"一行计算也要拖脚本节点"是有意接受的摩擦：表达式语法一旦发布即对外契约，
+等真实需求样本（旧 meta 公式频度摸底 / 用户配置摩擦实证）出现再补，晚定比早定便宜。
 
 拍板背景：旧系统 `BOUtil` 的纯本地 convert 中还有 3 个在新系统无对应——JSON 对象转字符串
 （convertJsonObjectToJsonString）、时间戳转日期、日期串按格式转日期。**这 3 个不出组件**，
 由脚本节点承接；旧 fieldConfig 迁移时，冷门 convert 直接翻译成脚本节点而非永久转换器。
+旧系统 `@公式` 不做 1:1 迁移（其执行器是 BPM 平台 RuleAPI，不是项目资产），5 个自定义公式的
+逐个归宿见调研档 §2。
 
 ## 2. 物料（一期 2 个）
 

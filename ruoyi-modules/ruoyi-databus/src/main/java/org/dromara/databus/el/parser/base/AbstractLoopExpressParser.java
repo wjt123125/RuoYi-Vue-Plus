@@ -143,11 +143,24 @@ public abstract class AbstractLoopExpressParser extends AbstractExpressParser {
     }
 
     /**
-     * 生成 DO({}) 内部的表达式：直接递归回"模板法五步曲"
-     * （DO 内容可能是个普通节点，也可能是一整段 THEN(...) 子表达式）。
+     * 生成 DO({}) 内部的表达式。
+     * <p>
+     * DO 内容有两种形态，必须走 {@link #generateNodeComponent} 枢纽分派，
+     * 不能直接 {@link #abstractGenerateEL}：
+     * <ul>
+     *   <li>普通节点（{@code id != null}，如 {@code FOR(x).DO(a.tag("a1").data(...))}）：
+     *       拼 {@code id.tag.data} 片段；节点类型（NodeComponent 等）在
+     *       ParserSelector 中没有也不应有关键字解析器，直接递归五步曲会因
+     *       找不到解析器抛 RuntimeException；</li>
+     *   <li>子表达式（{@code id == null}，如 {@code FOR(x).DO(THEN(b,c))}）：
+     *       枢纽内部会自行递归"模板法五步曲"。</li>
+     * </ul>
      */
     protected String generateDoEL(CmpProperty doExpressVO) {
-        return abstractGenerateEL(doExpressVO);
+        if (doExpressVO == null) {
+            return "";
+        }
+        return generateNodeComponent(doExpressVO, "");
     }
 
     /**

@@ -64,16 +64,21 @@ public class DatabusExecutor {
         DatabusContext context = DatabusContext.fromObject(requestData);
         injectConnections(context);
 
-        LiteflowResponse response = flowExecutor.execute2Resp(chainId, requestData, context);
+        try {
+            LiteflowResponse response = flowExecutor.execute2Resp(chainId, requestData, context);
 
-        Date endTime = new Date();
-        long costTime = endTime.getTime() - startTime.getTime();
+            Date endTime = new Date();
+            long costTime = endTime.getTime() - startTime.getTime();
 
-        // 已发布链路路径此刻不持有画布树（标题随 cmpProperty 落库，monitor 阶段再解析补全）
-        DatabusExecutionResult result = buildResult(executionId, chainId, startTime, endTime, costTime,
-            response, context, Collections.emptyMap());
-        logExecution(result);
-        return result;
+            // 已发布链路路径此刻不持有画布树（标题随 cmpProperty 落库，monitor 阶段再解析补全）
+            DatabusExecutionResult result = buildResult(executionId, chainId, startTime, endTime, costTime,
+                response, context, Collections.emptyMap());
+            logExecution(result);
+            return result;
+        } finally {
+            // 循环索引 ThreadLocal 是节点级临时状态，执行结束（含异常路径）即清，防工作线程复用串台
+            context.clearLoopState();
+        }
     }
 
     /**
@@ -108,23 +113,28 @@ public class DatabusExecutor {
         DatabusContext context = DatabusContext.fromObject(requestData);
         injectConnections(context);
 
-        // 每次试运行使用独立 chainId，避免 FlowBus 中同名 chain 被反复重编译
-        String runtimeChainId = PREVIEW_CHAIN_ID + "-" + executionId;
-        LiteFlowChainELBuilder.createChain()
-            .setChainId(runtimeChainId)
-            .setEL(elStr)
-            .build();
-        LiteflowResponse response = flowExecutor.execute2Resp(runtimeChainId, requestData, context);
+        try {
+            // 每次试运行使用独立 chainId，避免 FlowBus 中同名 chain 被反复重编译
+            String runtimeChainId = PREVIEW_CHAIN_ID + "-" + executionId;
+            LiteFlowChainELBuilder.createChain()
+                .setChainId(runtimeChainId)
+                .setEL(elStr)
+                .build();
+            LiteflowResponse response = flowExecutor.execute2Resp(runtimeChainId, requestData, context);
 
-        Date endTime = new Date();
-        long costTime = endTime.getTime() - startTime.getTime();
+            Date endTime = new Date();
+            long costTime = endTime.getTime() - startTime.getTime();
 
-        // 从画布树收集 tag → title（tag 实例唯一，nodeId 可重复），随步骤结果透传给前端
-        Map<String, String> titleByTag = collectTitleByTag(jsonEl);
-        DatabusExecutionResult result = buildResult(executionId, PREVIEW_CHAIN_ID, startTime, endTime, costTime,
-            response, context, titleByTag);
-        logExecution(result);
-        return result;
+            // 从画布树收集 tag → title（tag 实例唯一，nodeId 可重复），随步骤结果透传给前端
+            Map<String, String> titleByTag = collectTitleByTag(jsonEl);
+            DatabusExecutionResult result = buildResult(executionId, PREVIEW_CHAIN_ID, startTime, endTime, costTime,
+                response, context, titleByTag);
+            logExecution(result);
+            return result;
+        } finally {
+            // 循环索引 ThreadLocal 是节点级临时状态，执行结束（含异常路径）即清，防工作线程复用串台
+            context.clearLoopState();
+        }
     }
 
     /**

@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 附加属性（挂在表达式或节点上的 id / tag / data，以及仅前端编辑态使用的 title）。
  * <p>
@@ -51,4 +53,13 @@ public class Properties {
      * 执行结果的 {@code NodeStep.title}。
      */
     private String title;
+
+    /**
+     * 算子出口 label（数据总线扩展，纯编辑态字段，按 branchIndex 存稀疏数组）。
+     * <p>
+     * 目前服务 SWITCH：outletLabels[i] 即第 i 个 case 分支名，生成 EL 时挂为该分支
+     * 表达式的 {@code .tag("case名")}，供 switchRoute 组件返回 {@code ":case名"}
+     * 按 tag 命中分支。不参与表达式语义的其他部分，仅随画布 JSON 往返。
+     */
+    private List<String> outletLabels;
 }

@@ -55,4 +55,25 @@ public interface IDatabusChainService {
      */
     Boolean deleteByIds(Collection<Long> ids);
 
+    /**
+     * 发布链路：status 0草稿/2已下线 → 1已发布 + version+1
+     * <p>
+     * 草稿与发布共用一份 el_expression + canvas_data，发布即固化当前编排为运行版本。
+     * 重新发布（已下线 → 已发布）也走本方法，version 继续递增。
+     *
+     * @param id 链路主键
+     * @return 是否发布成功
+     */
+    Boolean publish(Long id);
+
+    /**
+     * 下线链路：status 1已发布 → 2已下线
+     * <p>
+     * 下线后定义保留（不物理删除），可重新发布。下线状态不可执行。
+     *
+     * @param id 链路主键
+     * @return 是否下线成功
+     */
+    Boolean offline(Long id);
+
 }

@@ -18,25 +18,31 @@ import org.dromara.databus.el.bean.Properties;
 import org.dromara.databus.service.ISysDatabusConnectionService;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
 
 /**
- * 数据总线执行器。
+ * 数据总线执行器，链路执行的统一入口。
  * <p>
- * 作为链路执行的统一入口，封装 LiteFlow {@link FlowExecutor} 调用，负责：
- * <ul>
- *     <li>生成 executionId</li>
- *     <li>从请求数据初始化 {@link DatabusContext}</li>
- *     <li>调用 LiteFlow 执行链路</li>
- *     <li>组装 {@link DatabusExecutionResult}（含节点步骤与上下文快照）</li>
- *     <li>记录执行日志（数据库持久化留待 monitor 阶段）</li>
- * </ul>
+ * 理解本类的钥匙：系统里有<b>两条互不相干的执行路径</b>——
+ * <ol>
+ *     <li><b>正式执行</b>（{@link #execute}）：链路已发布，EL 存在 Rule-DB 的 lf_chain 表、
+ *     脚本节点由 lf_script 表懒加载。本方法只按 chainId 调 {@code execute2Resp}，不建链、
+ *     不注册节点；</li>
+ *     <li><b>编辑器试运行</b>（{@link #executeByEl}）：画布草稿链，不落库、不经过 Rule-DB。
+ *     每次用随机 chainId 把前端传来的 EL 原文动态建链即执即弃；脚本节点先由
+ *     {@link #registerScriptNodes} 临时注册进 FlowBus。</li>
+ * </ol>
+ * 两条路径共用的收尾：生成 executionId、初始化 {@link DatabusContext}、注入连接配置、
+ * 把 LiteFlow 响应组装成 {@link DatabusExecutionResult}（每步状态/耗时/观测载荷）并打日志。
+ * 执行记录的数据库持久化留待 monitor 阶段。
  *
  * @author databus
  */
@@ -58,6 +64,9 @@ public class DatabusExecutor {
      */
     public DatabusExecutionResult execute(String chainId, Object requestData) {
         String executionId = generateExecutionId();
+        // 计时口径：起点放在 execute2Resp 之前，costTime 是数据总线端到端耗时
+        // （含上下文初始化 + 连接查库注入），不是纯 LiteFlow 引擎耗时——
+        // LiteflowResponse/Slot 不提供链路级总耗时，节点级耗时则直接取各 CmpStep
         Date startTime = new Date();
         log.info("[databus] 开始执行链路 chainId={}, executionId={}", chainId, executionId);
 
@@ -103,6 +112,9 @@ public class DatabusExecutor {
      */
     public DatabusExecutionResult executeByEl(String elStr, Object requestData, CmpProperty jsonEl) {
         String executionId = generateExecutionId();
+        // 计时口径：起点放在 execute2Resp 之前，costTime 是数据总线端到端耗时
+        // （含上下文初始化 + 连接查库注入），不是纯 LiteFlow 引擎耗时——
+        // LiteflowResponse/Slot 不提供链路级总耗时，节点级耗时则直接取各 CmpStep
         Date startTime = new Date();
         log.info("[databus] 开始试运行(EL 直执) executionId={}", executionId);
 
@@ -138,91 +150,134 @@ public class DatabusExecutor {
     }
 
     /**
-     * 递归遍历画布组件树，把脚本节点（script 普通脚本 / booleanScript 条件脚本）注册到 FlowBus。
+     * 把画布树里的脚本节点（script 普通脚本 / booleanScript 条件脚本）注册到 FlowBus。
      * <p>
-     * 脚本节点不是 Spring bean（无 {@code @LiteflowComponent}），不能像 Java 组件那样靠启动扫描注册；
-     * 必须在 EL 编译/执行前用 {@link LiteFlowNodeBuilder} 动态注册。
+     * <b>仅服务试运行</b>（{@code executeByEl} 路径）：脚本节点不是 Spring bean（无
+     * {@code @LiteflowComponent}），不能像 Java 组件那样靠启动扫描注册，必须在 EL 编译/执行前
+     * 用 {@link LiteFlowNodeBuilder} 动态注册。已发布链路的脚本节点由 Rule-DB 的 lf_script 表
+     * 懒加载（发布时 {@code RulePublishService} 推送），不走本方法。
      * <p>
-     * nodeId 取画布数据空间名（{@code properties.tag}，画布强制唯一），而非组件注册名
-     * （同一脚本物料可在画布出现多次，注册名 {@code script} 不可作为 nodeId 唯一标识）。
-     * 前端 {@code useElTreeModel.serializeNode} 已对脚本特例：脚本叶子 {@code CmpProperty.id}
-     * = 数据空间名（其他业务叶子 = 组件注册名）。
+     * 节点遍历与脚本解析直接复用 {@link #collectScriptNodes}——试运行注册与发布推送 lf_script
+     * 是同一套叶子判定口径，避免两处递归各写一份。单个脚本注册失败只 log.error 不阻断其余节点；
+     * 最外层再兜一道遍历异常，失败后让后续 EL 编译暴露真实问题（nodeId 缺失会在 setEL 时
+     * 抛 NodeBuildException，调用方 catch 后返回失败结果）。
      * <p>
-     * 仅服务试运行（{@code executeByEl} 路径）；已发布链路（{@code execute(chainId)} 路径）
-     * 在链路设计/启用时已注册脚本节点到 FlowBus，本方法不再调用。
-     * <p>异常处理：单个脚本注册失败不阻断，log.error 但继续；最外层 try-catch 包裹整个方法，
-     * 失败时仅 log.error 不抛——让后续 EL 编译/执行去暴露真实问题（脚本 nodeId 缺失会
-     * 在 setEL 时抛 NodeBuildException，调用方 catch 后返回失败结果）。
+     * 调用时机：{@code DatabusEditorController.previewRun} 在 generateEL/EL 校验之前调用——
+     * validate 会查 FlowBus.getNodeMap，未注册的 nodeId 会导致校验失败。
      *
-     * @param jsonEl 画布组件树根
+     * @param jsonEl 画布组件树根（null 直接返回）
      */
     public void registerScriptNodes(CmpProperty jsonEl) {
         if (jsonEl == null) {
             return;
         }
         try {
-            registerScriptNodesRecursive(jsonEl);
+            for (ScriptNodeSpec spec : collectScriptNodes(jsonEl)) {
+                registerOneScriptNode(spec);
+            }
         } catch (Exception e) {
             log.error("[databus] 注册脚本节点遍历异常: {}", e.getMessage(), e);
         }
     }
 
-    private void registerScriptNodesRecursive(CmpProperty node) {
+    /**
+     * 按发布规格把单个脚本注册进 FlowBus；任何失败只记日志，不影响其他节点继续注册。
+     */
+    private void registerOneScriptNode(ScriptNodeSpec spec) {
+        try {
+            boolean isBoolean = "boolean_script".equals(spec.type());
+            if (isBoolean) {
+                LiteFlowNodeBuilder.createScriptBooleanNode()
+                    .setId(spec.nodeId())
+                    .setName("条件脚本")
+                    .setLanguage(spec.language())
+                    .setScript(spec.script())
+                    .build();
+            } else {
+                LiteFlowNodeBuilder.createScriptNode()
+                    .setId(spec.nodeId())
+                    .setName("脚本")
+                    .setLanguage(spec.language())
+                    .setScript(spec.script())
+                    .build();
+            }
+            log.info("[databus] 注册脚本节点 nodeId={} language={} boolean={}",
+                spec.nodeId(), spec.language(), isBoolean);
+        } catch (Exception e) {
+            log.error("[databus] 注册脚本节点失败 nodeId={}: {}", spec.nodeId(), e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 脚本节点规格，一个脚本叶子一条：发布链路时由 {@code RulePublishService} 推送
+     * Rule-DB lf_script；试运行时由 {@link #registerScriptNodes} 据此注册 FlowBus。
+     *
+     * @param nodeId   脚本 nodeId = 画布数据空间名（EL 里的引用名）
+     * @param type     对齐 PublishScriptRequest 的脚本类型：script / boolean_script
+     * @param language 脚本语言（缺省 groovy）
+     * @param script   脚本源码
+     */
+    public record ScriptNodeSpec(String nodeId, String type, String language, String script) {
+    }
+
+    /**
+     * 递归遍历画布组件树，收集全部脚本节点规格。
+     * <p>
+     * 这是脚本叶子的<b>唯一遍历入口</b>，两处复用：发布时 {@code RulePublishService} 拿结果
+     * 推送 lf_script；试运行时 {@link #registerScriptNodes} 拿结果注册 FlowBus。
+     * <p>
+     * 判定口径：id 非空 + type 为 NodeComponent/NodeBooleanComponent + data 解析出非空
+     * ScriptCfg.script（非脚本叶子 data 为空或无 script 字段，自然排除）。
+     * <p>
+     * 注意：lf_script 主键为 (application_name, node_id)，脚本 nodeId 为画布数据空间名，
+     * 不区分链路——跨链路同名 tag 的不同脚本存在覆盖风险，由调用方 RulePublishService
+     * 在发布时做冲突校验。
+     *
+     * @param jsonEl 画布组件树根（可为 null）
+     * @return 脚本节点规格列表（无脚本节点时为空列表）
+     */
+    public List<ScriptNodeSpec> collectScriptNodes(CmpProperty jsonEl) {
+        List<ScriptNodeSpec> specs = new ArrayList<>();
+        collectScriptNodesRecursive(jsonEl, specs);
+        return specs;
+    }
+
+    private void collectScriptNodesRecursive(CmpProperty node, List<ScriptNodeSpec> specs) {
         if (node == null) {
             return;
         }
-        // 检测当前节点是否脚本叶子：id 非空 + type 为 NodeComponent/NodeBooleanComponent
         String type = node.getType();
         String id = node.getId();
         if (StringUtils.isNotBlank(id) && (NodeTypeEnum.COMMON.getMappingClazz().getSimpleName().equals(type)
             || NodeTypeEnum.BOOLEAN.getMappingClazz().getSimpleName().equals(type))) {
-            registerOneScriptNode(node, id, type);
+            parseScriptSpec(node, id, type).ifPresent(specs::add);
         }
-        // 递归 condition 位与 children
         if (node.getCondition() != null) {
-            registerScriptNodesRecursive(node.getCondition());
+            collectScriptNodesRecursive(node.getCondition(), specs);
         }
         if (node.getChildren() != null) {
             for (CmpProperty child : node.getChildren()) {
-                registerScriptNodesRecursive(child);
+                collectScriptNodesRecursive(child, specs);
             }
         }
     }
 
-    private void registerOneScriptNode(CmpProperty node, String nodeId, String type) {
+    /**
+     * 解析单个叶子为脚本规格；非脚本叶子（data 为空 / 无 script 字段）返回 empty。
+     */
+    private Optional<ScriptNodeSpec> parseScriptSpec(CmpProperty node, String nodeId, String type) {
         Properties props = node.getProperties();
         if (props == null || StringUtils.isBlank(props.getData())) {
-            // 非脚本节点（普通 Java 组件 data 可能为空）
-            return;
+            return Optional.empty();
         }
         ScriptCfg cfg = JsonCodec.parseObject(props.getData(), ScriptCfg.class);
         if (cfg == null || StringUtils.isBlank(cfg.getScript())) {
-            // data 解析失败或 script 为空，跳过——非脚本节点
-            return;
+            return Optional.empty();
         }
         String language = StringUtils.isBlank(cfg.getLanguage()) ? "groovy" : cfg.getLanguage();
-        String script = cfg.getScript();
-        try {
-            boolean isBoolean = NodeTypeEnum.BOOLEAN.getMappingClazz().getSimpleName().equals(type);
-            if (isBoolean) {
-                LiteFlowNodeBuilder.createScriptBooleanNode()
-                    .setId(nodeId)
-                    .setName("条件脚本")
-                    .setLanguage(language)
-                    .setScript(script)
-                    .build();
-            } else {
-                LiteFlowNodeBuilder.createScriptNode()
-                    .setId(nodeId)
-                    .setName("脚本")
-                    .setLanguage(language)
-                    .setScript(script)
-                    .build();
-            }
-            log.info("[databus] 注册脚本节点 nodeId={} language={} boolean={}", nodeId, language, isBoolean);
-        } catch (Exception e) {
-            log.error("[databus] 注册脚本节点失败 nodeId={}: {}", nodeId, e.getMessage(), e);
-        }
+        boolean isBoolean = NodeTypeEnum.BOOLEAN.getMappingClazz().getSimpleName().equals(type);
+        return Optional.of(new ScriptNodeSpec(nodeId, isBoolean ? "boolean_script" : "script",
+            language, cfg.getScript()));
     }
 
     /**
@@ -231,7 +286,11 @@ public class DatabusExecutor {
     private static final String PREVIEW_CHAIN_ID = "preview-el";
 
     /**
-     * 生成执行记录业务 id。
+     * 生成执行记录业务 id（UUID 去横线）。
+     * <p>
+     * 不复用 LiteFlow 自带的 {@code response.getRequestId()}：试运行在动态建链阶段
+     * （{@code LiteFlowChainELBuilder.build()}）就可能失败，此时根本拿不到 response；
+     * 自造 id 保证任何失败结果都有追踪号。
      */
     private String generateExecutionId() {
         return UUID.randomUUID().toString().replace("-", "");
@@ -336,15 +395,6 @@ public class DatabusExecutor {
     }
 
     /**
-     * 兼容旧调用：仅取 LiteFlow 原生响应（不构建数据总线结果），供过渡阶段使用。
-     */
-    public LiteflowResponse executeRaw(String chainId, Object requestData) {
-        DatabusContext context = DatabusContext.fromObject(requestData);
-        injectConnections(context);
-        return flowExecutor.execute2Resp(chainId, requestData, context);
-    }
-
-    /**
      * 把启用的连接（enabled=Y）从 sys_databus_connection 加载并注入到当前执行上下文。
      * <p>每次执行都重新查一次 DB，确保连接管理页修改后立即可见；后续如有性能压力可加缓存。
      * <p>单条加载失败不阻断执行（已记录 ERROR 日志），后续组件取该 connectionId 时会抛"未注册"。
@@ -362,10 +412,4 @@ public class DatabusExecutor {
             connections.stream().map(Connection::getId).toList());
     }
 
-    /**
-     * 获取 LiteFlow 原生步骤 Map（key 为 chainId），供需要细粒度步骤信息的场景使用。
-     */
-    public Map<String, List<CmpStep>> getExecuteSteps(LiteflowResponse response) {
-        return response.getExecuteSteps();
-    }
 }

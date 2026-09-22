@@ -3,6 +3,7 @@ package org.dromara.databus.domain.vo;
 import io.github.linpeilie.annotations.AutoMapper;
 import lombok.Data;
 import org.dromara.databus.domain.DatabusChain;
+import org.dromara.databus.el.bean.CmpProperty;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -54,6 +55,16 @@ public class DatabusChainVo implements Serializable {
      * 画布 JSON（VueFlow nodes/edges 序列化串）
      */
     private String canvasData;
+
+    /**
+     * 画布逻辑组件树（与 Bo/实体同名同类型；编辑器直接消费，无需二次解析）
+     */
+    private CmpProperty cmpProperty;
+
+    /**
+     * 执行记录档位（OFF/BASIC/FULL，默认 BASIC）
+     */
+    private String logLevel;
 
     /**
      * 备注

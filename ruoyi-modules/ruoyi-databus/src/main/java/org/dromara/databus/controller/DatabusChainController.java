@@ -88,4 +88,37 @@ public class DatabusChainController extends BaseController {
         return toAjax(chainService.deleteByIds(Arrays.asList(ids)));
     }
 
+    /**
+     * 发布链路：status 0草稿/2已下线 → 1已发布 + version+1
+     * <p>
+     * 草稿与发布共用一份 el_expression + canvas_data，发布即固化当前编排为运行版本；
+     * 已下线链路可重新发布，version 继续递增。
+     *
+     * @param id 链路主键
+     */
+    @SaCheckPermission("databus:editor:publish")
+    @Log(title = "数据总线链路", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @PostMapping("/publish/{id}")
+    public R<Void> publish(@NotNull(message = "主键不能为空")
+                           @PathVariable("id") Long id) {
+        return toAjax(chainService.publish(id));
+    }
+
+    /**
+     * 下线链路：status 1已发布 → 2已下线
+     * <p>
+     * 下线后定义保留（不物理删除），可重新发布；下线状态不可执行。
+     *
+     * @param id 链路主键
+     */
+    @SaCheckPermission("databus:editor:offline")
+    @Log(title = "数据总线链路", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @PostMapping("/offline/{id}")
+    public R<Void> offline(@NotNull(message = "主键不能为空")
+                           @PathVariable("id") Long id) {
+        return toAjax(chainService.offline(id));
+    }
+
 }

@@ -92,6 +92,16 @@
             <version>${liteflow.version}</version>
         </dependency>
 
+        <!-- LiteFlow Rule-DB 统一规则数据库（SQL/MySQL 后端）：发布链路 EL 到 lf_chain 作为执行期权威源，
+             框架接管多节点一致性/last-good 兜底/重启零感知。与 liteflow.rule-source 互斥（yml 已移除 rule-source）。
+             url 留空自动复用容器 DataSource；lf_chain/lf_script/lf_change_log/lf_change_lock 四表由
+             auto-init-table=true 启动自动建表，不入 script/sql/ 沉淀 -->
+        <dependency>
+            <groupId>com.yomahub</groupId>
+            <artifactId>liteflow-rule-db-sql</artifactId>
+            <version>${liteflow.version}</version>
+        </dependency>
+
         <!-- JSONPath：DatabusContext 内部持 jayway DocumentContext，完整 JSONPath 读写；版本由 spring-boot-dependencies 管理 -->
         <dependency>
             <groupId>com.jayway.jsonpath</groupId>

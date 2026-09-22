@@ -53,6 +53,9 @@ insert into sys_menu values
 -- 链路编辑器：hidden 菜单（visible=1，侧边栏不显示），仅供列表页「编排」跳转生成动态路由。
 -- 无此菜单则 router 中无 editor 路由，编排按钮会提示"未找到编辑器路由"。
 -- perms 复用列表权限，不单独设权限点；path=editor 挂数据总线父目录。
+-- is_cache 必须为 'N'（不缓存，meta.noCache=true）：编辑器按 query.id 进入，
+-- 若被 keep-alive 缓存，从列表连续编排不同链路时组件实例复用、onMounted 不再触发，
+-- 画布会停留在上一条链路（只有整页刷新才恢复）。
 insert into sys_menu values
   (1762000000000000030, '链路编辑器', 1761400000000020000, 99, 'editor', 'databus/editor/index', '', 'N', 'N', 'C', '1', '0', 'databus:editor:list', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '链路编排画布（隐藏菜单，列表页跳转进入）');
 

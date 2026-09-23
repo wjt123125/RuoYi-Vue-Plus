@@ -3,6 +3,7 @@ package org.dromara.databus.service;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.domain.bo.DatabusChainBo;
+import org.dromara.databus.domain.vo.ChainStatsVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 
 import java.util.Collection;
@@ -30,6 +31,15 @@ public interface IDatabusChainService {
      * @return 分页结果
      */
     PageResult<DatabusChainVo> queryPageList(DatabusChainBo bo, PageQuery pageQuery);
+
+    /**
+     * 按 status 分组计数（链路管理页顶部统计块用）。
+     * <p>
+     * 分页 list 无法前端聚合准确计数，故补此轻量统计接口。
+     *
+     * @return 总数 / 草稿 / 已发布 / 已下线 计数
+     */
+    ChainStatsVo countByStatus();
 
     /**
      * 新增链路草稿（EL 由后端从组件树生成，version=1/status=草稿）

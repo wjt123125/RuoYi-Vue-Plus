@@ -12,6 +12,7 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.DatabusChainBo;
+import org.dromara.databus.domain.vo.ChainStatsVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.service.IDatabusChainService;
 import org.springframework.validation.annotation.Validated;
@@ -39,6 +40,17 @@ public class DatabusChainController extends BaseController {
     @GetMapping("/list")
     public R<PageResult<DatabusChainVo>> list(DatabusChainBo bo, PageQuery pageQuery) {
         return R.ok(chainService.queryPageList(bo, pageQuery));
+    }
+
+    /**
+     * 按 status 分组计数（链路管理页顶部统计块用）。
+     * <p>
+     * 分页 list 无法前端聚合准确计数，故补此轻量统计接口。
+     */
+    @SaCheckPermission("databus:editor:list")
+    @GetMapping("/stats")
+    public R<ChainStatsVo> stats() {
+        return R.ok(chainService.countByStatus());
     }
 
     /**

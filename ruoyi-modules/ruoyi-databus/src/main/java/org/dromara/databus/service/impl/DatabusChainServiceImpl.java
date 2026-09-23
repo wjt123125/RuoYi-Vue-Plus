@@ -11,6 +11,7 @@ import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.bo.DatabusChainBo;
+import org.dromara.databus.domain.vo.ChainStatsVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.ELInfo;
@@ -59,12 +60,43 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     @Override
     public PageResult<DatabusChainVo> queryPageList(DatabusChainBo bo, PageQuery pageQuery) {
         LambdaQueryWrapper<DatabusChain> lqw = Wrappers.lambdaQuery();
+        // 列表白名单：排除 canvas_data / el_expression 两个大字段（列表零消费），
+        // 保留 cmp_property 供卡片迷你拓扑预览递归。queryById 保持全量（编辑器加载走该接口）。
+        lqw.select(DatabusChain::getId, DatabusChain::getChainCode, DatabusChain::getChainName,
+            DatabusChain::getVersion, DatabusChain::getStatus, DatabusChain::getCmpProperty,
+            DatabusChain::getLogLevel, DatabusChain::getRemark,
+            DatabusChain::getCreateTime, DatabusChain::getUpdateTime);
         lqw.like(StringUtils.isNotBlank(bo.getChainCode()), DatabusChain::getChainCode, bo.getChainCode());
         lqw.like(StringUtils.isNotBlank(bo.getChainName()), DatabusChain::getChainName, bo.getChainName());
+        if (StringUtils.isNotBlank(bo.getStatus())) {
+            lqw.eq(DatabusChain::getStatus, bo.getStatus());
+        }
         lqw.orderByDesc(DatabusChain::getUpdateTime)
             .orderByDesc(DatabusChain::getId);
         Page<DatabusChainVo> result = chainMapper.selectVoPage(pageQuery.build(), lqw);
         return PageResult.build(result.getRecords(), result.getTotal());
+    }
+
+    @Override
+    public ChainStatsVo countByStatus() {
+        long draft = countByStatus(ChainStatusEnum.DRAFT.getCode());
+        long published = countByStatus(ChainStatusEnum.PUBLISHED.getCode());
+        long offline = countByStatus(ChainStatusEnum.OFFLINE.getCode());
+        ChainStatsVo vo = new ChainStatsVo();
+        vo.setDraft(draft);
+        vo.setPublished(published);
+        vo.setOffline(offline);
+        vo.setTotal(draft + published + offline);
+        return vo;
+    }
+
+    /**
+     * 按状态计数（delFlag 由 @TableLogic 自动过滤）
+     */
+    private long countByStatus(String status) {
+        Long count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
+            .eq(DatabusChain::getStatus, status));
+        return count == null ? 0L : count;
     }
 
     @Override

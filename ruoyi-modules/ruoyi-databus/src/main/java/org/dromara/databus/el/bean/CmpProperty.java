@@ -23,11 +23,12 @@ import java.util.List;
  * ├── properties  : 附加属性 id/tag/data（仅节点或显式设置了属性的表达式才有）
  * ├── condition   : "条件位"节点 —— 该表达式的判断/控制节点，例如：
  * │                IF(x).do 中的 x、SWITCH(x).to 中的 x、
- * │                FOR(x).DO 中的 x、CATCH(x).DO 中的 x（try 块）。
- * │                THEN/WHEN/AND/OR/NOT 没有条件位，为 null。
+ * │                FOR(x).DO 中的 x。
+ * │                THEN/WHEN/CATCH/AND/OR/NOT 没有条件位，为 null。
  * └── children   : 子分支列表，例如：
  *                 THEN 的顺序子项、IF 的 [trueCase, falseCase?]、
- *                 SWITCH 的 to 列表、FOR/WHILE/ITERATOR 的 [DO内容, BREAK?]。
+ *                 SWITCH 的 to 列表、FOR/WHILE/ITERATOR 的 [DO内容, BREAK?]、
+ *                 CATCH 的 [try块, catch块?]。
  * </pre>
  * 举例：EL {@code IF(andNode, THEN(a, b), c);} 对应的树：
  * <pre>
@@ -66,7 +67,7 @@ public class CmpProperty {
     private Properties properties;
 
     /**
-     * 条件位节点（IF/SWITCH/FOR/WHILE/ITERATOR/CATCH 的控制节点），可为 null。
+     * 条件位节点（IF/SWITCH/FOR/WHILE/ITERATOR 的控制节点），可为 null。
      */
     private CmpProperty condition;
 

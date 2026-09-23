@@ -1,7 +1,7 @@
 # 数据总线链路与执行记录管理设计
 
 > 所属模块：ruoyi-databus
-> 更新日期：2026-09-22
+> 更新日期：2026-09-23
 > 状态：设计已拍板（含 Rule-DB 前置接入 + 执行记录采集改用 PostProcessNodeExecuteLifeCycle+Slot 修正），待实施（阶段 3 链路管理页 + Rule-DB 接入配套）
 
 ## 1. 文档目的
@@ -128,6 +128,26 @@ Rule-DB 是 LiteFlow v2.16.1 统一规则数据库，作为执行引擎层的高
 - 启动时存储不可用直接抛异常、启动失败（不降级空规则跑起来）
 - 手改 `lf_chain` 必须同时 `version+1` + `content_md5=MD5(el_data)`，否则永不生效（推荐走 `RulePublisher` API）
 
+### 3.7 链路管理页工作台化改造方案（前端形态，2026-09-23 拍板）
+
+链路管理页从扁平卡片网格升级为**纵向分区工作台**，解决"平铺无层次、缺工作台感"问题（业界 n8n/Dify/Zapier 主页范式）。四项决策：
+
+| 维度 | 决策 | 理由 |
+|:---|:---|:---|
+| 布局基调 | 纵向分区工作台（顶部统计 + 多分区卡片队列，横滑+网格混合，见拍板结论③） | 治平铺无层次病，贴 n8n/Dify 主页范式，与迷你预览兼容 |
+| section 分桶 | 按活动分桶：最近编辑 / 待发布（草稿）/ 已发布运行中 / 运行异常（留位，需执行记录表） | 动态层次有重点，前 3 section 现有 updateTime+status 即可撑 |
+| 卡片形态 | 混合卡：顶部迷你拓扑 + 中部元信息（标题/编码/状态点/记录档位/时间，不放版本徽章，见拍板结论④）+ 底部操作 | 兼顾预览与可读性，与现有卡片结构兼容（现有卡片只缺顶部预览） |
+| 迷你预览数据源 | 递归 `cmpProperty` 组件树画 3-5 节点小圆点链，超 +N | 反映 EL 逻辑结构（THEN/WHEN/IF 分支语义），list 接口保留返回 cmpProperty（[DatabusChainVo.java](file:///e:/01.code/RuoYi-Vue-Plus/ruoyi-modules/ruoyi-databus/src/main/java/org/dromara/databus/domain/vo/DatabusChainVo.java)），投影白名单后仍无需新增接口（见拍板结论②） |
+
+**四个待钻议题拍板结论（2026-09-23）**：
+
+1. **顶部统计块：三真一占位**。总链路数 / 待发布草稿数 / 运行中（已发布）数三格由 databus_chain 按 status 分组计数（分页 list 无法前端聚合，需后端补轻量计数接口），数字可点击滚动定位到对应 section；第四格「运行异常」置灰显示「—」占位，待 §5.2 执行记录表落地后点亮。不为凑满格造「近 7 日更新」类低价值指标。
+2. **list 大字段投影：白名单排两个**。queryPageList 的 wrapper 增加 `.select(...)` 白名单，列表不返回 canvas_data 与 el_expression（列表零消费，canvas_data 为最大字段）；保留 cmp_property 供卡片迷你拓扑递归。queryById 保持全量（编辑器加载走该接口）。未来组件 props 膨胀到 cmp_property 也过大时，再上专用 preview 摘要字段，当前不过度设计。
+3. **section 内部形态：混合**。最近编辑为横滑卡片队列（top 6-8 张 + 尾部「查看全部」）；待发布草稿 / 已发布运行中 / 未来运行异常为自适应网格铺开（管理对象需逐条可达，不藏在横滑之后）。
+4. **卡片密度：中密度**。混合卡 = 迷你拓扑预览 + 标题/编码/状态点 + 记录档位/更新时间一行 + 操作区；砍掉版本徽章（version 只是发布计数器、不做版本历史，详情弹窗可见）；remark 不上卡（数据可选易参差）；编排 + 发布/下线高频操作常驻，编辑/删除低频操作 hover 浮现；卡高控制在 200px 上下。横滑卡与网格卡复用同一卡片组件，仅外层容器不同。
+
+> 现状基线：链路管理页现为 Style-B 小卡片网格（[index.vue](file:///e:/01.code/plus-ui/src/views/databus/chain/index.vue)），自适应网格 + 彩色状态圆点 + 胶囊状态 tab。本方案在其基础上叠加分区层次与卡片顶部预览，非推倒重做。
+
 ## 4. 执行记录设计
 
 ### 4.1 设计动机
@@ -219,7 +239,8 @@ Rule-DB 是 LiteFlow v2.16.1 统一规则数据库，作为执行引擎层的高
    - DatabusExecutor 正式链路改为 `execute2Resp(chainId, param, DatabusContext.class)`，框架从 Rule-DB 加载；试运行链路保持 `LiteFlowChainELBuilder` 动态建链（不入 Rule-DB）
    - 发布端点 `POST /databus/chain/publish/{id}`：status→1 + version+1 + `RulePublisher.publishChain`（try-with-resources，带 expectedVersion CAS）
    - 下线端点 `POST /databus/chain/offline/{id}`：status→2 + `RulePublisher.removeChain`
-3. **前端**：src/api/databus/chain/index.ts API 封装；src/views/databus/chain/index.vue 列表骨架（el-table + 搜索 + 状态过滤 + 分页）
+   - 工作台配套（§3.7 拍板结论①②）：queryPageList 加 `.select(...)` 白名单排除 canvas_data/el_expression、保留 cmp_property；新增按 status 分组计数的轻量统计接口供顶部统计块使用（分页 list 无法前端聚合）
+3. **前端**：src/api/databus/chain/index.ts API 封装；src/views/databus/chain/index.vue 列表骨架（**纵向分区工作台形态**，见 §3.7；已落地 Style-B 卡片网格，待升级为分区工作台 + 混合卡 + 迷你拓扑预览）
 4. **前端**：新增/编辑弹窗（基础信息表单 + 跳编辑器编排画布）
 5. **前端**：发布/下线/删除操作 + 确认弹窗
 6. **前端**：编辑器跳转契约（chainId 加载 + 保存回跳）

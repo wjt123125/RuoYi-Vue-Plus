@@ -61,8 +61,8 @@ public interface ExpressParser {
     CmpProperty buildChildrenChain(Chain chain);
 
     /**
-     * 构造"条件位"：IF/SWITCH/FOR/WHILE/ITERATOR/CATCH 的控制节点。
-     * 没有条件位的关键字（THEN/WHEN/AND/OR/NOT）返回 null 或空对象。
+     * 构造"条件位"：IF/SWITCH/FOR/WHILE/ITERATOR 的控制节点。
+     * 没有条件位的关键字（THEN/WHEN/CATCH/AND/OR/NOT）返回 null 或空对象。
      */
     CmpProperty builderCondition(Condition condition);
 

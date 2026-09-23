@@ -71,4 +71,12 @@ public class DatabusChainBo implements Serializable {
      */
     private String remark;
 
+    /**
+     * 状态（仅列表查询过滤用：0草稿 1已发布 2已下线）。
+     * <p>
+     * 保存时不接收此字段——insertByBo 显式置 DRAFT、updateByBo 显式置 null（不更新），
+     * 状态流转走 publish/offline 独立端点。
+     */
+    private String status;
+
 }

@@ -16,7 +16,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -24,15 +23,14 @@ import java.util.Optional;
 /**
  * CATCH（异常捕获）解析器：{@code CATCH(try块)[.DO(catch块)]}。
  * <p>
- * 结构要点（注意 CATCH 的语义与直觉相反）：
+ * 结构要点（与 WHEN/AND/OR 等自建网关一致，无独立 condition 位）：
  * <ul>
- *   <li><b>条件位 condition</b> = try 块（getCatchItem），即"要被保护的"那段逻辑；</li>
- *   <li><b>children</b> = [catch块?]（getDoItem），即捕获异常后的处理逻辑，
- *       最多一个元素，可能根本没有（此时用 {@code CATCH({})} 模板而非
- *       {@code CATCH({}).DO({})}）。</li>
+ *   <li><b>children[0]</b> = try 块（LiteFlow 的 catchItem），即"要被保护的"那段逻辑；</li>
+ *   <li><b>children[1]</b> = catch 块（LiteFlow 的 doItem），即捕获异常后的处理逻辑，
+ *       可能不存在（此时用 {@code CATCH({})} 模板而非 {@code CATCH({}).DO({})}）。</li>
  * </ul>
- * 模板在 generateELMethod 里<b>动态选择</b>：children 为空用 CATCH({})，
- * 否则用 CATCH({}).DO({})。
+ * 模板在 generateELMethod 里<b>动态选择</b>：catch 块（children[1]）存在用
+ * CATCH({}).DO({})，否则用 CATCH({})。
  *
  * @author <a href="mailto:dogsong99@163.com">dosong</a>
  * @since 2024/6/21
@@ -50,86 +48,80 @@ public class CatchConditionParser extends AbstractExpressParser {
         return ExpressParserEnum.CATCH;
     }
 
-    /** EL→JSON：取 CatchCondition 的 catchItem（try 块）作为条件位 */
+    /**
+     * EL→JSON：CATCH 无独立 condition 位（与 WHEN/AND/OR 等自建网关一致），
+     * try 块和 catch 块统一放在 children：children[0]=try，children[1]=catch。
+     */
     @Override
     public CmpProperty builderCondition(Condition condition) {
-        CatchCondition catchCondition = (CatchCondition) condition;
-        Executable catchItem = catchCondition.getCatchItem();
-        CmpProperty vo = null;
-        if (catchItem instanceof Condition) {
-            vo = builderChildVO((Condition) catchItem);
-        } else if(catchItem instanceof Node) {
-            vo = Optional.of((Node) catchItem).map(nodeMapper).orElse(new CmpProperty());
-        }else if(catchItem instanceof Chain){
-            Chain chain = (Chain) catchItem;
-            vo = buildChildrenChain(chain);
-        }
-        return vo;
+        return null;
     }
 
     /**
-     * EL→JSON：取 DO 槽位（catch 块），只有两种可能：
-     * 1. DO 为空 → 返回空列表；
-     * 2. 一个 node 或 一个 condition（或 chain）→ 单元素列表。
+     * EL→JSON：children[0]=try 块（catchItem），children[1]=catch 块（doItem）。
+     * 任一为 null 则对应位置不产出（保持稀疏）。
      */
     @Override
     public List<CmpProperty> builderChildren(Condition condition) {
         CatchCondition catchCondition = (CatchCondition) condition;
-        // 获取 DO 中内容,只有两种可能:
-        // 1. DO 为空
-        // 2. 一个 node 或者 一个 condition
-        Executable catchItem = catchCondition.getDoItem();
-        if (Objects.isNull(catchItem)) {
-            return Collections.emptyList();
+        List<CmpProperty> children = new ArrayList<>();
+        // try 块 → children[0]
+        Executable catchItem = catchCondition.getCatchItem();
+        if (Objects.nonNull(catchItem)) {
+            children.add(toCmpProperty(catchItem));
         }
-
-        CmpProperty vo = null;
-        if (catchItem instanceof Condition) {
-            vo = builderChildVO((Condition) catchItem);
-        } else if(catchItem instanceof Node) {
-            vo = Optional.of((Node) catchItem).map(nodeMapper).orElse(new CmpProperty());
-        }else if(catchItem instanceof Chain){
-            Chain chain = (Chain) catchItem;
-            vo = buildChildrenChain(chain);
+        // catch 块 → children[1]
+        Executable doItem = catchCondition.getDoItem();
+        if (Objects.nonNull(doItem)) {
+            children.add(toCmpProperty(doItem));
         }
-        return new ArrayList<>(Collections.singletonList(vo));
+        return children;
     }
 
-    /** 第 1 步：按有没有 catch 块动态选模板 */
+    /** Executable → CmpProperty 的公共分派（Condition/Node/Chain） */
+    private CmpProperty toCmpProperty(Executable executable) {
+        if (executable instanceof Condition) {
+            return builderChildVO((Condition) executable);
+        } else if (executable instanceof Node) {
+            return Optional.of((Node) executable).map(nodeMapper).orElse(new CmpProperty());
+        } else if (executable instanceof Chain) {
+            return buildChildrenChain((Chain) executable);
+        }
+        return new CmpProperty();
+    }
+
+    /** 第 1 步：按有没有 catch 块（children[1]）动态选模板 */
     @Override
     public String generateELMethod(CmpProperty jsonEl) {
-        if (null == jsonEl.getChildren() || jsonEl.getChildren().isEmpty()) {
-            return elCatchMethod;
+        List<CmpProperty> children = jsonEl.getChildren();
+        // children[0]=try, children[1]=catch；只有 catch 块存在时才用 .DO({}) 模板
+        if (children != null && children.size() >= 2 && Objects.nonNull(children.get(1))) {
+            return elCatchDoMethod;
         }
-        return elCatchDoMethod;
+        return elCatchMethod;
     }
 
-    /** 第 2 步：填 try 块（第一个 {}），走 generateNodeComponent 兼容子表达式 */
+    /** 第 2 步：填 try 块（children[0]）到第一个 {} */
     @Override
     public String generateCondition(CmpProperty jsonEl, String elExpress) {
-        if (Objects.isNull(jsonEl.getCondition())) {
+        List<CmpProperty> children = jsonEl.getChildren();
+        if (CollectionUtil.isEmpty(children) || Objects.isNull(children.get(0))) {
             return elExpress;
         }
-        String catchInternalExpressions = "";
-        // CATCH内部表达式
-        catchInternalExpressions = generateNodeComponent(jsonEl.getCondition(), catchInternalExpressions);
+        String tryExpressions = generateNodeComponent(children.get(0), "");
         // CATCH({}).DO({}) -> CATCH(THEN(a,b)).DO({})
-        return StrUtil.replaceFirst(elExpress, "{}", catchInternalExpressions);
+        return StrUtil.replaceFirst(elExpress, "{}", tryExpressions);
     }
 
-    /** 第 3 步：填 catch 块（第二个 {}），DO 里最多一个元素 */
+    /** 第 3 步：填 catch 块（children[1]）到第二个 {} */
     @Override
     public String generateCmp(CmpProperty jsonEl, String elExpress) {
-        if (CollectionUtil.isEmpty(jsonEl.getChildren())) {
+        List<CmpProperty> children = jsonEl.getChildren();
+        if (children == null || children.size() < 2 || Objects.isNull(children.get(1))) {
             return elExpress;
         }
-        // DO({}) 中只会有一个元素,即 children.size()=0
-        CmpProperty doItem = jsonEl.getChildren().get(0);
-        String doExpressions = "";
-        // CATCH内部表达式
-        doExpressions = generateNodeComponent(doItem, doExpressions);
+        String doExpressions = generateNodeComponent(children.get(1), "");
         // CATCH(THEN(a,b)).DO({}) -> CATCH(THEN(a,b)).DO(c)
-        // CATCH(THEN(a,b)).DO({}) -> CATCH(THEN(a,b)).DO(THEN(c,d))
         return StrUtil.format(elExpress, doExpressions);
     }
 

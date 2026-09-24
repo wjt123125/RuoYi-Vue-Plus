@@ -86,4 +86,16 @@ public interface IDatabusChainService {
      */
     Boolean offline(Long id);
 
+    /**
+     * 复制链路：以源链路的画布与组件配置生成一条全新草稿。
+     * <p>
+     * 新链路 status=草稿、version=1，链路编码重新生成（保证唯一），名称在源名称后加"副本"；
+     * canvas_data / cmp_property / log_level 原样复制，引用的连接器仅复制 connectionId 引用、
+     * 不复制连接器本身；草稿不推 Rule-DB，EL 由组件树按新增口径重新生成。
+     *
+     * @param id 源链路主键
+     * @return 是否复制成功
+     */
+    Boolean copy(Long id);
+
 }

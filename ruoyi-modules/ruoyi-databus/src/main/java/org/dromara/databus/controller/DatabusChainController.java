@@ -133,4 +133,20 @@ public class DatabusChainController extends BaseController {
         return toAjax(chainService.offline(id));
     }
 
+    /**
+     * 复制链路：以源链路的画布与配置生成一条全新草稿
+     * <p>
+     * 新链路为草稿状态（不推 Rule-DB、不影响源链路），副本编码重新生成、名称加"副本"。
+     *
+     * @param id 源链路主键
+     */
+    @SaCheckPermission("databus:editor:add")
+    @Log(title = "数据总线链路", businessType = BusinessType.INSERT)
+    @RepeatSubmit
+    @PostMapping("/copy/{id}")
+    public R<Void> copy(@NotNull(message = "主键不能为空")
+                        @PathVariable("id") Long id) {
+        return toAjax(chainService.copy(id));
+    }
+
 }

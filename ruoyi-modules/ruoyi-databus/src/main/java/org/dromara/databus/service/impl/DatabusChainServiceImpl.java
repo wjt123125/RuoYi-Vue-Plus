@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 链路定义 Service 实现。
@@ -45,6 +46,34 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
      * 草稿初始版本
      */
     private static final int DRAFT_VERSION = 1;
+
+    /**
+     * 链路名称/编码最大长度（与 Bo @Size 约束一致）
+     */
+    private static final int CHAIN_NAME_MAX_LEN = 100;
+    private static final int CHAIN_CODE_MAX_LEN = 100;
+
+    /**
+     * 副本名称后缀
+     */
+    private static final String COPY_NAME_SUFFIX = "副本";
+
+    /**
+     * 副本编码后缀（后再追加 6 位十六进制随机串）
+     */
+    private static final String COPY_CODE_SUFFIX = "_copy";
+
+    /**
+     * 随机段固定 6 位十六进制（0x100000 ≤ n < 0x1000000）
+     */
+    private static final int COPY_RANDOM_SUFFIX_LEN = 6;
+    private static final int COPY_RANDOM_LOWER = 0x100000;
+    private static final int COPY_RANDOM_UPPER = 0x1000000;
+
+    /**
+     * 生成唯一编码的最大尝试次数
+     */
+    private static final int COPY_CODE_MAX_ATTEMPTS = 10;
 
     private final DatabusChainMapper chainMapper;
 
@@ -136,10 +165,17 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
      * 由画布组件树生成 EL；组件树为空时返回 null（空画布不产出 EL）
      */
     private String generateEl(DatabusChainBo bo) {
-        if (bo.getCmpProperty() == null) {
+        return generateEl(bo.getCmpProperty());
+    }
+
+    /**
+     * 由画布组件树生成 EL；组件树为空时返回 null（空画布不产出 EL）
+     */
+    private String generateEl(CmpProperty cmpProperty) {
+        if (cmpProperty == null) {
             return null;
         }
-        ELInfo elInfo = expressGenerator.generateEL(bo.getCmpProperty());
+        ELInfo elInfo = expressGenerator.generateEL(cmpProperty);
         return elInfo == null ? null : elInfo.getElStr();
     }
 
@@ -233,6 +269,58 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
             rulePublishService.removeChainQuietly(chain.getChainCode());
         }
         return flag;
+    }
+
+    @Override
+    public Boolean copy(Long id) {
+        DatabusChain source = chainMapper.selectById(id);
+        if (source == null) {
+            throw new ServiceException("链路不存在或已删除");
+        }
+        // 全新实体：不复制 id/审计字段，插入时由 MetaObjectHandler 自动填充
+        DatabusChain add = new DatabusChain();
+        add.setVersion(DRAFT_VERSION);
+        add.setStatus(ChainStatusEnum.DRAFT.getCode());
+        add.setChainName(buildCopyName(source.getChainName()));
+        add.setChainCode(buildCopyCode(source.getChainCode()));
+        // 画布/组件树/记录档位原样复制；组件树中引用的连接器仅复制 connectionId（共享连接器，不复制其本身）
+        add.setCanvasData(source.getCanvasData());
+        add.setCmpProperty(source.getCmpProperty());
+        add.setLogLevel(source.getLogLevel());
+        add.setRemark(source.getRemark());
+        // 草稿不推 Rule-DB；与新增草稿同口径，EL 由组件树实时生成而非复制源 EL 文本
+        add.setElExpression(generateEl(source.getCmpProperty()));
+        return chainMapper.insert(add) > 0;
+    }
+
+    /**
+     * 副本名称：源名称后加"副本"，长度超 100 截断
+     */
+    private String buildCopyName(String sourceName) {
+        String name = sourceName + COPY_NAME_SUFFIX;
+        return name.length() > CHAIN_NAME_MAX_LEN ? name.substring(0, CHAIN_NAME_MAX_LEN) : name;
+    }
+
+    /**
+     * 副本编码：源编码 + _copy + 随机短串，循环校验直到唯一（最多 10 次）
+     */
+    private String buildCopyCode(String sourceCode) {
+        String base = sourceCode + COPY_CODE_SUFFIX;
+        // 预留随机段长度（_ + 6 位十六进制），保证总长度不超过 100
+        int maxBaseLen = CHAIN_CODE_MAX_LEN - COPY_RANDOM_SUFFIX_LEN - 1;
+        if (base.length() > maxBaseLen) {
+            base = base.substring(0, maxBaseLen);
+        }
+        for (int i = 0; i < COPY_CODE_MAX_ATTEMPTS; i++) {
+            String candidate = base + "_" + Integer.toHexString(
+                ThreadLocalRandom.current().nextInt(COPY_RANDOM_LOWER, COPY_RANDOM_UPPER));
+            Long count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
+                .eq(DatabusChain::getChainCode, candidate));
+            if (count == null || count == 0) {
+                return candidate;
+            }
+        }
+        throw new ServiceException("复制失败：无法生成唯一链路编码，请重试");
     }
 
 }

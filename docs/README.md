@@ -20,7 +20,10 @@ docs/
     ├── databus-script-component.md          # 脚本组件：script/booleanScript 两物料、SPI 引擎热插拔、一期 Groovy
     ├── databus-loop-component.md            # 循环/路由组件：forLoop/iteratorLoop/switchRoute 规格、$i 索引栈、SWITCH tag
     ├── databus-bpm-endpoint-auth.md         # BPM 端点鉴权：官方文档实证 openapi 网关，推荐 B 主线（C 兜底），待两项实测
-    └── databus-formula-engine-research.md   # 公式引擎调研：结论不建独立引擎，三层模型 + QLExpress4 内联表达式储备方案
+    ├── databus-formula-engine-research.md   # 公式引擎调研：结论不建独立引擎，三层模型 + QLExpress4 内联表达式储备方案
+    ├── databus-expression-syntax.md         # 参数表达式语法契约：`{{ }}` 唯一动态标记、类型保留规则、引擎三步演进
+    ├── databus-context-concurrency.md       # 并发安全：WHEN 并行写共享树的竞争路径、读写锁方案、两个否决方案
+    └── n8n-vs-databus-paradigm.md           # 范式对比：n8n 传送带 vs 本项目共享黑板、诚实竞争边界、对标产品地图
 ```
 
 ## 写新文档时请遵循
@@ -47,3 +50,6 @@ docs/
 | [wiki/databus-loop-component.md](wiki/databus-loop-component.md) | 循环/路由组件：forLoop/iteratorLoop/switchRoute 三物料契约、$i/$j/$k ThreadLocal 索引栈、EL 条件位 tag/data 修复与 SWITCH 分支 tag、前端护栏与小表单、BREAK/DEFAULT/parallel 推后清单 | ruoyi-databus + plus-ui `views/databus/editor` | 2026-09-20 |
 | [wiki/databus-bpm-endpoint-auth.md](wiki/databus-bpm-endpoint-auth.md) | BPM 12 端点鉴权：裸奔现状与 IP 白名单绕过、官方文档实证 /portal/openapi 签名网关（5 分钟窗、自定义 cmd 一等公民）、推荐 B 主线 C 兜底（待网关实测） | BPM 端总线 app + ruoyi-databus + plus-ui | 2026-09-20 |
 | [wiki/databus-formula-engine-research.md](wiki/databus-formula-engine-research.md) | 公式引擎调研：旧 5 公式归宿、业界三层模型（结构化/内联表达式/脚本）、JVM 引擎横评、QLExpress4 已随 LiteFlow 在 classpath；结论当前不建引擎，给触发信号与储备设计 | ruoyi-databus（调研，无代码改动） | 2026-09-20 |
+| [wiki/databus-expression-syntax.md](wiki/databus-expression-syntax.md) | 参数表达式语法契约：`{{ }}` 唯一动态标记、整字段保留原类型、PathResolver 三分支收敛（含裸子串误判缺陷）、QLExpress4 三步演进与 GraalJS 否决理由 | ruoyi-databus（规范，无代码改动） | 2026-09-24 |
+| [wiki/databus-context-concurrency.md](wiki/databus-context-concurrency.md) | DatabusContext 并发安全：WHEN 并行写共享树的竞争路径（createPath 根 Map + handleArrayPath 活引用）、子树父键概念、ReentrantReadWriteLock 锁分配与不死锁论证、两个否决方案、getDocument 后门 | ruoyi-databus (`org.dromara.databus.context`) | 2026-09-24 |
+| [wiki/n8n-vs-databus-paradigm.md](wiki/n8n-vs-databus-paradigm.md) | 两种数据范式：n8n 传送带（item 数组）vs 本项目共享黑板（全量树）、4 条真实链路逐项对照、双方盲区对称列举、诚实竞争边界（含两处已撤回论证）、对标产品地图 | 架构论证（无代码改动） | 2026-09-24 |

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.context.JsonCodec;
+import org.dromara.databus.context.InputParamValidator;
 import org.dromara.databus.domain.bo.PreviewRunBo;
 import org.dromara.databus.domain.vo.PreviewRunVo;
 import org.dromara.databus.el.bean.CmpProperty;
@@ -61,6 +62,8 @@ public class DatabusEditorController extends BaseController {
             }
 
             Object requestData = JsonCodec.parse(bo.getRequestJson());
+            // 必填校验：默认值不注入试运行请求（前端已按默认值预填，这里只校验最终入参）
+            InputParamValidator.validateRequired(bo.getInputParams(), requestData);
             DatabusExecutionResult executionResult = databusExecutor.executeByEl(elStr, requestData, jsonEl);
             return R.ok(PreviewRunVo.executed(elStr, executionResult));
         } catch (Exception e) {

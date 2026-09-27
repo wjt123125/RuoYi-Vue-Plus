@@ -6,15 +6,19 @@ import com.yomahub.liteflow.core.FlowExecutor;
 import com.yomahub.liteflow.enums.NodeTypeEnum;
 import com.yomahub.liteflow.flow.LiteflowResponse;
 import com.yomahub.liteflow.flow.entity.CmpStep;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.dromara.databus.component.script.ScriptCfg;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.context.DatabusContext;
+import org.dromara.databus.context.InputParamValidator;
 import org.dromara.databus.context.JsonCodec;
+import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.Properties;
+import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.service.ISysDatabusConnectionService;
 import org.springframework.stereotype.Component;
 
@@ -55,6 +59,8 @@ public class DatabusExecutor {
 
     private final ISysDatabusConnectionService connectionService;
 
+    private final DatabusChainMapper chainMapper;
+
     /**
      * 同步执行链路。
      *
@@ -69,6 +75,14 @@ public class DatabusExecutor {
         // LiteflowResponse/Slot 不提供链路级总耗时，节点级耗时则直接取各 CmpStep
         Date startTime = new Date();
         log.info("[databus] 开始执行链路 chainId={}, executionId={}", chainId, executionId);
+
+        // 执行前必填校验（默认值不注入真实执行）：按 chainCode 取链路登记表；
+        // 链路查不到时不拦——交给 LiteFlow 暴露"无此链路"的原有错误
+        DatabusChain chain = chainMapper.selectOne(Wrappers.<DatabusChain>lambdaQuery()
+            .eq(DatabusChain::getChainCode, chainId));
+        if (chain != null) {
+            InputParamValidator.validateRequired(chain.getInputParams(), requestData);
+        }
 
         DatabusContext context = DatabusContext.fromObject(requestData);
         injectConnections(context);

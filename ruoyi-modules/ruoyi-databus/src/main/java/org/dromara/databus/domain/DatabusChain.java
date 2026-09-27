@@ -8,7 +8,10 @@ import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.dromara.common.mybatis.core.domain.BaseEntity;
+import org.dromara.databus.el.bean.ChainInputParam;
 import org.dromara.databus.el.bean.CmpProperty;
+
+import java.util.List;
 
 /**
  * 链路定义对象 databus_chain
@@ -73,6 +76,15 @@ public class DatabusChain extends BaseEntity {
      * FULL 执行级 + 节点级每步 IO。挂字典 databus_log_level。
      */
     private String logLevel;
+
+    /**
+     * 链路入参登记表（ChainInputParam 列表：路径/类型/默认值/必填）
+     * <p>
+     * 通过 JacksonTypeHandler 与 input_params 列的 JSON 文本自动互转；
+     * 试运行据此预填默认值，执行前据此做必填校验（见 InputParamValidator）。
+     */
+    @TableField(value = "input_params", typeHandler = JacksonTypeHandler.class)
+    private List<ChainInputParam> inputParams;
 
     /**
      * 删除标志（0存在 1删除）

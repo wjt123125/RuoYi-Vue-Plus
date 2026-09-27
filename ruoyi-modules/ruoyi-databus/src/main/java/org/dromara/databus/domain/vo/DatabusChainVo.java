@@ -3,11 +3,13 @@ package org.dromara.databus.domain.vo;
 import io.github.linpeilie.annotations.AutoMapper;
 import lombok.Data;
 import org.dromara.databus.domain.DatabusChain;
+import org.dromara.databus.el.bean.ChainInputParam;
 import org.dromara.databus.el.bean.CmpProperty;
 
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 链路定义视图对象 databus_chain
@@ -65,6 +67,11 @@ public class DatabusChainVo implements Serializable {
      * 执行记录档位（OFF/BASIC/FULL，默认 BASIC）
      */
     private String logLevel;
+
+    /**
+     * 链路入参登记表（编辑器据此渲染登记弹窗、试运行预填默认值）
+     */
+    private List<ChainInputParam> inputParams;
 
     /**
      * 备注

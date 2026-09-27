@@ -18,7 +18,9 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.IntFunction;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -55,6 +57,23 @@ public class DatabusContext {
      * <p>Connector 类型注册表不放这里（Connector 是无状态单例，放 {@code ConnectorRegistry} Spring Bean）。
      */
     private final Map<String, Connection> connections = new LinkedHashMap<>();
+
+    /**
+     * 数据空间与连接表的读写锁：保护 WHEN 并行下对共享 jayway 文档树的并发访问
+     * （底层是普通 LinkedHashMap/ArrayList，详见 docs/wiki/databus-context-concurrency.md）。
+     * <p>锁分配：
+     * <ul>
+     *     <li>读锁：{@code read* / resolve / resolveMixedPath / exists /
+     *     snapshotDataSpace / toJsonString / getConnection / allConnections}；</li>
+     *     <li>写锁：{@code write / save / registerConnection}；
+     *     private 的 {@code createPath} 不单独加锁，契约上只允许在已持有写锁时调用。</li>
+     * </ul>
+     * <p>必须守住的不变量：<b>禁止在读锁内升级写锁</b>（读写锁不支持锁升级会永久阻塞）；
+     * 写锁内重入读锁/写锁（锁降级）是安全的。
+     * <p>公开方法不直接写 lock/unlock，统一走 {@link #withReadLock} / {@link #withWriteLock}，
+     * 由这两个入口保证 try-finally 释放，避免漏解锁。
+     */
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     /**
      * 组件自报的本步人话摘要。
@@ -143,50 +162,58 @@ public class DatabusContext {
      */
     @SuppressWarnings("unchecked")
     public <T> T read(String path) {
-        Integer index = directLoopIndex(path);
-        if (index != null) {
-            return (T) index;
-        }
-        try {
-            return (T) document.read(substituteLoopVars(path));
-        } catch (PathNotFoundException e) {
-            throw new ServiceException("JSON路径不存在: " + path, e);
-        }
+        return withReadLock(() -> {
+            Integer index = directLoopIndex(path);
+            if (index != null) {
+                return (T) index;
+            }
+            try {
+                return (T) document.read(substituteLoopVars(path));
+            } catch (PathNotFoundException e) {
+                throw new ServiceException("JSON路径不存在: " + path, e);
+            }
+        });
     }
 
     /**
      * 读取指定路径的值并按 {@link TypeRef} 转换。
      */
     public <T> T read(String path, TypeRef<T> typeRef) {
-        try {
-            return document.read(substituteLoopVars(path), typeRef);
-        } catch (PathNotFoundException e) {
-            throw new ServiceException("JSON路径不存在: " + path, e);
-        }
+        return withReadLock(() -> {
+            try {
+                return document.read(substituteLoopVars(path), typeRef);
+            } catch (PathNotFoundException e) {
+                throw new ServiceException("JSON路径不存在: " + path, e);
+            }
+        });
     }
 
     /**
      * 读取指定路径的值（路径不存在时返回 {@code null}）。
      */
     public <T> T readOptional(String path) {
-        Integer index = directLoopIndex(path);
-        if (index != null) {
-            return (T) index;
-        }
-        try {
-            return document.read(substituteLoopVars(path));
-        } catch (PathNotFoundException e) {
-            log.debug("JSON路径不存在: {}，返回 null", path);
-            return null;
-        }
+        return withReadLock(() -> {
+            Integer index = directLoopIndex(path);
+            if (index != null) {
+                return (T) index;
+            }
+            try {
+                return document.read(substituteLoopVars(path));
+            } catch (PathNotFoundException e) {
+                log.debug("JSON路径不存在: {}，返回 null", path);
+                return null;
+            }
+        });
     }
 
     /**
      * 读取指定路径的值（路径不存在时返回默认值）。
      */
     public <T> T readOptional(String path, T defaultValue) {
-        T value = readOptional(path);
-        return value != null ? value : defaultValue;
+        return withReadLock(() -> {
+            T value = readOptional(path);
+            return value != null ? value : defaultValue;
+        });
     }
 
     /**
@@ -197,13 +224,16 @@ public class DatabusContext {
      * @param value 要写入的值
      */
     public void write(String path, Object value) {
-        String resolvedPath = substituteLoopVars(path);
-        try {
-            document.set(resolvedPath, value);
-        } catch (Exception e) {
-            createPath(resolvedPath);
-            document.set(resolvedPath, value);
-        }
+        withWriteLock(() -> {
+            String resolvedPath = substituteLoopVars(path);
+            try {
+                document.set(resolvedPath, value);
+            } catch (Exception e) {
+                // createPath 契约：调用方必须已持有写锁（此处已持有，禁止移到锁外）
+                createPath(resolvedPath);
+                document.set(resolvedPath, value);
+            }
+        });
     }
 
     /**
@@ -213,6 +243,7 @@ public class DatabusContext {
      * 不改 {@code write} 名字以免破坏既有 Java 组件（{@link org.dromara.databus.component.DatabusNodeComponent#save}）。
      */
     public void save(String path, Object value) {
+        // write 内部已取写锁（可重入），直接委托即可
         write(path, value);
     }
 
@@ -220,7 +251,7 @@ public class DatabusContext {
      * 判断路径是否存在。
      */
     public boolean exists(String path) {
-        return PathResolver.pathExists(document, substituteLoopVars(path));
+        return withReadLock(() -> PathResolver.pathExists(document, substituteLoopVars(path)));
     }
 
     /**
@@ -232,10 +263,12 @@ public class DatabusContext {
      * @return 替换后的字符串
      */
     public String resolveMixedPath(String template) {
-        if (template == null) {
-            return null;
-        }
-        return PathResolver.resolveMixedPath(substituteLoopVars(template), document);
+        return withReadLock(() -> {
+            if (template == null) {
+                return null;
+            }
+            return PathResolver.resolveMixedPath(substituteLoopVars(template), document);
+        });
     }
 
     /**
@@ -248,22 +281,25 @@ public class DatabusContext {
      * </ul>
      */
     public Object resolve(Object input) {
-        if (input instanceof String str) {
-            Integer direct = directLoopIndex(str);
-            if (direct != null) {
-                return direct;
+        return withReadLock(() -> {
+            if (input instanceof String str) {
+                Integer direct = directLoopIndex(str);
+                if (direct != null) {
+                    return direct;
+                }
+                String effective = substituteLoopVars(str);
+                if (PathResolver.isPureJsonPath(effective)) {
+                    // 读锁可重入
+                    return read(effective);
+                }
+                if (PathResolver.isMixedPathString(effective)) {
+                    return PathResolver.resolveMixedPath(effective, document);
+                }
+                // 含循环占位符但不是路径/模板（如 "name-$i"）：返回替换后的字符串
+                return effective;
             }
-            String effective = substituteLoopVars(str);
-            if (PathResolver.isPureJsonPath(effective)) {
-                return read(effective);
-            }
-            if (PathResolver.isMixedPathString(effective)) {
-                return PathResolver.resolveMixedPath(effective, document);
-            }
-            // 含循环占位符但不是路径/模板（如 "name-$i"）：返回替换后的字符串
-            return effective;
-        }
-        return input;
+            return input;
+        });
     }
 
     /**
@@ -271,10 +307,12 @@ public class DatabusContext {
      * <p>同一 id 重复注册时覆盖（便于重新执行覆盖旧连接）。
      */
     public void registerConnection(Connection connection) {
-        if (connection == null || connection.getId() == null || connection.getId().isBlank()) {
-            throw new ServiceException("连接实例缺少 id");
-        }
-        connections.put(connection.getId(), connection);
+        withWriteLock(() -> {
+            if (connection == null || connection.getId() == null || connection.getId().isBlank()) {
+                throw new ServiceException("连接实例缺少 id");
+            }
+            connections.put(connection.getId(), connection);
+        });
     }
 
     /**
@@ -283,33 +321,28 @@ public class DatabusContext {
      * @throws ServiceException 未注册时抛出（组件层调 Connector 前必须先取到 Connection）
      */
     public Connection getConnection(String connectionId) {
-        Connection conn = connections.get(connectionId);
-        if (conn == null) {
-            throw new ServiceException("未注册的 connectionId: " + connectionId
-                + "，已注册: " + connections.keySet());
-        }
-        return conn;
+        return withReadLock(() -> {
+            Connection conn = connections.get(connectionId);
+            if (conn == null) {
+                throw new ServiceException("未注册的 connectionId: " + connectionId
+                    + "，已注册: " + connections.keySet());
+            }
+            return conn;
+        });
     }
 
     /**
      * 列出当前上下文所有已注册连接实例（不可变视图）。
      */
     public Map<String, Connection> allConnections() {
-        return Collections.unmodifiableMap(connections);
-    }
-
-    /**
-     * 暴露内部 jayway 文档上下文（供需要直接操作 DocumentContext 的场景使用）。
-     */
-    public DocumentContext getDocument() {
-        return document;
+        return withReadLock(() -> Collections.unmodifiableMap(connections));
     }
 
     /**
      * 把当前上下文序列化为 JSON 字符串。
      */
     public String toJsonString() {
-        return document.jsonString();
+        return withReadLock(document::jsonString);
     }
 
     /**
@@ -460,20 +493,52 @@ public class DatabusContext {
      * @return 子树 JSON；tag 为空或该子树不存在时返回 null
      */
     public String snapshotDataSpace(String tag) {
-        if (tag == null || tag.isBlank()) {
-            return null;
-        }
-        String path = SAFE_TAG.matcher(tag).matches()
-            ? "$." + tag
-            : "$['" + tag.replace("'", "\\'") + "']";
-        Object subtree = readOptional(path);
-        return subtree == null ? null : JsonCodec.toJson(subtree);
+        return withReadLock(() -> {
+            if (tag == null || tag.isBlank()) {
+                return null;
+            }
+            String path = SAFE_TAG.matcher(tag).matches()
+                ? "$." + tag
+                : "$['" + tag.replace("'", "\\'") + "']";
+            // 读锁可重入：readOptional 内部再取读锁；
+            // 整段（读子树 + 遍历序列化）持锁，保证 WHEN 并行下不会拍到半构建的树
+            Object subtree = readOptional(path);
+            return subtree == null ? null : JsonCodec.toJson(subtree);
+        });
     }
+
+    // ==================== 锁辅助 ====================
+
+    /** 在读锁保护下执行有返回值的操作（读锁可重入）。 */
+    private <T> T withReadLock(Supplier<T> action) {
+        lock.readLock().lock();
+        try {
+            return action.get();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /** 在写锁保护下执行无返回值的操作（写锁可重入，锁内可读）。 */
+    private void withWriteLock(Runnable action) {
+        lock.writeLock().lock();
+        try {
+            action.run();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    // ==================== 自动建路径 ====================
 
     /**
      * 递归创建路径结构（对象逐层建 Map，数组按索引扩容）。
      * <p>
      * 提炼自原系统 {@code DocumentUtil.createPath}，去除 AWS SDK 依赖。
+     * <p>
+     * <b>加锁契约：本方法不自行加锁，调用方必须已持有写锁。</b>
+     * 内部含 pathExists→put 的 check-then-act 复合操作，只有在写锁保护下才原子
+     * （详见 docs/wiki/databus-context-concurrency.md §5）。
      */
     private void createPath(String path) {
         if (path == null || !path.startsWith("$.")) {

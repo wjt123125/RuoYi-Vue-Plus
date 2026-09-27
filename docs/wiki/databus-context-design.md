@@ -133,6 +133,7 @@ JSONPath 是**静态路径**，不支持变量内插。`$.items[$.loopIndex].id`
 1. **`DatabusExecutor` 把 `requestData` 同时传给 `flowExecutor.execute2Resp` 的 slotParam 和 `DatabusContext.fromObject`**——两个通道有点重复，1C 闭环时该细化（slotParam 与 context 的职责分工）
 2. **动态变量目前是死代码**：新系统 `resolve()` 遇到含动态变量的参数原样返回，但没有循环组件消费它。接入代理层前，循环场景跑不起来
 3. **`PathResolver.containsDynamicVariable` 正则太宽**：`\$[a-zA-Z_]\w*` 会匹配 `Hello $name` 这种普通字符串，但因为代理层用注册制，实际不影响——只是 `resolve()` 的判断逻辑与代理机制不一致，接入代理层时要统一
+4. **WHEN 并行必须走锁，禁止直接暴露内部文档**：jayway 底层是普通 `LinkedHashMap`/`ArrayList`，WHEN 多分支并发写同一棵树会丢键/结构损坏，遍历快照还可能拍到半构建的树。`DatabusContext` 已内置 `ReentrantReadWriteLock`（读方法取读锁、`write/save/registerConnection` 取写锁，`createPath` 只在写锁内调用）；新增读入口必须包读锁、新增写入口必须包写锁，**禁止在读锁内升级写锁**（不支持锁升级会永久阻塞）；裸 `DocumentContext` 后门 `getDocument()` 已删除，不得重新加回。完整分析见 [databus-context-concurrency.md](databus-context-concurrency.md)
 
 ## 7. 扩展指南
 

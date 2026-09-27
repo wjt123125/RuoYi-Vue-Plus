@@ -2,6 +2,7 @@
 
 > 2026-09-24 定位，P0。本篇是**缺陷 + 修复档**（对标 [liteflow-el-normalize-bug.md](liteflow-el-normalize-bug.md) 的体裁）。
 > 结论先行：**不改 jayway 源码**，在 `DatabusContext` 内加一把读写锁。修复必须**前置于执行记录页**。
+> **2026-09-27 已按 §8 清单修复**：读写锁落地（锁分配见 §5.1）、`getDocument()` 后门因全模块零调用已删除、§5.3 的 ThreadLocal 未动；`mvnw compile` + IDE 诊断通过，压测待用户亲跑。
 > 上下文机制本身见 [databus-context-design.md](databus-context-design.md)，本篇只讲并发维度。
 
 ## 1. 结论（TL;DR）

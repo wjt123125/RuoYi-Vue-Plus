@@ -8,10 +8,12 @@ import lombok.Data;
 import org.dromara.common.core.validate.AddGroup;
 import org.dromara.common.core.validate.EditGroup;
 import org.dromara.databus.domain.DatabusChain;
+import org.dromara.databus.el.bean.ChainInputParam;
 import org.dromara.databus.el.bean.CmpProperty;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * 链路定义业务对象 databus_chain。
@@ -65,6 +67,12 @@ public class DatabusChainBo implements Serializable {
      * 草稿阶段可配置；发布后下线再重新发布时仍可调整。
      */
     private String logLevel;
+
+    /**
+     * 链路入参登记表（路径/类型/默认值/必填）；保存时校验路径格式与重复，
+     * 试运行据此预填，执行前据此做必填校验。
+     */
+    private List<ChainInputParam> inputParams;
 
     /**
      * 备注

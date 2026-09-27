@@ -16,6 +16,7 @@ import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.ELInfo;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
+import org.dromara.databus.context.InputParamValidator;
 import org.dromara.databus.enums.ChainStatusEnum;
 import org.dromara.databus.enums.LogLevelEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
@@ -132,6 +133,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     public Boolean insertByBo(DatabusChainBo bo) {
         validateChainCodeUnique(bo);
         validateLogLevel(bo.getLogLevel());
+        InputParamValidator.validateDefs(bo.getInputParams());
         DatabusChain add = MapstructUtils.convert(bo, DatabusChain.class);
         add.setId(null);
         add.setVersion(DRAFT_VERSION);
@@ -153,6 +155,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         }
         validateChainCodeUnique(bo);
         validateLogLevel(bo.getLogLevel());
+        InputParamValidator.validateDefs(bo.getInputParams());
         DatabusChain update = MapstructUtils.convert(bo, DatabusChain.class);
         // 版本/状态不接受编辑接口修改（发布流转走独立接口）
         update.setVersion(null);
@@ -287,6 +290,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         add.setCanvasData(source.getCanvasData());
         add.setCmpProperty(source.getCmpProperty());
         add.setLogLevel(source.getLogLevel());
+        add.setInputParams(source.getInputParams());
         add.setRemark(source.getRemark());
         // 草稿不推 Rule-DB；与新增草稿同口径，EL 由组件树实时生成而非复制源 EL 文本
         add.setElExpression(generateEl(source.getCmpProperty()));

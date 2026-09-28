@@ -8,7 +8,7 @@ import org.dromara.databus.component.DatabusNodeComponent;
 /**
  * 变量赋值组件（注册名 {@code setValue}）。
  * <p>
- * 把 value 按参数约定解析（字面量 / 裸路径整取 / 混合字符串替换）后写入 path。
+ * 把 value 按参数约定解析（字面量，或 {@code {{ $.路径 }}} 整字段求值）后写入 path。
  * <p>
  * 同时镜像一份到节点 tag 命名空间（{@code $.<tag>.path} 与 {@code $.<tag>.value}），
  * 遵循"每个节点产出在自己 tag 下"的统一契约，供 {@link

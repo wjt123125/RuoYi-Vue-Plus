@@ -7,8 +7,8 @@ import lombok.Data;
  * <pre>
  * {
  *   "connectionId": "bpm-default",                          // 必填
- *   "instanceId": "$.processStart1.processInstanceId",      // 必填，流程实例 ID（支持路径引用）
- *   "userId": "admin"                                       // 必填，终止操作人（支持路径引用）
+ *   "instanceId": "{{ $.processStart1.processInstanceId }}", // 必填，流程实例 ID（字面量或表达式）
+ *   "userId": "admin"                                       // 必填，终止操作人（字面量或表达式）
  * }
  * </pre>
  *
@@ -23,9 +23,9 @@ public class ProcessTerminateCfg {
     /** 连接实例 ID（必填） */
     private String connectionId;
 
-    /** 流程实例 ID（必填，支持路径引用） */
+    /** 流程实例 ID（必填，字面量或 {@code {{ $.路径 }}} 表达式） */
     private String instanceId;
 
-    /** 终止操作人用户 ID（必填，支持路径引用） */
+    /** 终止操作人用户 ID（必填，字面量或 {@code {{ $.路径 }}} 表达式） */
     private String userId;
 }

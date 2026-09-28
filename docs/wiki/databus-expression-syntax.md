@@ -20,6 +20,8 @@
 
 **引擎不变，只换标记**：`{{ }}` 内当前仍由 jayway JSONPath 求值。将来引入表达式引擎（储备 QLExpress4）是纯内部实现替换，**用户配置零迁移**——这是选 `{{ }}` 而非 `${}` 或 Step Functions 后缀方案的核心理由。
 
+> 2026-09-27 讨论补充：一个字段该不该写 `{{ }}` 由**字段角色**决定（「要数据」还是「起名字」），不由填写人临时判断，详见 §4.6。原档把 condition.path、iterator.source 等取值字段划在裸路径一侧，本次一并修正。
+
 ## 2. 为什么要改：现状的三个真问题
 
 现状实现在 [PathResolver](../../ruoyi-modules/ruoyi-databus/src/main/java/org/dromara/databus/context/PathResolver.java)，同时支持两种写法：
@@ -48,8 +50,8 @@ private static final Pattern PATH_FRAGMENT_PATTERN =
 
 [resolveMixedPath](../../ruoyi-modules/ruoyi-databus/src/main/java/org/dromara/databus/context/PathResolver.java#L101) 走 `Matcher.appendReplacement` 拼 `StringBuffer`，返回值固定 `String`。所以：
 
-- `"dataPath": "$.fieldMap1"` —— 纯路径，`resolve()` 走 `read()`，**能拿回对象**
-- `"title": "申请-${$.request.code}"` —— 混合模板，**只能拿回字符串**
+- `"dataPath": "{{ $.fieldMap1 }}"` —— 整字段表达式，`resolve()` 走 `read()`，**能拿回对象**
+- `"title": "申请-{{ $.request.code }}"` —— 嵌入模板，**只能拿回字符串**
 
 一旦字段里有任何非路径文本，整个值就被字符串化，取不回结构化数据。这是**能力缺口**，不只是写法不统一。
 
@@ -146,6 +148,16 @@ public static boolean containsPathExpression(String value) {
 - **转义**：第 1 步不提供"我要输出字面量 `{{`"的转义机制（业务参数里出现 `{{` 的概率极低，出现再补）
 - **跨字段引用**：表达式只在**单个参数值**内求值，不做字段间依赖分析
 
+### 4.6 字段角色决定写法：要数据 vs 起名字（2026-09-27 修正）
+
+一个字段该不该写 `{{ }}`，不看填写人临时的想法，看字段在组件里被消费的角色：
+
+- **要数据的字段**：组件拿它是为了得到一份内容——比较对象、循环数组、密码、URL、标题、映射来源、RDS 实参等。动态值一律写 `{{ }}`，组件对这些字段调 `resolve()`，不再直接 `read()`。**即使字段名叫 path/source**（如 condition.path、iterator.source、switch.source），只要用途是取值，就按本条。通配符取值（如 fieldMap 的 from `$.resp.data[*].NAME`）改走 resolve 后得到的就是列表。
+- **起名字的字段**：组件拿它作为「往哪写」的位置名——setValue.path、fieldMap 的 to、dataPatch.target。位置名**不被求值**，裸写 `$.路径`。这不是第二套解析逻辑：它走「原样」路径，`$.` 只是位置的命名格式，与 JSONPath 取值动作无关。
+- **普通字面量**（`3`、`"POST"`、`"admin"`）同样走「原样」路径。
+
+归纳：**外观三种**（普通字面量 / 裸路径位置名 / `{{ }}`），**处理路径两条**（原样 / 求值）。未来写目标需要动态（间接写入）时用 Groovy 节点承接，不污染本契约。
+
 ## 5. 引擎演进路线：语法先行，引擎后置
 
 ### 5.1 三层能力模型（不变）
@@ -192,27 +204,28 @@ public static boolean containsPathExpression(String value) {
 
 | 坑 | 说明 |
 | :--- | :--- |
-| **裸路径不再自动解析** | 改后 `$.request.password` 是**字面量**，会被原样传给下游。所有既有配置必须补 `{{ }}`。这是**破坏性变更**，靠"设计期无兼容包袱 + 重新生成 27 条种子 mock"消化，不留兼容分支（留了就退回问题 ①） |
+| **裸路径不再自动解析** | 改后 `$.request.password` 是**字面量**，会被原样传递。所有既有配置必须补 `{{ }}`——包括 condition.path、iterator.source 等原本由组件直接 read 的取值字段。这是**破坏性变更**，靠"设计期无兼容包袱 + 组件迁移 + 重新生成 27 条种子 mock"消化，不留兼容分支（留了就退回问题 ①） |
 | 整字段判定用贪婪正则 | 见 §4.2，`{{ $.a }} {{ $.b }}` 会被误判为整字段 |
 | 循环变量与 `{{ }}` 的处理顺序 | `substituteLoopVars` 必须在表达式求值**之前**跑（现状即如此），否则 `[$i]` 进 jayway 会解析失败 |
 | `${}` 兼容分支不要"顺手保留" | 保留就意味着解析器双路径、文档双写、前端双示例，问题 ① 原样复现。要删干净 |
-| 混合模板的静默不替换 | 现状路径读不到时保留原片段、不报错（[PathResolver.java:157](../../ruoyi-modules/ruoyi-databus/src/main/java/org/dromara/databus/context/PathResolver.java#L144)）。改 `{{ }}` 时**建议一并改为可诊断**：至少 `log_level != OFF` 时打 WARN，否则排障仍然靠猜 |
+| 嵌入模板的静默不替换 | 现状路径读不到时保留原片段、不报错。本次落地：**片段取值失败一律打 WARN**（不设 log_level 门控、不拦执行、片段仍原样保留），让排障有迹可循 |
 
 ## 7. 落地清单（第 1 步）
 
 按依赖顺序：
 
 1. **[PathResolver](../../ruoyi-modules/ruoyi-databus/src/main/java/org/dromara/databus/context/PathResolver.java)**
-   - `PATH_FRAGMENT_PATTERN` 改为匹配 `{{ ... }}`，删除 group(2) 裸路径分支
-   - `containsPathExpression` 从 `contains("$.")` 改为 `contains("{{")`
-   - 新增"整字段"判定方法（§4.2 的配对扫描），供 `resolve()` 决定走原类型还是拼接
-   - `PURE_PATH_PATTERN` / `isPureJsonPath` 的对外职责收缩为内部实现细节（不再有"纯路径参数值"这个概念）
-2. **[DatabusContext.resolve](../../ruoyi-modules/ruoyi-databus/src/main/java/org/dromara/databus/context/DatabusContext.java#L250)** —— 三分支（`directLoopIndex` / `isPureJsonPath` / `isMixedPathString`）收敛为"有无 `{{`"一个判断 + 整字段/嵌入二分
-3. **[databus_chain_mock_data.sql](../../script/sql/databus_chain_mock_data.sql)** —— 27 条链路全部重新生成，所有动态参数补 `{{ }}`。重点核对：`bpm-flow` 的 `$.request.password`、`serial-all` 的 `$.httpRequest1.response.msg`、`iterator-nested` 的 `$.groups[$i].users[$j].name`
-4. **前端** —— [CmpProps.vue](../../../plus-ui/src/views/databus/editor/components/CmpProps.vue) 的 `DATA_HINTS` 与 [cmp-defs.ts](../../../plus-ui/src/views/databus/editor/cmp-defs.ts) 的示例文案，全部改成 `{{ }}` 写法
-5. **组件内取值点** —— 各组件里直接调 `read("$.xxx")` 取**自身配置**的地方不受影响（那是代码内硬编码路径，不是用户配置）；只有从**用户参数**里拿到的字符串要走 `resolve()`。改前 grep 一遍确认没有绕过 `resolve()` 的
-6. **文档同步** —— [databus-context-design.md](databus-context-design.md) §3.1「路径四种类型与 resolve() 分发」、§3.2「混合路径解析」需按新契约改写；`.trae/project_memory.md` §四 已更新
-7. **验证边界** —— 零成本静态检查（`mvnw compile`、IDE 诊断、oxlint、vue-tsc）+ 代码审查；测试由用户亲跑亲判（项目约定，AI 不自行运行测试）
+   - 片段正则改匹配 `{{ ... }}`（非贪婪捕获括号内容），删除旧 `${}` 与裸路径两个分支
+   - `containsPathExpression` 改为判 `contains("{{")`
+   - 新增「整字段」判定（§4.2 的非贪婪全文匹配 + 内容不含 `}}` 校验），供 `resolve()` 决定走原类型还是拼接
+   - 删除 `PURE_PATH_PATTERN` / `isPureJsonPath` / `isMixedPathString`（先 grep 全模块调用点）；嵌入解析中取值失败的片段打 WARN（仍原样保留）
+2. **[DatabusContext.resolve](../../ruoyi-modules/ruoyi-databus/src/main/java/org/dromara/databus/context/DatabusContext.java#L250)** —— 保留 `$i` 单独成值与循环变量展开，之后收敛为「有无 `{{`」一个判断 + 整字段（read，保留原类型，路径不存在直接抛错）/嵌入（拼接字符串）二分
+3. **组件字段体检与迁移**（2026-09-27 新增，21 个组件逐个过）：所有「要数据」字段从直接 `read/readOptional` 改调 `resolve()`（condition.path、switch.source、iterator.source、response.dataPath、fieldMap.from、HTTP mappings、boQuery.conditionSourcePath、boCreate.sourcePath 等）；「起名字」字段（setValue.path、fieldMap.to、dataPatch.target）保持裸路径不动
+4. **[databus_chain_mock_data.sql](../../script/sql/databus_chain_mock_data.sql)** —— 27 条链路全部重新生成：要数据的动态参数补 `{{ }}`，写目标位置名保持裸写。重点核对：`bpm-flow` 的 `$.request.password`、`serial-all` 的 `$.httpRequest1.response.msg`、`iterator-nested` 的 `$.groups[$i].users[$j].name`
+5. **前端** —— [CmpProps.vue](../../../plus-ui/src/views/databus/editor/components/CmpProps.vue) 的 `DATA_HINTS`、placeholder 与 [cmp-defs.ts](../../../plus-ui/src/views/databus/editor/cmp-defs.ts) 的示例文案，按新契约改写；两类字段的提示语分别写明「常量 或 `{{ $.路径 }}`」与「写入位置，不支持 `{{ }}`」
+6. **全模块 grep 复核** —— 确认没有组件绕过 `resolve()` 直接处理用户参数；组件代码内硬编码的 `read("$.xxx")`（取自身约定位置，不是用户配置）不受影响
+7. **文档同步** —— [databus-context-design.md](databus-context-design.md) §3.1「路径四种类型与 resolve() 分发」、§3.2「混合路径解析」按新契约改写；project_memory 同步 §4.6 字段角色规则
+8. **验证边界** —— 零成本静态检查（`mvnw compile`、IDE 诊断、oxlint、vue-tsc）+ 代码审查；测试由用户亲跑亲判（项目约定，AI 不自行运行测试）
 
 ## 8. 关键代码位置索引
 

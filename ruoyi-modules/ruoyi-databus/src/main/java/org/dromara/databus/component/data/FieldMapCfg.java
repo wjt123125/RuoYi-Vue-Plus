@@ -8,17 +8,17 @@ import java.util.List;
 /**
  * 字段映射组件（fieldMap）的节点参数。
  * <pre>
- * { "mappings": [ { "from": "$.httpRequest1.response.data.captchaEnabled",
+ * { "mappings": [ { "from": "{{ $.httpRequest1.response.data.captchaEnabled }}",
  *                   "to":   "$.fieldMap1.captchaEnabled",
  *                   "type": "boolean" } ] }
  * </pre>
  *
  * <p>支持两种搬运语义：
  * <ul>
- *   <li>单值搬运（默认，向后兼容）：from / to 均不含 {@code [*]}，从 from 读单值原值写入 to。
- *       <b>不配 type 时行为完全等同改造前</b>（原值搬运）。</li>
- *   <li>数组批量搬运（A3 新增）：from / to 均含 {@code [*]}（如 {@code $.orders[*].NAME}
- *       → {@code $.target.items[*].name}），逐元素读取、按索引写入目标数组的对应位置，
+ *   <li>单值搬运（默认）：from 表达式（{@code {{ $.路径 }}}）不含 {@code [*]}，从 from 求单值原值写入 to。
+ *       <b>不配 type 时为原值搬运</b>。</li>
+ *   <li>数组批量搬运：from / to 均含 {@code [*]}（如 {@code {{ $.orders[*].NAME }}}
+ *       → {@code $.target.items[*].name}），from 求值得列表、逐元素按索引写入目标数组，
  *       每个元素仍按单值处理（可叠加 type 转换）。</li>
  * </ul>
  *
@@ -31,17 +31,17 @@ import java.util.List;
 public class FieldMapCfg {
 
     /**
-     * 字段搬运条目列表：from 源路径 → to 目标路径（均为纯路径，原值搬运，不做拼接）。
+     * 字段搬运条目列表：from 源表达式（要数据，{@code {{ $.路径 }}}）→ to 目标位置名（起名字，裸路径）。
      */
     private List<Mapping> mappings;
 
     @Data
     public static class Mapping {
 
-        /** 源 JSONPath。支持 {@code [*]} 通配符（与 to 同时含 [*] 时进入数组批量搬运）。 */
+        /** 源表达式（{@code {{ $.路径 }}}）。含 {@code [*]}（与 to 同时含）时进入数组批量搬运。 */
         private String from;
 
-        /** 目标 JSONPath。支持 {@code [*]} 通配符（与 from 同时含 [*] 时进入数组批量搬运）。 */
+        /** 目标位置名（裸路径）。含 {@code [*]}（与 from 同时含）时进入数组批量搬运。 */
         private String to;
 
         /**

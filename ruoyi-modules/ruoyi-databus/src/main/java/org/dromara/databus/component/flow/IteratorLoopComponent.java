@@ -39,7 +39,8 @@ public class IteratorLoopComponent extends NodeIteratorComponent {
         // 先注册本层变量名：超深/重名早报错
         LoopSupport.registerLoopVar(this, ctx, cfg.getIndexVar());
 
-        Object source = ctx.readOptional(cfg.getSource().trim());
+        // source 为「要数据」字段：{{ $.路径 }} 由 resolve 取值；值为 null 仍按空集合 0 轮
+        Object source = ctx.resolve(cfg.getSource().trim());
         if (source == null) {
             ctx.reportStepSummary("数据源为空，0 项");
             return Collections.emptyIterator();

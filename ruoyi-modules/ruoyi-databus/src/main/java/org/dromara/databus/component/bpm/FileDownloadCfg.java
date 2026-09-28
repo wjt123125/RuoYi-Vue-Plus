@@ -7,7 +7,7 @@ import lombok.Data;
  * <pre>
  * {
  *   "connectionId": "bpm-default",       // 必填，BPM 连接实例
- *   "boId": "$.boCreate1.boId",          // 必填，BO 记录 ID（路径/字面量）
+ *   "boId": "{{ $.boCreate1.boId }}",        // 必填，BO 记录 ID（表达式/字面量）
  *   "fieldName": "BO_FIELD_FILE"         // 必填，附件字段名（字面量）
  * }
  * </pre>
@@ -23,7 +23,7 @@ public class FileDownloadCfg {
     /** 连接实例 ID（必填） */
     private String connectionId;
 
-    /** BO 记录 ID（必填，走参数解析） */
+    /** BO 记录 ID（必填，字面量或 {@code {{ $.路径 }}} 表达式） */
     private String boId;
 
     /** 附件字段名（必填，字面量） */

@@ -74,7 +74,7 @@ public class ProcessTerminateComponent extends DatabusNodeComponent {
     }
 
     /**
-     * 字符串参数解析：纯路径读取 / 混合路径替换 / 字面量原样返回，统一转 String。
+     * 字符串参数解析：resolve 求值后统一转 String。
      */
     private String resolveStr(Object input) {
         if (input == null) {

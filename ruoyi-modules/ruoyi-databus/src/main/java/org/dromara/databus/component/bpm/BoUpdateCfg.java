@@ -12,7 +12,7 @@ import java.util.List;
  *   "boList": [
  *     {
  *       "boName": "UserBO",           // 必填
- *       "sourcePath": "$.request.users"  // 必填，数据空间路径，读取 List&lt;Map&gt; 作为 records，
+ *       "sourcePath": "{{ $.request.users }}"  // 必填，要数据表达式，求值 List&lt;Map&gt; 作为 records，
  *                                        // 每条 records 必须含 ID 字段（按记录 ID 定位更新）
  *     }
  *   ]
@@ -42,7 +42,7 @@ public class BoUpdateCfg {
         /** BO 名称（必填） */
         private String boName;
 
-        /** 数据空间源路径（必填），读取 {@code List<Map<String, Object>>} 作为 records，每条必须含 ID */
+        /** 数据空间源表达式（必填，要数据，{@code {{ $.路径 }}}），求值 {@code List<Map<String, Object>>} 作为 records，每条必须含 ID */
         private String sourcePath;
     }
 }

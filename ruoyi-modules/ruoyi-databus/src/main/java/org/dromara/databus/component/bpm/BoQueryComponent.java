@@ -124,16 +124,15 @@ public class BoQueryComponent extends DatabusNodeComponent {
 
     /**
      * 从数据空间读取条件列表并映射为 QueryCondition（List&lt;Map&gt; → 强类型）。
-     * 条件可为空 / 路径不存在返回 null（BPM 端按无条件查询）。
+     * conditionSourcePath 为「要数据」字段（{@code {{ $.路径 }}}）；
+     * 表达式路径不存在时 resolve 抛错。
      */
     private List<BoQueryRequest.QueryCondition> readConditions(String conditionSourcePath) {
         if (conditionSourcePath == null || conditionSourcePath.isBlank()) {
             return null;
         }
-        List<Map<String, Object>> rawList = getOptional(conditionSourcePath);
-        if (rawList == null) {
-            return null;
-        }
+        List<Map<String, Object>> rawList =
+            toRecordList(resolveParam(conditionSourcePath), conditionSourcePath);
         List<BoQueryRequest.QueryCondition> conditions = new ArrayList<>(rawList.size());
         for (int i = 0; i < rawList.size(); i++) {
             Map<String, Object> raw = rawList.get(i);
@@ -152,7 +151,7 @@ public class BoQueryComponent extends DatabusNodeComponent {
     }
 
     /**
-     * 字符串参数解析：纯路径读取 / 混合路径替换 / 字面量原样返回，统一转 String。
+     * 字符串参数解析：resolve 求值后统一转 String。
      */
     private String resolveStr(Object input) {
         if (input == null) {

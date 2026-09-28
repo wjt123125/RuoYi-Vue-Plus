@@ -3,7 +3,12 @@ package org.dromara.databus.component;
 import com.jayway.jsonpath.TypeRef;
 import com.yomahub.liteflow.core.NodeComponent;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.context.DatabusContext;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 数据总线组件基类。
@@ -67,13 +72,36 @@ public abstract class DatabusNodeComponent extends NodeComponent {
     }
 
     /**
-     * 解析参数：纯路径读取、混合路径替换、动态变量原样保留。
+     * 解析参数：含 {@code {{ }}} 的字段求值（整字段保留原类型 / 嵌入拼接），
+     * 不含的原样返回。
      *
-     * @param input 参数原始值（可能是路径、模板或字面量）
+     * @param input 参数原始值
      * @return 解析后的值
      */
     protected Object resolveParam(Object input) {
         return getDatabusContext().resolve(input);
+    }
+
+    /**
+     * 把「要数据」字段的求值结果规整为对象数组（{@code List<Map<String, Object>>}）：
+     * 非数组、元素非对象直接抛配置错误。供各组件从用户配置的 sourcePath 表达式取 records。
+     *
+     * @param value  resolve 后的原始值
+     * @param source 原始表达式（仅用于错误信息）
+     */
+    @SuppressWarnings("unchecked")
+    protected List<Map<String, Object>> toRecordList(Object value, String source) {
+        if (!(value instanceof List<?> list)) {
+            throw new ServiceException("表达式未取到对象数组: " + source + "，实际=" + value);
+        }
+        List<Map<String, Object>> records = new ArrayList<>(list.size());
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?>)) {
+                throw new ServiceException("表达式数组元素不是对象: " + source);
+            }
+            records.add((Map<String, Object>) item);
+        }
+        return records;
     }
 
     /**

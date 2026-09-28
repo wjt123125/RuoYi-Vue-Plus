@@ -12,17 +12,17 @@ import java.util.Map;
  *   "method": "POST",
  *   "url": "http://localhost:8080/auth/login",
  *   "headers": { "X-Tenant": "default" },
- *   "query":   { "ids": ["$.id1", "$.id2"] },
+ *   "query":   { "ids": ["{{ $.id1 }}", "{{ $.id2 }}"] },
  *   "bodyType": "json",
- *   "body":    { "username": "admin", "password": "$.pwd" },
+ *   "body":    { "username": "admin", "password": "{{ $.pwd }}" },
  *   "rawContentType": "text/plain",
- *   "auth":    { "type": "bearer", "token": "$.login.token" },
+ *   "auth":    { "type": "bearer", "token": "{{ $.login.token }}" },
  *   "timeoutMs": 10000,
  *   "failOnHttpError": true,
  *   "responseCharset": "UTF-8",
  *   "responseHeaders": ["X-Total-Count"],
  *   "mappings": [
- *     { "field": "bizCode", "path": "$.code", "required": true }
+ *     { "field": "bizCode", "path": "{{ $.code }}", "required": true }
  *   ]
  * }
  * </pre>
@@ -41,12 +41,12 @@ public class HttpRequestCfg {
     private String method;
 
     /**
-     * 请求地址（必填），必须带 http(s) 协议前缀；支持混合片段（如 {@code http://x/$.userId/detail}）。
+     * 请求地址（必填），必须带 http(s) 协议前缀；支持嵌入表达式（如 {@code http://x/{{ $.userId }}/detail}）。
      */
     private String url;
 
     /**
-     * 请求头：value 支持字面量 / 裸路径 / 混合字符串；Collection 值按逗号拼接。
+     * 请求头：value 为字面量或 {@code {{ $.路径 }}} 表达式；Collection 值按逗号拼接。
      * 与 {@link #auth} 生成的 Authorization 冲突时以 auth 为准（warn 并忽略此项）。
      */
     private Map<String, Object> headers;
@@ -131,7 +131,7 @@ public class HttpRequestCfg {
         /** 存入 {@code $.<tag>.} 下的字段名；禁止 status/response/headers 保留名。 */
         private String field;
 
-        /** 响应体内的 JSONPath（裸路径）。 */
+        /** 响应体内的取值表达式（{@code {{ $.code }}}）。 */
         private String path;
 
         /** 取不到时是否抛错（缺省 true）。 */

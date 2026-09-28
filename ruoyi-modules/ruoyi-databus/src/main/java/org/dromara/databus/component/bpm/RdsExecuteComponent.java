@@ -21,7 +21,7 @@ import java.util.Map;
  * 支持 getString/getInt/getLong/getDouble/getMap/getMaps/update/batch 八种方法，
  * batch 支持多 SQL 无参与单 SQL 批量参数两种模式。
  *
- * <p>args 参数逐元素走统一 resolveParam（裸路径/混合模板/常量），SQL 文本原样透传。
+ * <p>args 参数逐元素走统一 resolveParam（字面量 / {@code {{ $.路径 }}} 表达式），SQL 文本原样透传。
  * 响应存 {@code $.<tag>.method} 与 {@code $.<tag>.data}。
  *
  * @author databus
@@ -110,7 +110,7 @@ public class RdsExecuteComponent extends DatabusNodeComponent {
 
     /**
      * args 递归解析：List 逐元素递归（batch 批量参数是数组的数组），
-     * 叶子走 resolveParam（裸路径/混合模板/常量；数字布尔原样返回）。
+     * 叶子走 resolveParam（字面量 / {@code {{ $.路径 }}}；数字布尔原样返回）。
      */
     private Object resolveArgs(Object args) {
         if (args == null) {
@@ -127,7 +127,7 @@ public class RdsExecuteComponent extends DatabusNodeComponent {
     }
 
     /**
-     * 字符串参数解析：纯路径读取 / 混合路径替换 / 字面量原样返回，统一转 String。
+     * 字符串参数解析：resolve 求值后统一转 String。
      */
     private String resolveStr(Object input) {
         if (input == null) {

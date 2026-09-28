@@ -7,7 +7,7 @@ import lombok.Data;
  * <pre>
  * {
  *   "connectionId": "bpm-default",
- *   "processInstanceId": "$.processStart1.processInstanceId",  // 必填
+ *   "processInstanceId": "{{ $.processStart1.processInstanceId }}",  // 必填
  *   "uid": "admin",                                            // 必填
  *   "failOnError": false                                       // 可选，默认 false
  * }
@@ -27,7 +27,7 @@ public class TaskCompleteCfg {
     /** 连接实例 ID（必填） */
     private String connectionId;
 
-    /** 流程实例 ID（必填） */
+    /** 流程实例 ID（必填，字面量或 {@code {{ $.路径 }}} 表达式） */
     private String processInstanceId;
 
     /** 提交人用户 ID（必填，构造 UserContext） */

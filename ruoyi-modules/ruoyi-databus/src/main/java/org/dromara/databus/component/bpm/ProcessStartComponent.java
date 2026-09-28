@@ -18,8 +18,8 @@ import java.util.Map;
  * 调 BPM 端 PROCESS_START 端点启动流程。响应 {@code {processInstanceId, isProcess, activeTaskIds}}
  * 按字段平铺写入数据空间 {@code $.<tag>.*}。
  *
- * <p>title 含 {@code ${$.xxx}} 模板时由本组件调 {@code getDatabusContext().resolveMixedPath(...)}
- * 替换为纯字符串后传 BPM 端（决策 9.1.6）。BPM 端不做 autocomplete（决策 9.1.1：task_complete 独立端点）。
+ * <p>title 含 {@code {{ $.xxx }}} 表达式时由本组件调 {@code getDatabusContext().resolveMixedPath(...)}
+ * 求值拼接为字符串后传 BPM 端。BPM 端不做 autocomplete（决策 9.1.1：task_complete 独立端点）。
  *
  * @author databus
  */
@@ -50,11 +50,11 @@ public class ProcessStartComponent extends DatabusNodeComponent {
             throw new ServiceException("PROCESS_START 组件缺少 title 配置（tag=" + tag + "）");
         }
 
-        // 参数解析：connectionId/processDefId/uid 支持裸路径 / 混合字符串 / 字面量
+        // 参数解析：connectionId/processDefId/uid 经 resolve 求值（{{ $.路径 }} 或字面量）
         String connectionId = resolveStr(cfg.getConnectionId());
         String processDefId = resolveStr(cfg.getProcessDefId());
         String uid = resolveStr(cfg.getUid());
-        // title 用 resolveMixedPath 替换 ${$.xxx} 片段为纯字符串（决策 9.1.6）
+        // title 用 resolveMixedPath 求值 {{ }} 片段后拼接为字符串（无标记时原样）
         String title = getDatabusContext().resolveMixedPath(cfg.getTitle());
 
         BpmHttpConnector connector = SpringUtils.getBean(BpmHttpConnector.class);
@@ -82,7 +82,7 @@ public class ProcessStartComponent extends DatabusNodeComponent {
     }
 
     /**
-     * 字符串参数解析：纯路径读取 / 混合路径替换 / 字面量原样返回，统一转 String。
+     * 字符串参数解析：resolve 求值后统一转 String。
      */
     private String resolveStr(Object input) {
         if (input == null) {

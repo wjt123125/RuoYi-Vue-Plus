@@ -1,6 +1,5 @@
 package org.dromara.databus.component.bpm;
 
-import com.jayway.jsonpath.TypeRef;
 import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
@@ -32,9 +31,6 @@ public class BoUpdateComponent extends DatabusNodeComponent {
 
     private static final String FIELD_ID = "ID";
 
-    private static final TypeRef<List<Map<String, Object>>> RECORDS_TYPE =
-            new TypeRef<List<Map<String, Object>>>() {};
-
     @Override
     public void process() {
         BoUpdateCfg cfg = this.getCmpData(BoUpdateCfg.class);
@@ -62,7 +58,8 @@ public class BoUpdateComponent extends DatabusNodeComponent {
             if (itemCfg.getSourcePath() == null || itemCfg.getSourcePath().isBlank()) {
                 throw new ServiceException("BO_UPDATE 组件 boList[" + i + "] 缺少 sourcePath（tag=" + tag + "）");
             }
-            List<Map<String, Object>> records = get(itemCfg.getSourcePath(), RECORDS_TYPE);
+            List<Map<String, Object>> records =
+                toRecordList(resolveParam(itemCfg.getSourcePath()), itemCfg.getSourcePath());
             if (records == null || records.isEmpty()) {
                 throw new ServiceException("BO_UPDATE 组件 boList[" + i + "] sourcePath 读到的 records 为空: "
                         + itemCfg.getSourcePath());
@@ -118,7 +115,7 @@ public class BoUpdateComponent extends DatabusNodeComponent {
     }
 
     /**
-     * 字符串参数解析：纯路径读取 / 混合路径替换 / 字面量原样返回，统一转 String。
+     * 字符串参数解析：resolve 求值后统一转 String。
      */
     private String resolveStr(Object input) {
         if (input == null) {

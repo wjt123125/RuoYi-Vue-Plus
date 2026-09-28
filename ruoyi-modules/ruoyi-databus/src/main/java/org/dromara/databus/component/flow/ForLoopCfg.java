@@ -6,7 +6,7 @@ import lombok.Data;
  * 计数循环组件（forLoop）的节点参数。
  * <pre>
  * { "count": 3 }
- * { "count": "$.request.total" }
+ * { "count": "{{ $.request.total }}" }
  * { "count": 3, "indexVar": "row" }
  * </pre>
  *
@@ -20,8 +20,8 @@ public class ForLoopCfg {
      * <ul>
      *     <li>数字常量（如 {@code 3}，JSON number）；</li>
      *     <li>字符串纯数字（如 {@code "3"}）；</li>
-     *     <li>JSONPath 字符串（如 {@code "$.request.total"}），从上下文读取数字，
-     *     路径中可用外层循环索引（嵌套场景，如 {@code "$.groups[$i].count"}）。</li>
+     *     <li>表达式（如 {@code "{{ $.request.total }}"}），resolve 求值取数字，
+     *     表达式中可用外层循环索引（嵌套场景，如 {@code "{{ $.groups[$i].count }}"}）。</li>
      * </ul>
      * 0 表示循环体零次执行；不允许负数。
      */

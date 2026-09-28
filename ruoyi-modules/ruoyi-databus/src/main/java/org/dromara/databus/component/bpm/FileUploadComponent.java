@@ -1,7 +1,6 @@
 package org.dromara.databus.component.bpm;
 
 import cn.hutool.crypto.digest.DigestUtil;
-import com.jayway.jsonpath.TypeRef;
 import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
@@ -55,7 +54,7 @@ public class FileUploadComponent extends DatabusNodeComponent {
         }
 
         List<Map<String, Object>> sourceFiles =
-                get(cfg.getSourcePath(), new TypeRef<List<Map<String, Object>>>() {});
+            toRecordList(resolveParam(cfg.getSourcePath()), cfg.getSourcePath());
         if (sourceFiles == null || sourceFiles.isEmpty()) {
             throw new ServiceException("FILE_UPLOAD 源文件列表为空：" + cfg.getSourcePath());
         }
@@ -136,7 +135,7 @@ public class FileUploadComponent extends DatabusNodeComponent {
     }
 
     /**
-     * 字符串参数解析：纯路径读取 / 混合路径替换 / 字面量原样返回，统一转 String。
+     * 字符串参数解析：resolve 求值后统一转 String。
      */
     private String resolveStr(Object input) {
         if (input == null) {

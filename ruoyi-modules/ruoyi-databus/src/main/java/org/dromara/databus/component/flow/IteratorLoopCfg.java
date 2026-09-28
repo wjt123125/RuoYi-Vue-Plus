@@ -5,8 +5,8 @@ import lombok.Data;
 /**
  * 迭代循环组件（iteratorLoop）的节点参数。
  * <pre>
- * { "source": "$.request.items" }
- * { "source": "$.groups[$i].users", "indexVar": "u" }
+ * { "source": "{{ $.request.items }}" }
+ * { "source": "{{ $.groups[$i].users }}", "indexVar": "u" }
  * </pre>
  *
  * @author databus
@@ -15,9 +15,9 @@ import lombok.Data;
 public class IteratorLoopCfg {
 
     /**
-     * 被迭代数据的 JSONPath：值必须是数组或集合（{@code List}/{@code Collection}/
-     * Java 数组/{@code Iterable}）；值为 null 时按空集合处理（循环体零次执行）。
-     * 路径中可用外层循环索引（嵌套场景）。
+     * 被迭代数据的表达式（要数据，{@code {{ $.路径 }}}，resolve 求值）：值必须是数组或集合
+     * （{@code List}/{@code Collection}/Java 数组/{@code Iterable}）；值为 null 时按空集合处理
+     * （循环体零次执行）。表达式中可用外层循环索引（嵌套场景）。
      */
     private String source;
 

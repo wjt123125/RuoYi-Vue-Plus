@@ -29,7 +29,8 @@ public class ConditionComponent extends NodeBooleanComponent {
             throw new ServiceException("条件组件缺少 op 配置（tag=" + this.getTag() + "）");
         }
         DatabusContext ctx = this.getContextBean(DatabusContext.class);
-        Object actual = cfg.getPath() == null ? null : ctx.readOptional(cfg.getPath());
+        // path 为「要数据」字段：{{ $.路径 }} 由 resolve 取值（路径不存在抛错）
+        Object actual = cfg.getPath() == null ? null : ctx.resolve(cfg.getPath());
         Object expected = ctx.resolve(cfg.getValue());
 
         String op = cfg.getOp().trim();

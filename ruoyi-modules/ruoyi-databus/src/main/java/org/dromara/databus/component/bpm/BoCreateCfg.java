@@ -15,7 +15,7 @@ import java.util.List;
  *   "boList": [
  *     {
  *       "boName": "UserBO",         // 必填
- *       "sourcePath": "$.request.users",  // 必填，数据空间路径，读取 List<Map> 作为 records
+ *       "sourcePath": "{{ $.request.users }}",  // 必填，要数据表达式，求值 List<Map> 作为 records
  *       "rewrite": {                // 可选，缺省策略 no
  *         "strategy": "all",        // no / all / boId / add / exclude / include
  *         "path": "$.response.users",  // 回写目标路径
@@ -69,7 +69,7 @@ public class BoCreateCfg {
         /** BO 名称（必填） */
         private String boName;
 
-        /** 数据空间源路径（必填），读取 {@code List<Map<String, Object>>} 作为 records */
+        /** 数据空间源表达式（必填，要数据，{@code {{ $.路径 }}}），求值 {@code List<Map<String, Object>>} 作为 records */
         private String sourcePath;
 
         /** 回写策略配置（可选，缺省 strategy=no 不回写） */

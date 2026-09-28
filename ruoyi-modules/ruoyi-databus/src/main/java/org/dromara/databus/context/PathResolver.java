@@ -1,6 +1,7 @@
 package org.dromara.databus.context;
 
 import com.jayway.jsonpath.DocumentContext;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.Collection;
 import java.util.Map;
@@ -8,65 +9,60 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 数据总线 JSON 路径解析工具。
+ * 数据总线动态表达式片段解析工具。
  * <p>
- * 提炼自原系统 {@code JsonPathResolver}，但不直接拷贝全量代码：
+ * 动态标记统一为 {@code {{ 表达式 }}（}2026-09-24 拍板、2026-09-27 补字段角色规则，
+ * 见 databus-expression-syntax.md）：
  * <ul>
- *     <li>纯路径读写直接走 jayway 原生 {@link DocumentContext#read(String)}/{@code set}，本类只做类型判断</li>
- *     <li>保留「混合路径解析」能力：字符串模板中嵌入 {@code ${$.path}} 做替换，这是数据总线参数绑定的特有需求，LiteFlow {@code getContextValue} 不支持</li>
- *     <li>循环索引占位符 {@code $i} 不在本类处理：由 {@link DatabusContext}
- *     按当前线程已注册的循环变量做注册制替换（见 substituteLoopVars）</li>
+ *     <li>整字段恰为单个 {@code {{ 表达式 }}：由 jayway 求值并保留原始类型</li>
+ *     <li>模板中嵌入 {@code {{ 表达式 }}：逐个求值后拼接为字符串</li>
+ *     <li>不含 {@code {{}：原样传递（写目标位置名 {@code $.xxx} 与普通字面量同走此路径）</li>
  * </ul>
+ * 循环索引占位符 {@code $i} 不在本类处理：由 {@link DatabusContext}
+ * 按当前线程已注册的循环变量在求值前替换（见 substituteLoopVars）。
  *
  * @author databus
  */
+@Slf4j
 public final class PathResolver {
 
-    /** 匹配 {@code $.xxx} 形式的纯 JSON 路径。 */
-    private static final Pattern PURE_PATH_PATTERN = Pattern.compile("^\\$\\.[\\w.$\\[\\]]+$");
+    /**
+     * 匹配字符串中的 {@code {{ 表达式 }}} 片段（非贪婪），
+     * group(1) 为括号内已去首尾空白的表达式文本。
+     */
+    private static final Pattern EXPRESSION_PATTERN = Pattern.compile("\\{\\{\\s*(.*?)\\s*}}");
 
     /**
-     * 匹配字符串中的 JSONPath 片段，支持两种写法：
-     * <ul>
-     *     <li>数据总线模板语法 {@code ${$.user.name}}（含花括号）</li>
-     *     <li>裸路径 {@code $.user.name}（兼容原系统写法）</li>
-     * </ul>
-     * group(1) 为花括号内的路径（如 {@code $.user.name}），group(2) 为裸路径。
+     * 整字段单表达式判定：trim 后恰为一个完整 {@code {{ ... }}，
+     * group(1) 为表达式文本。非贪婪匹配，内容含 {@code }}} 时判否，
+     * 避免 {@code {{ $.a }} {{ $.b }}} 被误判（语法档 §4.2）。
      */
-    private static final Pattern PATH_FRAGMENT_PATTERN =
-        Pattern.compile("\\$\\{(\\$\\.[\\w.$\\[\\]]+)\\}|(\\$\\.[\\w.$\\[\\]]+)");
+    private static final Pattern WHOLE_EXPRESSION_PATTERN = Pattern.compile("^\\{\\{\\s*(.*?)\\s*}}$");
 
     private PathResolver() {
     }
 
     /**
-     * 判断是否为纯 JSON 路径字符串（如 {@code $.users[0].name}）。
+     * 判断字符串是否包含动态表达式片段（含 {@code {{}）。
      */
-    public static boolean isPureJsonPath(Object input) {
-        if (!(input instanceof String str)) {
-            return false;
-        }
-        return PURE_PATH_PATTERN.matcher(str).matches();
+    public static boolean containsExpression(String value) {
+        return value != null && value.contains("{{");
     }
 
     /**
-     * 判断字符串是否包含 JSONPath 片段（如 {@code 用户${$.user.name}}）。
+     * 整字段判定：trim 后恰好是单个完整表达式、前后无其它字符时返回表达式文本，
+     * 否则返回 {@code null}。
      */
-    public static boolean containsPathExpression(String value) {
+    public static String wholeExpression(String value) {
         if (value == null) {
-            return false;
+            return null;
         }
-        return value.contains("$.");
-    }
-
-    /**
-     * 判断是否为混合路径字符串：不是纯路径，但包含路径片段。
-     */
-    public static boolean isMixedPathString(Object input) {
-        if (!(input instanceof String str)) {
-            return false;
+        Matcher matcher = WHOLE_EXPRESSION_PATTERN.matcher(value.trim());
+        if (!matcher.matches()) {
+            return null;
         }
-        return !isPureJsonPath(str) && containsPathExpression(str);
+        String inner = matcher.group(1);
+        return inner.contains("}}") ? null : inner.trim();
     }
 
     /**
@@ -83,32 +79,38 @@ public final class PathResolver {
     }
 
     /**
-     * 解析混合路径字符串：把模板中所有 {@code $.xxx} 片段替换为上下文中的实际值。
+     * 解析嵌入表达式的模板：把 {@code {{ }}} 片段逐个求值后拼接为字符串。
      * <p>
-     * 替换规则：
+     * 字符串化规则：
      * <ul>
-     *     <li>{@code null} → {@code "null"}</li>
+     *     <li>{@code null} 值 → {@code "null"}</li>
      *     <li>字符串 → 转义双引号后直接拼接</li>
      *     <li>数值 / 布尔 → toString 直接拼接</li>
      *     <li>对象 / 数组 → JSON 序列化后拼接</li>
-     *     <li>路径不存在时保留原路径片段</li>
+     *     <li>表达式路径不存在 → 打 WARN，原片段原样保留（不中断执行）</li>
      * </ul>
      *
-     * @param template 含 {@code $.xxx} 片段的模板字符串
+     * @param template 含 {@code {{ }}} 片段的模板
      * @param context  jayway 文档上下文
-     * @return 替换后的字符串
+     * @return 拼接后的字符串
      */
-    public static String resolveMixedPath(String template, DocumentContext context) {
+    public static String resolveEmbedded(String template, DocumentContext context) {
         if (template == null) {
             return null;
         }
-        Matcher matcher = PATH_FRAGMENT_PATTERN.matcher(template);
+        Matcher matcher = EXPRESSION_PATTERN.matcher(template);
         StringBuffer result = new StringBuffer();
         while (matcher.find()) {
-            // group(1) 为 ${$.path} 中的路径；group(2) 为裸路径
-            String path = matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
-            Object resolved = readQuietly(path, context);
-            String replacement = toReplacementString(resolved, path);
+            String fragment = matcher.group();
+            String expression = matcher.group(1).trim();
+            Object resolved = readQuietly(expression, context);
+            if (resolved == null && !pathExists(context, expression)) {
+                // 读不到路径：可诊断但不拦执行，片段原样保留
+                log.warn("[databus] 表达式取值失败，片段原样保留: {}", expression);
+                matcher.appendReplacement(result, Matcher.quoteReplacement(fragment));
+                continue;
+            }
+            String replacement = toReplacementString(resolved, fragment);
             matcher.appendReplacement(result, Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(result);
@@ -139,9 +141,9 @@ public final class PathResolver {
     }
 
     /**
-     * 把解析出的值转成混合路径替换用的字符串。
+     * 把求值结果转成嵌入模板替换用的字符串；遇到无法识别的类型时回退为原片段。
      */
-    private static String toReplacementString(Object value, String originalPath) {
+    private static String toReplacementString(Object value, String fallbackFragment) {
         if (value == null) {
             return "null";
         }
@@ -154,6 +156,6 @@ public final class PathResolver {
         if (isJsonSerializable(value)) {
             return JsonCodec.toJson(value);
         }
-        return originalPath;
+        return fallbackFragment;
     }
 }

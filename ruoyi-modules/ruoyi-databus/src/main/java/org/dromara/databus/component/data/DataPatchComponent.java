@@ -96,7 +96,7 @@ public class DataPatchComponent extends DatabusNodeComponent {
      * 递归深合并补丁到目标对象引用：
      * <ul>
      *   <li>补丁值是 Map → 目标同键已是 Map 则下钻合并，否则新建空 Map 后合并（支持新增嵌套结构）；</li>
-     *   <li>其余类型（常量/裸路径/混合模板/数组/null）→ resolveParam 后整体覆盖叶子。</li>
+     *   <li>其余类型（字面量/{@code {{ $.路径 }}} 表达式/数组/null）→ resolveParam 后整体覆盖叶子。</li>
      * </ul>
      *
      * @param dst    目标对象（文档底层 Map 引用）

@@ -34,9 +34,10 @@ public class ResponseComponent extends DatabusNodeComponent {
         save("$.response.result", success);
         save("$.response.msg", msgText);
 
+        // dataPath 为「要数据」字段：{{ $.路径 }} 由 resolve 取值（路径不存在抛错）
         Object data = null;
         if (cfg != null && cfg.getDataPath() != null && !cfg.getDataPath().isBlank()) {
-            data = getOptional(cfg.getDataPath());
+            data = resolveParam(cfg.getDataPath());
         }
         save("$.response.data", data);
 

@@ -50,7 +50,7 @@ public class TaskCompleteComponent extends DatabusNodeComponent {
             throw new ServiceException("TASK_COMPLETE 组件缺少 uid 配置（tag=" + tag + "）");
         }
 
-        // 参数解析：connectionId/processInstanceId/uid 支持裸路径 / 混合字符串 / 字面量
+        // 参数解析：connectionId/processInstanceId/uid 经 resolve 求值（{{ $.路径 }} 或字面量）
         String connectionId = resolveStr(cfg.getConnectionId());
         String processInstanceId = resolveStr(cfg.getProcessInstanceId());
         String uid = resolveStr(cfg.getUid());
@@ -99,7 +99,7 @@ public class TaskCompleteComponent extends DatabusNodeComponent {
     }
 
     /**
-     * 字符串参数解析：纯路径读取 / 混合路径替换 / 字面量原样返回，统一转 String。
+     * 字符串参数解析：resolve 求值（{{ $.路径 }} 表达式或字面量）后统一转 String。
      */
     private String resolveStr(Object input) {
         if (input == null) {

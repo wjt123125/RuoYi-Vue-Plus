@@ -1,6 +1,5 @@
 package org.dromara.databus.component.bpm;
 
-import com.jayway.jsonpath.TypeRef;
 import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
@@ -34,12 +33,6 @@ public class BoCreateComponent extends DatabusNodeComponent {
 
     private static final String DEFAULT_METHOD = "create";
 
-    private static final TypeRef<List<Map<String, Object>>> RECORDS_TYPE =
-            new TypeRef<List<Map<String, Object>>>() {};
-
-    private static final TypeRef<List<Map<String, Object>>> BO_RESULTS_TYPE =
-            new TypeRef<List<Map<String, Object>>>() {};
-
     @Override
     public void process() {
         BoCreateCfg cfg = this.getCmpData(BoCreateCfg.class);
@@ -60,7 +53,7 @@ public class BoCreateComponent extends DatabusNodeComponent {
             throw new ServiceException("BO_CREATE 组件缺少 boList 配置（tag=" + tag + "）");
         }
 
-        // 参数解析：字符串支持裸路径 / 混合字符串 / 字面量
+        // 参数解析：字符串经 resolve 求值（{{ $.路径 }} 或字面量）
         String connectionId = resolveStr(cfg.getConnectionId());
         String method = cfg.getMethod() == null || cfg.getMethod().isBlank()
                 ? DEFAULT_METHOD : resolveStr(cfg.getMethod());
@@ -83,7 +76,8 @@ public class BoCreateComponent extends DatabusNodeComponent {
             if (itemCfg.getSourcePath() == null || itemCfg.getSourcePath().isBlank()) {
                 throw new ServiceException("BO_CREATE 组件 boList[" + i + "] 缺少 sourcePath（tag=" + tag + "）");
             }
-            List<Map<String, Object>> records = get(itemCfg.getSourcePath(), RECORDS_TYPE);
+            List<Map<String, Object>> records =
+                toRecordList(resolveParam(itemCfg.getSourcePath()), itemCfg.getSourcePath());
             if (records == null || records.isEmpty()) {
                 throw new ServiceException("BO_CREATE 组件 boList[" + i + "] sourcePath 读到的 records 为空: "
                         + itemCfg.getSourcePath());
@@ -271,7 +265,7 @@ public class BoCreateComponent extends DatabusNodeComponent {
     }
 
     /**
-     * 字符串参数解析：纯路径读取 / 混合路径替换 / 字面量原样返回，统一转 String。
+     * 字符串参数解析：resolve 求值后统一转 String。
      */
     private String resolveStr(Object input) {
         if (input == null) {

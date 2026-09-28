@@ -9,7 +9,7 @@
 数据总线的链路执行需要一块"上下文"在节点间流转数据。原系统基于 AWS BPM 的 `OperationContext`，强耦合 `userContext` / `processInstance` / `taskInstance` 等 BPM 运行时对象。本模块去除 BPM 依赖，只保留数据总线自身的三件事：
 
 1. **JSONPath 读写**：节点通过 `$.user.name` 这类路径读写上下文，是节点间数据流转的基础
-2. **混合路径解析**：参数模板里嵌入 `$.xxx` 片段，如 `用户${$.user.name}`，运行时替换为实际值——这是数据总线参数绑定的特有需求，LiteFlow 原生 `getContextValue`（基于 POJO 反射）不支持动态 JSON 文档
+2. **`{{ }}` 动态标记解析**：参数里写 `{{ $.xxx }}` 引用上下文，如 `用户{{ $.user.name }}`，运行时求值替换——这是数据总线参数绑定的特有需求，LiteFlow 原生 `getContextValue`（基于 POJO 反射）不支持动态 JSON 文档
 3. **动态变量**（循环场景）：路径里用 `[$i]` 作为数组下标占位符，循环执行时被替换为当前迭代索引
 
 LiteFlow `getContextValue` 基于 POJO 反射，无法支持动态 JSON 文档与路径模板，所以必须自建上下文层。
@@ -23,40 +23,49 @@ LiteFlow `getContextValue` 基于 POJO 反射，无法支持动态 JSON 文档�
 ├─────────────────────────────────────────────────────────────┤
 │  内部持 jayway DocumentContext（Jackson 作为 JSON 提供者）      │
 │  ┌─────────────────────────────────────────────────────────┐ │
-│  │  PathResolver   纯路径判断 + 混合路径正则替换              │ │
-│  │  JsonCodec      Jackson 序列化（混合路径替换时用）         │ │
+│  │  PathResolver   {{}} 表达式识别 + 片段正则替换            │ │
+│  │  JsonCodec      Jackson 序列化（片段替换时用）            │ │
 │  └─────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-`DatabusContext` 是薄封装，纯路径读写直接走 jayway 原生 API，本类只负责：
-- 路径类型判断（纯路径 / 混合路径 / 动态变量 / 字面量）
+`DatabusContext` 是薄封装，路径读写直接走 jayway 原生 API，本类只负责：
+- `{{ }}` 表达式识别与求值（整字段 / 嵌入片段 / `$i` 循环下标）
 - 自动建路径写入（父路径不存在时逐层建 Map / 按索引扩容数组）
 - 统一参数解析入口 `resolve(Object)`
 
 ## 3. 核心概念
 
-### 3.1 路径四种类型与 `resolve()` 分发
+### 3.1 字段角色与 `resolve()` 分发
 
-`DatabusContext.resolve(Object input)` 是节点取参的统一入口，按输入类型四档分发：
+**写法不由填写人临时判断，而由字段角色决定**：
 
-| 输入类型 | 例子 | 处理 |
+- **「要数据」字段**（组件拿它为得到内容，如 condition.path、iterator.source、response.dataPath、fieldMap.from、HTTP mappings.path、各 sourcePath/boId）：动态值一律写 `{{ $.路径 }}`，组件调 `resolve()`，不再直接 `read()`
+- **「起名字」字段**（写入位置，如 setValue.path、fieldMap.to、dataPatch.target、rewrite.path）：写**裸路径**，不被求值
+- **普通字面量**（`3`、`"POST"`、`"admin"`）：原样使用
+
+外观三种（字面量 / 裸路径位置名 / `{{ }}` 表达式），处理路径只有两条（原样 / 求值）。
+
+`DatabusContext.resolve(Object input)` 是节点取参的统一入口：
+
+| 输入形态 | 例子 | 处理 |
 | --- | --- | --- |
-| 纯 JSON 路径 | `$.user.name` | 走 `read(path)` 从上下文取值 |
-| 混合路径字符串 | `用户${$.user.name}` | 走 `resolveMixedPath` 替换 `$.xxx` 片段 |
-| 含动态变量 | `$.items[$i].id` | **原样返回**，由循环组件延迟解析 |
-| 字面量 | `123` / `"hello"` | 原样返回 |
+| 整字段表达式 | `{{ $.user.name }}` | `read(path)` 取值，**保留原类型** |
+| 嵌入表达式 | `用户{{ $.user.name }}` | `resolveEmbedded` 替换 `{{ }}` 片段后拼接 |
+| 含循环下标 | `{{ $.items[$i].id }}` | `$i` 先替换为当前轮索引，再 `read` |
+| 无标记（字面量 / 裸路径位置名） | `123` / `$.target.name` | **原样返回** |
 
-判断逻辑见 `PathResolver`：`isPureJsonPath` / `isMixedPathString` / `containsDynamicVariable`。
+判断逻辑见 `PathResolver`：`wholeExpression` / `containsExpression`，以及 `DatabusContext` 的 `$i` 直接下标替换。
 
-### 3.2 混合路径解析
+### 3.2 嵌入表达式解析
 
-模板 `用户${$.user.name}, 年龄 ${$.user.age}` → 调用 `resolveMixedPath` → 用 `PATH_FRAGMENT_PATTERN` 正则匹配所有 `$.xxx` 片段，逐个从 `DocumentContext.read` 取值并替换。替换规则：
+模板 `用户{{ $.user.name }}, 年龄 {{ $.user.age }}` → `resolveEmbedded` 用非贪婪正则 `EXPRESSION_PATTERN` 匹配所有 `{{ ... }}` 片段，逐个从 `DocumentContext.read` 取值并按下列规则替换：
 - `null` → `"null"`
-- 字符串 → 转义双引号后拼接
+- 字符串 → 原样拼接
 - 数值 / 布尔 → `toString`
 - 对象 / 数组 → JSON 序列化
-- 路径不存在 → 保留原路径片段
+- **片段取值失败（路径不存在等）→ 打 WARN 日志（无 log_level 门控、不拦执行），原片段保留**
+- 整字段表达式（字段值恰为一个 `{{ }}`）路径不存在 → 直接抛错（显式引用须响，不做静默）
 
 ### 3.3 自动建路径写入
 
@@ -74,6 +83,7 @@ LiteFlow `getContextValue` 基于 POJO 反射，无法支持动态 JSON 文档�
 - **试运行预填**：每次打开试运行按登记表默认值重新生成 JSON（重开重置、「再跑一次」保留当前）；无默认值的条目跳过不塞 null；非文本默认值尝试 JSON.parse
 - **必填校验**：试运行与外部 API 真实执行都做，在最终 JSON 上按必填路径取值，取不到 / 空字符串即拦截；默认值不注入真实执行（默认值只服务人工试运行）
 - 链路引用写法、`{{ }}` 规则、外部调用方传 JSON 方式均不变
+
 ## 4. 动态变量机制（循环场景，关键设计）
 
 ### 4.1 问题背景
@@ -123,19 +133,20 @@ JSONPath 是**静态路径**，不支持变量内插。`$.items[$.loopIndex].id`
 2. 注册制已经规避了误判风险（没注册的占位符不动）
 3. 原系统已有成熟实现，迁移成本低于重写
 
-**但当前实现太粗犷，待 1C 循环组件落地时精细化**（已记入 work-state 待办）：
+**实际落地（2026-09 循环组件交付时）未接代理层，改用更轻的「直接下标替换」**：
 
-- 新系统 `DatabusContext` 尚未接入代理层，仍用 jayway 原生 `DocumentContext`——循环组件目前无法用动态变量
-- `PathResolver.containsDynamicVariable` 用宽泛正则 `\$[a-zA-Z_]\w*` 判断，与代理层的注册制不一致（这是死代码分支，`resolve()` 遇到动态变量原样返回但无消费者）
-- 精细化要做的事：① 把代理层接入 `DatabusContext`；② 循环组件约定 `updateIndex` 调用时机；③ 嵌套循环的多层 `indexMap` 隔离；④ 删 `PathResolver` 的死分支或改为代理的预热判断
+- 循环组件（`ForLoop` / `IteratorLoop`，经 `LoopSupport`）进入时把本层下标名（默认 `$i/$j/$k`，可 `indexVar` 自定义）注册到 `DatabusContext`
+- `resolve()` 内先对 `$i` 等已注册占位符做字符串替换，再按整字段/嵌入表达式求值；裸串 `"$i"` 直接返回当前下标 Integer
+- 嵌套循环的层级隔离由「按深度分配默认名 + 进入注册/退出清理」保证，不需要 `indexMap` 快照
+- 旧代理设计（IndexAwareReader）保留为参考实现；如未来出现更复杂的变量注册需求再评估接入
 
 ## 5. 关键代码位置索引
 
 | 文件 | 作用 |
 | --- | --- |
 | `org.dromara.databus.context.DatabusContext` | 上下文对外 API，持 jayway `DocumentContext` |
-| `org.dromara.databus.context.PathResolver` | 路径类型判断 + 混合路径正则替换 |
-| `org.dromara.databus.context.JsonCodec` | Jackson 序列化（混合路径替换时用） |
+| `org.dromara.databus.context.PathResolver` | `{{ }}` 表达式识别（整字段/嵌入）+ 片段正则替换 |
+| `org.dromara.databus.context.JsonCodec` | Jackson 序列化（片段替换时用） |
 | `org.dromara.databus.component.DatabusNodeComponent` | 组件基类，封装 `get` / `save` / `resolveParam` |
 | `org.dromara.databus.executor.DatabusExecutor` | 执行器入口，`execute2Resp` 时把 `DatabusContext` 绑定到 LiteFlow slot |
 | 原系统 `IndexAwareReader` | 动态变量代理参考实现（待迁移） |
@@ -143,12 +154,12 @@ JSONPath 是**静态路径**，不支持变量内插。`$.items[$.loopIndex].id`
 ## 6. 常见坑
 
 1. **`DatabusExecutor` 把 `requestData` 同时传给 `flowExecutor.execute2Resp` 的 slotParam 和 `DatabusContext.fromObject`**——两个通道有点重复，1C 闭环时该细化（slotParam 与 context 的职责分工）
-2. **动态变量目前是死代码**：新系统 `resolve()` 遇到含动态变量的参数原样返回，但没有循环组件消费它。接入代理层前，循环场景跑不起来
-3. **`PathResolver.containsDynamicVariable` 正则太宽**：`\$[a-zA-Z_]\w*` 会匹配 `Hello $name` 这种普通字符串，但因为代理层用注册制，实际不影响——只是 `resolve()` 的判断逻辑与代理机制不一致，接入代理层时要统一
+2. **`$i` 替换只在 `resolve()` 路径生效**：直接调 `read("$.items[$i].name")` 不会替换下标。循环体内取数必须把字段配成 `{{ $.items[$i].name }}` 走 resolve；组件代码则应先取循环 index bean 自行拼路径
+3. **无标记字符串一律原样**：`resolve("$.user.name")` 返回的是字符串 `"$.user.name"` 而不会读值——动态引用必须包 `{{ }}`；这也保证 setValue.path 等「起名字」裸路径不被误求值
 4. **WHEN 并行必须走锁，禁止直接暴露内部文档**：jayway 底层是普通 `LinkedHashMap`/`ArrayList`，WHEN 多分支并发写同一棵树会丢键/结构损坏，遍历快照还可能拍到半构建的树。`DatabusContext` 已内置 `ReentrantReadWriteLock`（读方法取读锁、`write/save/registerConnection` 取写锁，`createPath` 只在写锁内调用）；新增读入口必须包读锁、新增写入口必须包写锁，**禁止在读锁内升级写锁**（不支持锁升级会永久阻塞）；裸 `DocumentContext` 后门 `getDocument()` 已删除，不得重新加回。完整分析见 [databus-context-concurrency.md](databus-context-concurrency.md)
 
 ## 7. 扩展指南
 
-- **接入代理层**：在 `DatabusContext` 构造时用 `IndexAwareReader.createProxy()` 包装 `DocumentContext`，对外暴露 `updateIndex(Map<String, String>)` 给循环组件调用
-- **循环组件约定**：FOR/WHILE/ITERATOR 组件在 `processIterator` / 循环 hook 里，每次迭代前 `indexMap.put("$i", String.valueOf(i))` + `updateIndex(indexMap)`，迭代后清理（避免污染外层）
-- **嵌套循环**：外层 `indexMap` 与内层 `indexMap` 要隔离，内层进入时保存外层快照，内层退出时恢复——避免 `$i` 跨层级串值
+- **新增用户可配字段**：先判定字段角色——「要数据」一律走 `resolve()` 并在文档/前端提示写 `{{ $.路径 }}`；「起名字」（写目标）裸路径直接用于 `save/write`，不要经过 resolve
+- **新增循环下标名**：由循环组件经 `LoopSupport.registerLoopVar` 注册，`resolve()` 的下标替换自动生效；组件内部自行拼路径时应从循环 index bean 取值，不依赖 resolve
+- **嵌套循环**：默认下标名按深度分配（`$i/$j/$k`），层级隔离无需手动维护；自定义名需通过注册时的重名校验

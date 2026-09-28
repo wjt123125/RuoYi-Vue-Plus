@@ -8,7 +8,7 @@ import java.util.Map;
  * 数据补丁组件（dataPatch）的节点参数。
  * <pre>
  * { "target": "$.boQuery1.records[*]",
- *   "patch": { "BO_FIELD_USER": "$.request.newUser", "BO_FIELD_NUM": 99 } }
+ *   "patch": { "BO_FIELD_USER": "{{ $.request.newUser }}", "BO_FIELD_NUM": 99 } }
  * </pre>
  *
  * <p>语义为 JSON Merge Patch：把 {@code patch} 中声明的字段合并到 {@code target}
@@ -20,7 +20,7 @@ import java.util.Map;
  *       {@code [?(...)]} 过滤（组件 read 出命中的对象引用后逐个深合并），
  *       必须指向对象或对象数组。</li>
  *   <li>{@code patch} 为补丁对象：键是相对 target 的字段名，支持嵌套对象
- *       （递归深合并）；叶子值走统一参数解析（常量 / 裸路径 / 混合模板），
+ *       （递归深合并）；叶子值为字面量或 {@code {{ $.路径 }}} 表达式（resolve 求值），
  *       数组作为整体叶子值写入。</li>
  * </ul>
  *
@@ -35,7 +35,7 @@ public class DataPatchCfg {
     private String target;
 
     /**
-     * merge 补丁对象（必填，非空）：键为字段名（支持嵌套），叶子值支持常量 / 裸路径 / 混合模板。
+     * merge 补丁对象（必填，非空）：键为字段名（支持嵌套），叶子值为字面量或 {@code {{ $.路径 }}} 表达式。
      */
     private Map<String, Object> patch;
 }

@@ -9,11 +9,11 @@ import lombok.Data;
  *   "connectionId": "bpm-default",
  *   "processDefId": "proc-001",          // 必填
  *   "uid": "admin",                     // 必填
- *   "title": "采购申请-${$.request.code}" // 必填，支持 ${$.xxx} 模板替换
+ *   "title": "采购申请-{{ $.request.code }}" // 必填，支持 {{ $.xxx }} 表达式
  * }
  * </pre>
- * title 含 {@code ${$.xxx}} 模板时由组件调 {@code resolveMixedPath} 替换为纯字符串后传入 BPM 端
- * （决策 9.1.6：模板替换在 Component 层完成，BPM 端只接收纯字符串）。
+ * title 含 {@code {{ $.xxx }}} 表达式时由组件调 {@code resolveMixedPath} 求值拼接为字符串后传入 BPM 端
+ * （模板替换在 Component 层完成，BPM 端只接收纯字符串）。
  *
  * @author databus
  */
@@ -30,7 +30,7 @@ public class ProcessStartCfg {
     private String uid;
 
     /**
-     * 流程标题（必填）。支持 {@code ${$.xxx}} 模板，组件解析后传入 BPM 端。
+     * 流程标题（必填）。支持 {@code {{ $.xxx }}} 表达式，组件解析后传入 BPM 端。
      */
     private String title;
 }

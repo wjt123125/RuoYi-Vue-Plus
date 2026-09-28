@@ -50,7 +50,7 @@ public class SessionCreateComponent extends DatabusNodeComponent {
             throw new ServiceException("SESSION_CREATE 组件缺少 password 配置（tag=" + tag + "）");
         }
 
-        // 参数解析：支持裸路径 / 混合字符串 / 字面量
+        // 参数解析：字段经 resolve 求值（{{ $.路径 }} 或字面量）
         String connectionId = resolveStr(cfg.getConnectionId());
         String userName = resolveStr(cfg.getUserName());
         String password = resolveStr(cfg.getPassword());
@@ -84,7 +84,7 @@ public class SessionCreateComponent extends DatabusNodeComponent {
     }
 
     /**
-     * 字符串参数解析：纯路径读取 / 混合路径替换 / 字面量原样返回，统一转 String。
+     * 字符串参数解析：resolve 求值后统一转 String。
      */
     private String resolveStr(Object input) {
         if (input == null) {

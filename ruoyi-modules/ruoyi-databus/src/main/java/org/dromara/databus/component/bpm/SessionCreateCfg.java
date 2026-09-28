@@ -8,13 +8,13 @@ import lombok.Data;
  * {
  *   "connectionId": "bpm-default",
  *   "userName": "admin",
- *   "password": "$.request.password",
+ *   "password": "{{ $.request.password }}",
  *   "clientIp": "0.0.0.0",
  *   "lang": "cn",
  *   "device": "PC"
  * }
  * </pre>
- * 字符串字段支持裸路径 / 混合字符串 / 字面量，组件解析后传入 BPM 端 SESSION_CREATE 端点。
+ * 字符串字段支持字面量与 {@code {{ $.路径 }}} 表达式，组件解析后传入 BPM 端 SESSION_CREATE 端点。
  * 网关签名鉴权（/portal/openapi）已在连接层完成；请求体 ipWhiteList 旧机制随 jd 通道删除，
  * 组件固定传空列表，无需在此配置。
  *

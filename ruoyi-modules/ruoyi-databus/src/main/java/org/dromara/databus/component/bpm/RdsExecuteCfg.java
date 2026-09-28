@@ -10,7 +10,7 @@ import lombok.Data;
  *   "rdsId": "default",              // 必填，BPM 后台注册的 RDS 数据源 ID
  *   "method": "getMaps",             // 必填：getString/getInt/getLong/getDouble/getMap/getMaps/update/batch
  *   "sql": "select * from t where id=?",  // 字符串；batch 多 SQL 时为字符串数组
- *   "args": ["$.request.id"],        // 可选，参数（元素走统一参数解析：路径/模板/常量）；batch 批量参数时为数组的数组
+ *   "args": ["{{ $.request.id }}"],  // 可选，参数元素为字面量或 {{ $.路径 }} 表达式；batch 批量参数时为数组的数组
  *   "fetchSize": 100,                // 可选，>0 生效
  *   "maxRows": 1000                  // 可选，>0 生效
  * }

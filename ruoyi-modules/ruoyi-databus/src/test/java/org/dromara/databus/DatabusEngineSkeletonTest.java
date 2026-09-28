@@ -75,27 +75,27 @@ public class DatabusEngineSkeletonTest {
         assertEquals("fallback", ctx.readOptional("$.missing", "fallback"));
     }
 
-    @DisplayName("DatabusContext：混合路径解析替换 $.xxx 片段")
+    @DisplayName("DatabusContext：resolveMixedPath 替换 {{ $.xxx }} 片段")
     @Test
     public void contextShouldResolveMixedPath() {
         DatabusContext ctx = DatabusContext.empty();
         ctx.write("$.user.name", "alice");
         ctx.write("$.user.age", 30);
-        String result = ctx.resolveMixedPath("name=${$.user.name},age=${$.user.age}");
+        String result = ctx.resolveMixedPath("name={{ $.user.name }},age={{ $.user.age }}");
         assertEquals("name=alice,age=30", result);
     }
 
-    @DisplayName("DatabusContext：resolve 统一入口支持纯路径与混合路径")
+    @DisplayName("DatabusContext：resolve 统一入口按 {{ }} 标记分派")
     @Test
     public void contextResolveShouldDispatchByType() {
         DatabusContext ctx = DatabusContext.empty();
         ctx.write("$.user.name", "alice");
 
-        // 纯路径 → 读取
-        assertEquals("alice", ctx.resolve("$.user.name"));
-        // 混合路径 → 替换
-        assertEquals("hi-alice", ctx.resolve("hi-${$.user.name}"));
-        // 字面量 → 原样返回
+        // 整字段表达式 → 读取（保留原类型）
+        assertEquals("alice", ctx.resolve("{{ $.user.name }}"));
+        // 嵌入表达式 → 片段替换
+        assertEquals("hi-alice", ctx.resolve("hi-{{ $.user.name }}"));
+        // 无标记字面量 → 原样返回
         assertEquals(123, ctx.resolve(123));
     }
 

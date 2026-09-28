@@ -1,5 +1,6 @@
 package org.dromara.databus.component.protocol;
 
+import com.jayway.jsonpath.PathNotFoundException;
 import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
@@ -41,7 +42,7 @@ import java.util.regex.Pattern;
  * 完整规格见 docs/wiki/databus-http-component.md：
  * <ul>
  *   <li>method：GET/POST/PUT/PATCH/DELETE；bodyType：none/json/form/raw（策略类序列化）；</li>
- *   <li>query 支持同名多值，headers/query/body/auth 值支持字面量/裸路径/混合字符串解析；</li>
+ *   <li>query 支持同名多值，headers/query/body/auth 值支持字面量与 {@code {{ $.路径 }}} 表达式解析；</li>
  *   <li>auth：none/basic（自动 Base64）/bearer（自动拼前缀）；</li>
  *   <li>出口：固定写 {@code $.<tag>.status} 与 {@code $.<tag>.response}，
  *       响应头按白名单写 {@code $.<tag>.headers.*}，mappings 默认 required；</li>
@@ -398,7 +399,13 @@ public class HttpRequestComponent extends DatabusNodeComponent {
                 }
                 continue;
             }
-            Object value = responseCtx.readOptional(path);
+            // mappings.path 为「要数据」字段（{{ $.code }}）；required:false 时路径缺失按 null 处理
+            Object value;
+            try {
+                value = responseCtx.resolve(path);
+            } catch (PathNotFoundException e) {
+                value = null;
+            }
             if (value == null && required) {
                 throw new ServiceException("HTTP 响应缺少字段（路径不存在或值为 null）: path=" + path
                     + " → field=" + field + "（tag=" + tag + "）；非必须字段可配 required:false。实际响应: "

@@ -153,7 +153,7 @@ class DatabusWhenParallelStressTest {
         List<CmpProperty> children = new ArrayList<>(branches);
         for (int k = 1; k <= branches; k++) {
             String tag = "setValue" + k;
-            // SetValueCfg：path 为裸路径，value 为不含 $. 的字面量
+            // SetValueCfg：path 为写目标裸路径（起名字），value 为不含 {{}} 的字面量
             String data = "{\"path\":\"$." + tag + ".out\",\"value\":\"并行 " + k + "\"}";
             children.add(CmpProperty.builder()
                 .id("setValue")

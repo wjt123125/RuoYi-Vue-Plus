@@ -28,14 +28,15 @@ import java.util.regex.Pattern;
  * 数据总线执行上下文。
  * <p>
  * 内部持 jayway {@link DocumentContext}，支持完整 JSONPath 读写（{@code $.a.b.c}、数组索引、过滤等）。
- * 保留原系统「混合路径解析」能力（参数模板中 {@code ${$.path}} 替换），这是数据总线参数绑定的特有需求，
+ * 支持 {@code {{ $.path }}} 动态标记解析（整字段表达式保留原值类型，嵌入表达式片段替换），
+ * 这是数据总线参数绑定的特有需求，
  * LiteFlow 原生 {@code getContextValue}（基于 POJO 反射）不支持动态 JSON 文档。
  * <p>
  * 与原系统 {@code OperationContext} 的区别：
  * <ul>
  *     <li>去除 BPM 运行时依赖（userContext / processInstance / taskInstance）</li>
  *     <li>纯路径读写直接走 jayway 原生 API，不重复造轮子</li>
- *     <li>仅保留混合路径解析与自动建路径写入两个数据总线特有能力</li>
+ *     <li>仅保留 {@code {{ }} 表达式解析与自动建路径写入两个数据总线特有能力</li>
  * </ul>
  *
  * @author databus
@@ -255,28 +256,29 @@ public class DatabusContext {
     }
 
     /**
-     * 解析混合路径字符串：先展开已注册的循环索引占位符（{@code $i} 等，
-     * 含 {@code ${$.items[$i].name}} 片段内部），再把模板中所有 {@code $.xxx}
-     * 片段替换为上下文中的实际值。
+     * 解析嵌入表达式的模板：先展开已注册的循环索引占位符（{@code $i} 等，
+     * 含 {@code {{ $.items[$i].name }}} 片段内部），再把模板中所有
+     * {@code {{ }}} 片段求值并拼接为字符串。
      *
-     * @param template 含 {@code $.xxx} 片段或循环索引占位符的模板，如 {@code 用户${$.user.name}}
-     * @return 替换后的字符串
+     * @param template 含 {@code {{ }}} 片段或循环索引占位符的模板，如 {@code 用户{{ $.user.name }}}
+     * @return 拼接后的字符串
      */
     public String resolveMixedPath(String template) {
         return withReadLock(() -> {
             if (template == null) {
                 return null;
             }
-            return PathResolver.resolveMixedPath(substituteLoopVars(template), document);
+            return PathResolver.resolveEmbedded(substituteLoopVars(template), document);
         });
     }
 
     /**
-     * 统一参数解析入口，依据输入类型自动分发：
+     * 统一参数解析入口，依据输入的字段角色自动分发（语法档 §4.6）：
      * <ul>
      *     <li>整串恰为已注册循环变量（{@code $i}）→ 当前轮下标整数；</li>
-     *     <li>纯 JSON 路径字符串 → 展开索引占位符后从上下文读取；</li>
-     *     <li>含循环占位符 / 混合路径字符串 → 展开 {@code $i} 与 {@code $.xxx} 片段；</li>
+     *     <li>整字段恰为单个 {@code {{ 表达式 }}} → 展开索引占位符后求值，保留原始类型；</li>
+     *     <li>模板中嵌入 {@code {{ }}} → 逐个求值后拼接为字符串；</li>
+     *     <li>不含 {@code {{} → 原样返回（写目标位置名与普通字面量同路径）；</li>
      *     <li>其他类型 → 原样返回</li>
      * </ul>
      */
@@ -288,14 +290,15 @@ public class DatabusContext {
                     return direct;
                 }
                 String effective = substituteLoopVars(str);
-                if (PathResolver.isPureJsonPath(effective)) {
-                    // 读锁可重入
-                    return read(effective);
+                String wholeExpression = PathResolver.wholeExpression(effective);
+                if (wholeExpression != null) {
+                    // 整字段单表达式：直接求值并保留原始类型，路径不存在时抛错（显式引用须响）
+                    return document.read(wholeExpression);
                 }
-                if (PathResolver.isMixedPathString(effective)) {
-                    return PathResolver.resolveMixedPath(effective, document);
+                if (PathResolver.containsExpression(effective)) {
+                    return PathResolver.resolveEmbedded(effective, document);
                 }
-                // 含循环占位符但不是路径/模板（如 "name-$i"）：返回替换后的字符串
+                // 不含动态标记（含仅替换循环下标后的串，如 "name-$i"）：原样返回
                 return effective;
             }
             return input;

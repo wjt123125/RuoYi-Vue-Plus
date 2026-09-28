@@ -40,7 +40,7 @@ public class ForLoopComponent extends NodeForComponent {
     }
 
     /**
-     * 解析循环次数：数字常量 / 数字字符串 / JSONPath 取值（数字）。
+     * 解析循环次数：数字常量 / 数字字符串 / {@code {{ $.路径 }}} 表达式求值（数字）。
      */
     private int resolveCount(Object raw, DatabusContext ctx) {
         if (raw instanceof Number number) {
@@ -51,14 +51,14 @@ public class ForLoopComponent extends NodeForComponent {
             if (trimmed.matches("-?\\d+")) {
                 return Integer.parseInt(trimmed);
             }
-            // 路径（含外层 $i 占位）走上下文统一解析
+            // 表达式（含外层 $i 占位）走上下文统一解析
             Object value = ctx.resolve(trimmed);
             if (value instanceof Number number) {
                 return number.intValue();
             }
-            throw new ServiceException("计数循环次数路径取到的值不是数字: " + trimmed + "，实际=" + value);
+            throw new ServiceException("计数循环次数表达式取到的值不是数字: " + trimmed + "，实际=" + value);
         }
-        throw new ServiceException("计数循环 count 只支持整数或路径字符串，实际类型: "
+        throw new ServiceException("计数循环 count 只支持整数或表达式字符串，实际类型: "
             + raw.getClass().getSimpleName());
     }
 }

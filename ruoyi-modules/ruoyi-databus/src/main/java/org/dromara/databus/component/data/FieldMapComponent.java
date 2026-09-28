@@ -1,11 +1,12 @@
 package org.dromara.databus.component.data;
 
-import com.jayway.jsonpath.TypeRef;
 import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.context.PathResolver;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -43,7 +44,13 @@ public class FieldMapComponent extends DatabusNodeComponent {
             }
             String from = mapping.getFrom();
             String to = mapping.getTo();
-            boolean fromWildcard = from.contains("[*]");
+            // from 为「要数据」字段：必须是整字段表达式 {{ $.路径 }}；to 为写目标名字，裸路径
+            String fromPath = PathResolver.wholeExpression(from);
+            if (fromPath == null) {
+                throw new ServiceException("字段映射条目 from 必须为 {{ $.路径 }} 形式（tag="
+                    + this.getTag() + "）：" + from);
+            }
+            boolean fromWildcard = fromPath.contains("[*]");
             boolean toWildcard = to.contains("[*]");
             if (fromWildcard && toWildcard) {
                 // 情况 a：数组批量搬运（A3 核心新能力）
@@ -55,8 +62,8 @@ public class FieldMapComponent extends DatabusNodeComponent {
                 // 情况 c：to 含 [*] 但 from 不含
                 throw new ServiceException("字段映射条目 to 含 [*] 但 from 不含 [*]，无法批量写入（tag=" + this.getTag() + "）");
             } else {
-                // 情况 d：单值搬运（保持现有逻辑，可选 type 转换）
-                Object value = getOptional(from);
+                // 情况 d：单值搬运（resolve 取值，可选 type 转换）
+                Object value = resolveParam(from);
                 if (mapping.getType() != null && value != null) {
                     value = convertType(value, mapping.getType());
                 }
@@ -70,19 +77,21 @@ public class FieldMapComponent extends DatabusNodeComponent {
 
     /**
      * 数组批量搬运：from/to 均含 {@code [*]}，逐元素读取、按索引写入目标数组的对应位置。
-     * <p>源路径不存在时跳过该 mapping（count 不增）；存在则整条 mapping 算 1 条。
      *
      * @param mapping 配置（含可选 type 转换）
-     * @param from   含 {@code [*]} 的源路径
-     * @param to     含 {@code [*]} 的目标路径
-     * @return 1（搬运完成），0（源路径不存在跳过）
+     * @param from   含 {@code [*]} 的源表达式（{@code {{ $.路径 [*] }}}）
+     * @param to     含 {@code [*]} 的目标路径（写目标名字，裸路径）
+     * @return 恒为 1
      */
     private int batchMap(FieldMapCfg.Mapping mapping, String from, String to) {
-        if (!getDatabusContext().exists(from)) {
-            log.debug("[databus] fieldMap 批量搬运源路径不存在，跳过 from={} tag={}", from, this.getTag());
-            return 0;
+        // 整字段表达式直接取列表；路径不存在时 resolve 抛错（不再静默跳过）
+        Object resolved = resolveParam(from);
+        if (!(resolved instanceof List<?> rawValues)) {
+            throw new ServiceException("字段映射批量源表达式未取到数组（tag="
+                + this.getTag() + "）：" + from + "，实际=" + resolved);
         }
-        List<Object> values = get(from, new TypeRef<List<Object>>() {});
+        List<Object> values = new ArrayList<>();
+        rawValues.forEach(values::add);
         for (int i = 0; i < values.size(); i++) {
             Object value = values.get(i);
             if (mapping.getType() != null) {

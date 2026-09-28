@@ -41,7 +41,8 @@ public class SwitchRouteComponent extends NodeSwitchComponent {
         }
 
         DatabusContext ctx = this.getContextBean(DatabusContext.class);
-        Object actual = ctx.readOptional(cfg.getSource().trim());
+        // source 为「要数据」字段：{{ $.路径 }} 由 resolve 取值（路径不存在抛错）
+        Object actual = ctx.resolve(cfg.getSource().trim());
 
         for (SwitchRouteCfg.CaseRoute route : cases) {
             if (route == null || route.getTarget() == null || route.getTarget().isBlank()) {

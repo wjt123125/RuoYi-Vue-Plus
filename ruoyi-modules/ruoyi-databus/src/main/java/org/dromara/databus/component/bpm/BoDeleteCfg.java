@@ -13,7 +13,7 @@ import java.util.List;
  *   "boList": [
  *     {
  *       "boName": "UserBO",           // 必填
- *       "sourcePath": "$.boQuery1.records"  // 必填，读取 List&lt;Map&gt; 作为 records；
+ *       "sourcePath": "{{ $.boQuery1.records }}"  // 必填，要数据表达式，求值 List&lt;Map&gt; 作为 records；
  *                                           // method=remove 每条必须含 ID，
  *                                           // method=removeByBindId 每条必须含 BINDID
  *     }
@@ -47,7 +47,7 @@ public class BoDeleteCfg {
         /** BO 名称（必填） */
         private String boName;
 
-        /** 数据空间源路径（必填），读取 {@code List<Map<String, Object>>} 作为 records */
+        /** 数据空间源表达式（必填，要数据，{@code {{ $.路径 }}}），求值 {@code List<Map<String, Object>>} 作为 records */
         private String sourcePath;
     }
 }

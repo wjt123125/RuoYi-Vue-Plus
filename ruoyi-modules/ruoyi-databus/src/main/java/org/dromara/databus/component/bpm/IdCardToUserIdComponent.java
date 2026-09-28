@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.context.PathResolver;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.IdCardToUserIdRequest;
@@ -59,11 +60,18 @@ public class IdCardToUserIdComponent extends DatabusNodeComponent {
             if (field == null || field.getPath() == null || field.getPath().isBlank()) {
                 throw new ServiceException("IDCARD_TO_USERID 组件 fields[" + i + "].path 不能为空（tag=" + tag + "）");
             }
-            String path = field.getPath();
-            String raw = getOptional(path);
+            String pathExpr = field.getPath();
+            // path 既「要数据」（取身份证串）又用于原地写回：整字段表达式读取，写回用解包裸路径
+            String resolvedPath = PathResolver.wholeExpression(pathExpr);
+            if (resolvedPath == null) {
+                throw new ServiceException("IDCARD_TO_USERID 组件 fields[" + i
+                    + "].path 必须为 {{ $.路径 }} 形式（tag=" + tag + "）：" + pathExpr);
+            }
+            Object rawValue = resolveParam(pathExpr);
+            String raw = rawValue == null ? null : rawValue.toString();
             if (raw == null || raw.isBlank()) {
                 // 与老系统一致：值为空只告警跳过，不写回
-                log.warn("[databus] idCardToUserId 路径 {} 身份证号为空，跳过 tag={}", path, tag);
+                log.warn("[databus] idCardToUserId 路径 {} 身份证号为空，跳过 tag={}", resolvedPath, tag);
                 continue;
             }
             String separator = field.getSeparator() == null || field.getSeparator().isBlank()
@@ -81,7 +89,7 @@ public class IdCardToUserIdComponent extends DatabusNodeComponent {
             }
             String userIds = resultMap.get("userIds") == null ? "" : String.valueOf(resultMap.get("userIds"));
             if (userIds.isEmpty()) {
-                throw new ServiceException("IDCARD_TO_USERID 路径 " + path
+                throw new ServiceException("IDCARD_TO_USERID 路径 " + resolvedPath
                         + " 的全部身份证号均未匹配到 BPM 用户（tag=" + tag + "），原值: " + raw);
             }
             totalIdCards += request.getIdCards().size();
@@ -89,10 +97,10 @@ public class IdCardToUserIdComponent extends DatabusNodeComponent {
             if (missed instanceof List<?> missedList && !missedList.isEmpty()) {
                 totalMissed += missedList.size();
                 log.warn("[databus] idCardToUserId 路径 {} 有 {} 个身份证号未匹配: {} tag={}",
-                        path, missedList.size(), missedList, tag);
+                        resolvedPath, missedList.size(), missedList, tag);
             }
-            // 原地写回同一路径
-            save(path, userIds);
+            // 原地写回解包后的裸路径
+            save(resolvedPath, userIds);
             converted++;
         }
         String idCardSummary = totalIdCards + " 个身份证：命中 " + (totalIdCards - totalMissed)

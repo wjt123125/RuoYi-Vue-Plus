@@ -8,10 +8,10 @@ import java.util.List;
  * 选择路由组件（switchRoute）的节点参数。
  * <pre>
  * {
- *   "source": "$.request.type",
+ *   "source": "{{ $.request.type }}",
  *   "cases": [
  *     { "value": "A", "target": "caseA" },
- *     { "value": "$.request.vipCode", "target": "caseB" }
+ *     { "value": "{{ $.request.vipCode }}", "target": "caseB" }
  *   ]
  * }
  * </pre>
@@ -22,7 +22,7 @@ import java.util.List;
 public class SwitchRouteCfg {
 
     /**
-     * 判断值的 JSONPath：从上下文读出实际值，逐条与 {@link CaseRoute#getValue()} 比较。
+     * 判断值表达式（要数据，{@code {{ $.路径 }}}，resolve 求值）：取出实际值逐条与 {@link CaseRoute#getValue()} 比较。
      */
     private String source;
 
@@ -38,7 +38,7 @@ public class SwitchRouteCfg {
     public static class CaseRoute {
 
         /**
-         * 比较值：常量（字符串/数字/布尔），或 {@code $.xxx} 路径 /
+         * 比较值：常量（字符串/数字/布尔），或 {@code {{ $.xxx }}} 表达式 /
          * {@code $i} 索引占位符（执行前经上下文解析）。
          * 两个数字按数值比较（Integer 200 与 Long 200 视为相等）。
          */

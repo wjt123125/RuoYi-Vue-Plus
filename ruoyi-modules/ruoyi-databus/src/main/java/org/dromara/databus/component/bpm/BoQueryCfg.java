@@ -15,7 +15,7 @@ import java.util.List;
  *     "maxRecord": 100,                 // 可选，大于 0 时先 count 校验，超出报错
  *     "firstRow": 0,                    // method=listPage 必填
  *     "rowCount": 20,                   // method=listPage 必填
- *     "conditionSourcePath": "$.request.conditions"  // 可选，从数据空间读条件列表
+ *     "conditionSourcePath": "{{ $.request.conditions }}"  // 可选，要数据表达式，求值条件列表
  *   },
  *   "relate": [                        // 可选，关联表配置
  *     { "boName": "RelBO", "mainField": "CODE", "relField": "REL_CODE" }
@@ -68,7 +68,7 @@ public class BoQueryCfg {
         /** 分页行数（method=listPage 必填） */
         private Integer rowCount;
 
-        /** 条件列表源路径（可选），从数据空间读取 {@code List<Map>}，键为 fieldName/operator/paramValue/valid */
+        /** 条件列表源表达式（可选，要数据，{@code {{ $.路径 }}}），求值 {@code List<Map>}，键为 fieldName/operator/paramValue/valid */
         private String conditionSourcePath;
     }
 

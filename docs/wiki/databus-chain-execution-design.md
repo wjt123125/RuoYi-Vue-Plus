@@ -1,8 +1,8 @@
 # 数据总线链路与执行记录管理设计
 
 > 所属模块：ruoyi-databus
-> 更新日期：2026-09-23
-> 状态：设计已拍板（含 Rule-DB 前置接入 + 执行记录采集改用 PostProcessNodeExecuteLifeCycle+Slot 修正），待实施（阶段 3 链路管理页 + Rule-DB 接入配套）
+> 更新日期：2026-09-29
+> 状态：执行记录方案 2026-09-29 讨论定稿（追踪牌 + 钩子合并演化 + 手动执行/重跑走正式通道），待实施（阶段 3）
 
 ## 1. 文档目的
 
@@ -179,31 +179,41 @@ Rule-DB 是 LiteFlow v2.16.1 统一规则数据库，作为执行引擎层的高
 | 字段 | 来源（PostProcessNodeExecuteLifeCycle + Slot） | 说明 |
 |:---|:---|:---|
 | id | — | 主键 |
-| execution_id | PostProcessFlowExecuteLifeCycle 上下文（生成 executionId 关联） | 关联 execution |
+| node_instance_id | `CmpStep.getNodeInstanceId()`（步骤实例 id） | 区分循环多轮同 tag 的多行 |
+| execution_id | 追踪牌 executionId 关联 | 关联 execution |
 | tag | `cmp.getTag()`（NodeComponent 的 tag，即组件实例 dataSpace 名） | EL 里 tag |
 | node_type | `cmp.getNodeId()`（注册类型名，实例唯一性靠 tag 区分） | 组件注册名（httpRequest/condition/...） |
-| input_json | `slot.getInput(nodeId)`（从 Slot 取节点输入快照） | 节点输入 JSON |
-| output_json | `slot.getOutput(nodeId)`（从 Slot 取节点输出快照） | 节点输出 JSON |
+| input_json | 节点执行前数据树快照（`slot.getInput()` 普通组件恒为空，不可用，见 §4.3） | 节点输入 JSON（可缺省） |
+| output_json | `context.snapshotDataSpace(tag)` 当场快照；布尔组件取布尔判定（不写数据树） | 节点输出 JSON |
 | status | `e == null ? SUCCESS : FAILED`（after 钩子第三参 Exception 判断） | 节点状态 |
 | error_msg | `e != null ? e.getMessage() : null`（after 钩子异常参数） | 错误信息 |
-| start_time | `System.currentTimeMillis() - timeSpent`（after 钩子第二参反推） | 开始时间 |
-| end_time | `System.currentTimeMillis()`（after 触发时刻） | 结束时间 |
-| duration | `timeSpent`（after 钩子第二参，毫秒） | 耗时 |
+| start_time / end_time | `CmpStep.getStartTime()/getEndTime()` 直接取（比 currentTimeMillis 反推准） | 起止时间 |
+| duration | `CmpStep.getTimeSpent()`（毫秒） | 耗时 |
 | branch_info | `slot.getIfResult(tag)` / `slot.getSwitchResult(tag)` / 循环轮次从 `slot.getExecuteSteps()` 的 `CmpStep` 取 | 分支标记（IF 真假/SWITCH 命中 case/循环轮次） |
 | + BaseEntity | — | — |
 
 > **采集实现**：`PostProcessNodeExecuteLifeCycle.postProcessAfterNodeExecute(NodeComponent cmp, long timeSpent, Exception e)` 在 `NodeComponent.execute()` 的 `finally` 块中触发（源码 `liteflow-core/.../core/NodeComponent.java:184-188`），无论成功异常都触发，能拿到配对的耗时/异常信息。配合 `PostProcessFlowExecuteLifeCycle.postProcessAfterFlowExecute(chainId, Slot slot)` 在整次流程结束后一次性 dump 执行级（databus_execution，从 Slot 取 requestData/responseData/exception/executeSteps/chainId 等）。详见 [lifecycle.md](file:///e:/01.code/databus-meta/.trae/skills/how2useliteflow/references/lifecycle.md) §三.3 与 §四。
 
-### 4.3 节点 IO 全落 json（已拍板，采集方式改用 LiteFlow 框架钩子）
+### 4.3 采集骨架：追踪牌 + 框架钩子（2026-09-29 讨论定稿，合并演化）
 
-所有节点输入输出均落 json 字段，**采集改用 LiteFlow v2.16.1 框架级钩子 `PostProcessNodeExecuteLifeCycle` + `Slot`，废弃自建 `NodeStepResultCollector`**（重复造轮子，详见 §4.2 字段对照表）。
+**关键事实纠正**：`slot.getInput(nodeId)` / `getOutput(nodeId)` 只在节点显式调 `setOutput()` 时才有数据；LiteFlow 组件经上下文（数据树）通信，普通组件这两个方法恒为空，不能作为节点 IO 来源。节点产出取数据空间当场快照 `snapshotDataSpace(tag)`，布尔组件取判定结果。
 
-- **节点级（FULL 档触发）**：`PostProcessNodeExecuteLifeCycle.postProcessAfterNodeExecute(NodeComponent, long, Exception)` 每个节点执行后触发（finally 中，成功异常都触发），从 NodeComponent 取 tag/nodeId，从 Slot 取 input/output，从参数取 timeSpent/Exception
-- **执行级（BASIC/FULL 档触发，OFF 不触发）**：`PostProcessFlowExecuteLifeCycle.postProcessAfterFlowExecute(chainId, Slot)` 整次流程结束后一次性 dump（从 Slot 取 requestData/responseData/exception/executeSteps/chainId）
+落地方案三块：
 
-**档位与钩子的配合**：钩子入口读 `databus_chain.log_level`，OFF 直接 return；BASIC 只触发执行级写入；FULL 执行级 + 节点级都写入。`NodeStepResultCollector` 及相关 `StepResultPayload` / `DatabusExecutionResult VO.summary` 在 Rule-DB 接入完成后清理（保留到原 preview-run 通道稳定切换到 Rule-DB 加载路径后再废弃）。
+- **① 执行器挂「追踪牌」**：`execute()` 内**先按 chainCode 查链路再建牌**——读到 log_level 决定档位（OFF 不挂牌）；链路查不到时照常执行（让 LiteFlow 暴露 ChainNotFound），挂 BASIC 牌留一条失败总账、chain_id 为空。ExecutionTrace（executionId / chainId / chainCode / requestData / startTime / FULL 档节点行缓冲）挂到 DatabusContext；试运行 `executeByEl()` 不挂。**trace 字段必须 `@JsonIgnore`/transient 排除序列化**，否则污染 `toJsonString()` 快照且可能循环引用。下游钩子凭「有无追踪牌」区分是否落库，不依赖链名约定。
+- **② NodeStepResultCollector 合并演化（不废弃、不另建节点钩子）**：保留现有摘要 + `$.<tag>` 快照采集（试运行结果弹窗消费）；新增分支——有追踪牌且 FULL 档时，把该节点行（nodeType/tag/状态/耗时/异常/快照）追加进缓冲。同一接口不注册第二个 Bean（多实现回调顺序无保证）。
+- **③ 新增 PostProcessFlowExecuteLifeCycle Bean 负责落库**：after 钩子从 Slot 取 DatabusContext，有追踪牌且档位 ≠ OFF 时组装总账（状态/错误取 `slot.getException()`、总耗时）；OFF 直接 return。**总账独立事务先保成功（审计必达），节点明细再尽力批量插入、失败只 warn、不连累总账**；BASIC 只写总账，FULL 总账 + 节点行。节点行 DTO 只存纯数据，不持有 NodeComponent/Slot 引用，防线程泄漏。
 
-执行记录页详情抽屉按节点展示 IO、状态、耗时、分支。
+红线：钩子全部自行 try/catch，审计任何异常只记日志，不影响业务执行与响应。
+
+**源码取证补充（2026-09-29，liteflow-core 2.16.1.3 sources 核实）**：
+
+- **节点缓冲必须线程安全**：WHEN 经 `ParallelSupplier.get()` 在 CompletableFuture 工作线程调节点 `execute`，节点钩子并发触发；ExecutionTrace 的 FULL 档节点行缓冲须用 `ConcurrentLinkedQueue` 或加锁列表（ArrayList 会丢数据）。`snapshotDataSpace` 已持读锁；allOf 的 join 构成 happens-before，afterFlow 读缓冲时数据必齐。
+- **禁止改用 `slot.getContextBean(Class)`**：找不到上下文时该方法抛 `NoSuchContextBeanException`（不返回 null），在工作流模块链上危险；沿用遍历 `getContextBeanList()` 自行 instanceof 匹配的现有手法。
+- **afterFlow 钩子在 doExecute 的 finally 中**（FlowExecutor :659-671），成败必到；`DataBus.releaseSlot` 仅从注册表摘除 Slot、不清数据，钩子读取正常。但 `LiteFlowChainELBuilder.build()` 失败在 doExecute 之外，钩子不触发——试运行建链失败不落库符合预期，正式 execute 无建链步骤不受影响。
+- **CmpStep 字段**：nodeInstanceId/nodeId/nodeName/tag/stepType/startTime/endTime/timeSpent/success/exception/refNode/stepData，节点行字段均有出处。
+- **WHEN 超时记录语义**：超时是 `completeExceptionally`、不中断工作线程；迟到节点跑完后向 trace 的追加不再入库（落库仅一次快照），故无孤儿 DB 行，记录反映超时窗口内状态。
+- **入口收敛约束（架构红线）**：手动执行、未来外部 invoke、定时/MQ 等一切执行入口必须统一调 `DatabusExecutor.execute()`，校验/挂牌/落库只此一处，禁止入口旁路（否则出现"有的调用有记录、有的没有"）。
 
 ### 4.4 记录档位（select 多档）
 
@@ -217,15 +227,19 @@ Rule-DB 是 LiteFlow v2.16.1 统一规则数据库，作为执行引擎层的高
 
 默认 BASIC——能审计能重跑，又不背节点明细存储成本。
 
+> **保留期（backlog，2026-09-29 登记）**：执行记录只增不改，需补定时清理（n8n 可配保留天数、GitHub Actions 固定 90 天、Step Functions 有控制台保留期）。本件不实现自动清理，等数据量出现信号再做。
+
 **ERROR_ONLY（成功不记失败记全量）暂不做**：实现成本高（执行中要暂存全部明细最后判断 flush 还是丢弃，或始终落库成功后再删），等强场景出现再加。
 
-### 4.5 重跑机制
+### 4.5 手动执行入口与重跑机制（2026-09-29 拍板）
 
-重跑 = 试运行的特例。试运行是用户手填 JSON，重跑是从历史 execution 取 request_data 再跑一次。**复用 preview-run 执行通道**，只是入参来源不同。新增「用 executionId 重跑」入口即可，不造新通道。
+- **手动执行**：执行记录页提供「手动执行」入口（选已发布链路 → 按入参登记表填参 → 走正式 `execute()`），解决记录本首条数据来源；链路卡片可挂同一入口。
+- **仅已发布可执行（校验红线）**：现有 `execute()` 不校验 status，草稿/已下线链路也能被跑。手动执行与重跑入口必须在 Controller 层（或 execute 入口）校验 `status=1 已发布`，非发布态直接拦截。
+- **重跑走正式通道**：从历史 execution 取 request_data，按 chainCode 调正式 `execute()`，**产生一条新执行记录**、列表可见；链路须仍处于已发布状态。原「复用 preview-run 通道」方案废止——execution 未存画布树，且正式通道与记录体系天然闭环。
 
 ## 5. 落地步骤
 
-> **重大调整（2026-09-22）**：Rule-DB 接入前置到第 1 步与链路管理页配套做（发布动作依赖 `lf_chain` 表存在），原"5 小步"扩为"6 小步"。执行记录采集方案同步改用 LiteFlow 框架钩子，废弃 NodeStepResultCollector。
+> **2026-09-29 定稿**：执行记录采集骨架见 §4.3——追踪牌 + 框架钩子，NodeStepResultCollector 合并演化（不废弃）；手动执行与重跑均走正式通道（§4.5）。
 
 ### 5.1 链路管理页 + Rule-DB 接入（6 小步，阶段 3 主线）
 
@@ -248,10 +262,10 @@ Rule-DB 是 LiteFlow v2.16.1 统一规则数据库，作为执行引擎层的高
 ### 5.2 执行记录页（链路页完成后拆步）
 
 - 后端补 databus_execution + databus_execution_node 两表 + Entity/Mapper/Service/Controller
-- **采集实现：`PostProcessNodeExecuteLifeCycle` + `PostProcessFlowExecuteLifeCycle` 两个 Spring Bean（@Component 自动扫描），按 log_level 档位控制落库粒度（OFF 不入钩子/直接 return；BASIC 只执行级；FULL 执行级+节点级）**
-- **废弃 NodeStepResultCollector + StepResultPayload**（切换稳定后清理，preview-run 通道保留至切换完成）
-- 前端列表 + 详情抽屉（瀑布图 + 节点 IO）
-- 重跑入口（从 execution 取 request_data 走 preview-run 通道）
+- **采集按 §4.3 定稿骨架**：执行器挂追踪牌；NodeStepResultCollector 合并演化加 FULL 档节点行采集；新增 PostProcessFlowExecuteLifeCycle——总账独立事务必达 + 明细尽力批量写
+- 前端列表 + 详情抽屉（节点 IO / 状态 / 耗时）
+- 手动执行入口 + 重跑（均走正式 execute 通道，重跑产生新记录，见 §4.5）
+- backlog：执行记录保留期定时清理
 
 ## 6. 关键参考
 

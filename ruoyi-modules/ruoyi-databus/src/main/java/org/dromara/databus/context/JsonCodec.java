@@ -50,6 +50,23 @@ public final class JsonCodec {
     }
 
     /**
+     * 严格解析 JSON 字符串：空白返回 {@code null}；语法错误抛 {@link IllegalArgumentException}。
+     * <p>
+     * 与 {@link #parse(String)} 的区别：手动执行/重跑等用户直接提交入参的入口必须让
+     * 非法 JSON 显性失败，不能静默变成 null 后带着错误入参执行。
+     */
+    public static Object parseStrict(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return MAPPER.readValue(json, Object.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("JSON 解析失败: " + e.getOriginalMessage(), e);
+        }
+    }
+
+    /**
      * 把 JSON 字符串解析为指定类型对象。解析失败时返回 {@code null}。
      */
     public static <T> T parseObject(String json, Class<T> clazz) {

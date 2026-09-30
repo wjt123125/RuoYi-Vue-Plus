@@ -18,6 +18,8 @@ import org.dromara.databus.context.JsonCodec;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.Properties;
+import org.dromara.databus.enums.LogLevelEnum;
+import org.dromara.databus.executor.trace.ExecutionTrace;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.service.ISysDatabusConnectionService;
 import org.springframework.stereotype.Component;
@@ -46,7 +48,8 @@ import java.util.UUID;
  * </ol>
  * 两条路径共用的收尾：生成 executionId、初始化 {@link DatabusContext}、注入连接配置、
  * 把 LiteFlow 响应组装成 {@link DatabusExecutionResult}（每步状态/耗时/观测载荷）并打日志。
- * 执行记录的数据库持久化留待 monitor 阶段。
+ * 执行记录的数据库持久化走「追踪牌 + 框架钩子」：正式执行按 log_level 挂牌
+ * （OFF 不挂、试运行不挂），afterFlow 钩子凭牌落 databus_execution 两表（见 trace 包）。
  *
  * @author databus
  */
@@ -86,6 +89,10 @@ public class DatabusExecutor {
 
         DatabusContext context = DatabusContext.fromObject(requestData);
         injectConnections(context);
+        // 挂执行追踪牌（执行记录落库的唯一入口信号，设计档 §4.3）：
+        // 按链路 log_level 决定档位，OFF 不挂；链路查不到也挂 BASIC 牌留失败总账；
+        // 试运行路径（executeByEl）不挂牌。下游钩子只认牌，不依赖链名约定。
+        attachExecutionTrace(chain, chainId, context, startTime);
 
         try {
             LiteflowResponse response = flowExecutor.execute2Resp(chainId, requestData, context);
@@ -348,6 +355,12 @@ public class DatabusExecutor {
                                                Map<String, String> titleByTag) {
         DatabusExecutionResult result = new DatabusExecutionResult();
         result.setExecutionId(executionId);
+        // 总账主键取追踪牌：afterFlow 钩子在 execute2Resp 返回前已同步提交，此处读必落库；
+        // 试运行不挂牌、OFF 档不挂牌，getExecutionTrace() 为 null → recordId 留 null
+        ExecutionTrace trace = context.getExecutionTrace();
+        if (trace != null) {
+            result.setRecordId(trace.getRecordId());
+        }
         result.setChainId(chainId);
         result.setStartTime(startTime);
         result.setEndTime(endTime);
@@ -406,6 +419,50 @@ public class DatabusExecutor {
             log.error("[databus] 链路执行失败 executionId={}, chainId={}, 耗时={}ms, 错误={}",
                 result.getExecutionId(), result.getChainId(), result.getCostTime(), result.getMessage());
         }
+    }
+
+    /**
+     * 按链路 log_level 给本次正式执行挂追踪牌（设计档 §4.3）。
+     * <ul>
+     *     <li>链路查到：档位取 {@code chain.logLevel}，空值/非法值回退 BASIC（记 warn），
+     *     OFF 不挂牌（完全不落库）；</li>
+     *     <li>链路查不到：挂 BASIC 牌、chainId 为 null——不拦执行，让 LiteFlow 暴露
+     *     ChainNotFound，同时保留一条失败总账；</li>
+     *     <li>入参快照在注入连接后拍摄：连接注册表不在 jayway 数据树内，快照只含业务入参。</li>
+     * </ul>
+     *
+     * @param chain     按 chainCode 查到的链路，可能为 null
+     * @param chainCode 调用方传入的链路编码
+     * @param context   本次执行上下文
+     * @param startTime 执行起点（execute2Resp 之前，与端到端耗时口径一致）
+     */
+    private void attachExecutionTrace(DatabusChain chain, String chainCode,
+                                      DatabusContext context, Date startTime) {
+        String level = resolveLogLevel(chain);
+        if (LogLevelEnum.OFF.getCode().equals(level)) {
+            log.info("[databus] 链路 log_level=OFF，本次执行不落执行记录 chainCode={}", chainCode);
+            return;
+        }
+        Long chainId = chain == null ? null : chain.getId();
+        ExecutionTrace trace = ExecutionTrace.start(chainId, chainCode, level,
+            context.toJsonString(), startTime);
+        context.attachTrace(trace);
+    }
+
+    /**
+     * 解析本次执行的记录档位：链路缺失（含查不到）走 BASIC；配置非法也回退 BASIC。
+     */
+    private String resolveLogLevel(DatabusChain chain) {
+        if (chain == null) {
+            return LogLevelEnum.BASIC.getCode();
+        }
+        String level = chain.getLogLevel();
+        if (!LogLevelEnum.isValid(level)) {
+            log.warn("[databus] 链路 log_level 非法({})，按 BASIC 档采集执行记录 chainCode={}",
+                level, chain.getChainCode());
+            return LogLevelEnum.BASIC.getCode();
+        }
+        return level;
     }
 
     /**

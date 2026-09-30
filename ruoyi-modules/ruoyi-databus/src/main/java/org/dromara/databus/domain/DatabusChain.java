@@ -87,6 +87,24 @@ public class DatabusChain extends BaseEntity {
     private List<ChainInputParam> inputParams;
 
     /**
+     * 是否精选模板（0否 1是）
+     * <p>
+     * 模板恒为草稿（status='0'）：不可发布、不推 Rule-DB、不进手动执行入口；
+     * 标记/取消走模板专用端点，不经通用保存通路写入。
+     */
+    private String isTemplate;
+
+    /**
+     * 模板说明（适用场景/前置条件，模板库卡片展示）；标记模板时必填，取消模板时清空。
+     */
+    private String templateDesc;
+
+    /**
+     * 模板排序（升序，值小在前，默认 0；同值按 update_time desc）。
+     */
+    private Integer templateSort;
+
+    /**
      * 删除标志（0存在 1删除）
      */
     @TableLogic

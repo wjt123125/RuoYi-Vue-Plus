@@ -2,8 +2,11 @@ package org.dromara.databus.service;
 
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.dromara.databus.domain.bo.ChainCopyBo;
 import org.dromara.databus.domain.bo.DatabusChainBo;
+import org.dromara.databus.domain.bo.TemplateMarkBo;
 import org.dromara.databus.domain.vo.ChainStatsVo;
+import org.dromara.databus.domain.vo.CopySuggestionVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 
 import java.util.Collection;
@@ -89,13 +92,44 @@ public interface IDatabusChainService {
     /**
      * 复制链路：以源链路的画布与组件配置生成一条全新草稿。
      * <p>
-     * 新链路 status=草稿、version=1，链路编码重新生成（保证唯一），名称在源名称后加"副本"；
-     * canvas_data / cmp_property / log_level 原样复制，引用的连接器仅复制 connectionId 引用、
-     * 不复制连接器本身；草稿不推 Rule-DB，EL 由组件树按新增口径重新生成。
+     * 新链路 status=草稿、version=1，名称与编码由用户在复制弹窗确认（编码为副本终身身份，
+     * 走唯一性校验）；canvas_data / cmp_property / log_level / input_params 原样复制，
+     * 引用的连接器仅复制 connectionId 引用、不复制连接器本身；草稿不推 Rule-DB，
+     * EL 由组件树按新增口径重新生成。源链路若为模板，副本一律为普通链路（剥离模板三字段）。
      *
      * @param id 源链路主键
-     * @return 是否复制成功
+     * @param bo 副本名称/编码
+     * @return 新链路主键（供「使用模板」复制后直跳编辑器）
      */
-    Boolean copy(Long id);
+    Long copy(Long id, ChainCopyBo bo);
+
+    /**
+     * 复制建议值：名称建议「源名称+副本」；编码在源编码（剥离既有 _N 尾缀）基础上
+     * 从 _2 起查库取首个未占用值，供复制弹窗预填。
+     *
+     * @param id 源链路主键
+     * @return 名称/编码建议
+     */
+    CopySuggestionVo getCopySuggestion(Long id);
+
+    /**
+     * 设为精选模板：写模板标记 + 说明 + 排序。
+     * <p>
+     * 红线：已发布链路须先下线（模板恒为草稿，不推 Rule-DB、不进执行入口）；
+     * 不触碰画布/组件树/EL/状态。
+     *
+     * @param id 链路主键
+     * @param bo 模板设置（说明必填、排序可空）
+     * @return 是否设置成功
+     */
+    Boolean markAsTemplate(Long id, TemplateMarkBo bo);
+
+    /**
+     * 取消精选模板：清除标记/说明/排序，链路回到普通草稿（不改变 status）。
+     *
+     * @param id 链路主键
+     * @return 是否取消成功
+     */
+    Boolean unmarkTemplate(Long id);
 
 }

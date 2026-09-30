@@ -19,7 +19,10 @@ create table databus_chain (
     cmp_property      text            default null               comment '画布逻辑组件树 JSON（CmpProperty 序列化，EL 权威源的输入；发布时据此提取脚本节点推 lf_script）',
     log_level         varchar(16)     default 'BASIC'            comment '执行记录档位（OFF/BASIC/FULL，默认 BASIC；OFF 不落库，BASIC 仅执行级，FULL 含节点级每步 IO）',
     input_params      text            default null               comment '链路入参登记表 JSON（ChainInputParam 列表：路径/类型/默认值/必填，2026-09-27 增）',
-    create_dept       bigint(20)      default null              comment '创建部门',
+    is_template       char(1)         default '0'                comment '是否精选模板（0否 1是，2026-09-30 增；模板恒为草稿，不可发布）',
+    template_desc     varchar(500)    default null               comment '模板说明（适用场景/前置条件，模板库卡片展示，标记模板时必填）',
+    template_sort     int(11)         default 0                  comment '模板排序（升序，值小在前，默认 0；同值按 update_time desc）',
+    create_dept       bigint(20)      default null               comment '创建部门',
     create_by         bigint(20)      default null              comment '创建者',
     create_time       datetime        default null              comment '创建时间',
     update_by         bigint(20)      default null              comment '更新者',
@@ -37,19 +40,22 @@ create table databus_chain (
 -- 权限 key 与既有 DatabusChainController 保持 databus:editor: 前缀一致性，
 -- 新增 databus:editor:publish / databus:editor:offline 表达独立的状态流转语义（非草稿编辑）。
 -- 注意：parent_id 必须指向真实存在的父菜单，否则菜单在菜单管理可见但挂不上侧边栏树（孤儿菜单不显示）。
--- 非 admin 账号还需在【系统管理 → 角色管理】勾选这 7 项菜单/按钮权限（sys_role_menu）。
+-- 非 admin 账号还需在【系统管理 → 角色管理】勾选这 8 项菜单/按钮权限（sys_role_menu）。
 -- sys_menu 22 列顺序：menu_id, menu_name, parent_id, order_num, path, component, query_param,
 --   is_frame, is_cache, menu_type, visible, status, perms, icon, active_menu, ext,
 --   create_dept, create_by, create_time, update_by, update_time, remark
+-- sys_menu / sys_dict_* 为框架共享表（本脚本不 drop），统一 insert ignore 保证脚本可重复执行：
+-- 已存在同 id 行则跳过不报错；若需更新菜单/字典内容，请先按 id 手动删除再跑（ignore 不会覆盖旧行）。
 -- ----------------------------
-insert into sys_menu values
+insert ignore into sys_menu values
   (1762000000000000020, '链路管理', 1761400000000020000, 1, 'chain', 'databus/chain/index', '', 'N', 'N', 'C', '0', '0', 'databus:editor:list', 'tree', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线链路管理菜单'),
   (1762000000000000021, '链路查询', 1762000000000000020, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
   (1762000000000000022, '链路新增', 1762000000000000020, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
   (1762000000000000023, '链路修改', 1762000000000000020, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
   (1762000000000000024, '链路删除', 1762000000000000020, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
   (1762000000000000025, '链路发布', 1762000000000000020, 5, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:publish', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '发布链路：status 0→1/2→1 + version+1'),
-  (1762000000000000026, '链路下线', 1762000000000000020, 6, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:offline', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '下线链路：status 1→2');
+  (1762000000000000026, '链路下线', 1762000000000000020, 6, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:offline', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '下线链路：status 1→2'),
+  (1762000000000000027, '链路模板标记', 1762000000000000020, 7, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:template', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '链路设为/取消精选模板（运营动作）；标记需填模板说明，已发布链路须先下线');
 
 -- 链路编辑器：hidden 菜单（visible=1，侧边栏不显示），仅供列表页「编排」跳转生成动态路由。
 -- 无此菜单则 router 中无 editor 路由，编排按钮会提示"未找到编辑器路由"。
@@ -57,7 +63,7 @@ insert into sys_menu values
 -- is_cache 必须为 'N'（不缓存，meta.noCache=true）：编辑器按 query.id 进入，
 -- 若被 keep-alive 缓存，从列表连续编排不同链路时组件实例复用、onMounted 不再触发，
 -- 画布会停留在上一条链路（只有整页刷新才恢复）。
-insert into sys_menu values
+insert ignore into sys_menu values
   (1762000000000000030, '链路编辑器', 1761400000000020000, 99, 'editor', 'databus/editor/index', '', 'N', 'N', 'C', '1', '0', 'databus:editor:list', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '链路编排画布（隐藏菜单，列表页跳转进入）');
 
 -- ----------------------------
@@ -72,10 +78,10 @@ insert into sys_menu values
 -- sys_dict_data 14 列：dict_code, dict_sort, dict_label, dict_value, dict_type, css_class, list_class, is_default,
 --   create_dept, create_by, create_time, update_by, update_time, remark
 -- ----------------------------
-insert into sys_dict_type values
+insert ignore into sys_dict_type values
   (1761500000000000013, '数据总线执行记录档位', 'databus_log_level', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '数据总线链路执行记录档位');
 
-insert into sys_dict_data values
+insert ignore into sys_dict_data values
   (1761600000000000040, 1, '关闭',   'OFF',   'databus_log_level', '', 'info',    'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '完全不落库，极致高吞吐场景'),
   (1761600000000000041, 2, '基础',   'BASIC', 'databus_log_level', '', 'primary', 'Y', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '执行级信息（入参/出参/状态/耗时/错误），默认值'),
   (1761600000000000042, 3, '完整',   'FULL',  'databus_log_level', '', 'success', 'N', 1761000000000000103, 1761100000000000001, sysdate(), null, null, '执行级 + 节点级每步 IO，关键链路/调试期');

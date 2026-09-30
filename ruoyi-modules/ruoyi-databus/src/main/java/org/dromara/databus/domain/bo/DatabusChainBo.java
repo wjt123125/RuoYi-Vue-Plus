@@ -87,4 +87,12 @@ public class DatabusChainBo implements Serializable {
      */
     private String status;
 
+    /**
+     * 是否精选模板（仅列表查询过滤用：0普通链路 1精选模板；链路页双 tab 必传其一）。
+     * <p>
+     * 保存时不接收此字段——insertByBo 显式置 '0'、updateByBo 显式置 null（不更新），
+     * 标记/取消走模板专用端点（markAsTemplate/unmarkTemplate）。
+     */
+    private String isTemplate;
+
 }

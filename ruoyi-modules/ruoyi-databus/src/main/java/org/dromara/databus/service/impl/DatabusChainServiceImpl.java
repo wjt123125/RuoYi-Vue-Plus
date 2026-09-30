@@ -10,8 +10,11 @@ import org.dromara.common.core.utils.MapstructUtils;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.domain.DatabusChain;
+import org.dromara.databus.domain.bo.ChainCopyBo;
 import org.dromara.databus.domain.bo.DatabusChainBo;
+import org.dromara.databus.domain.bo.TemplateMarkBo;
 import org.dromara.databus.domain.vo.ChainStatsVo;
+import org.dromara.databus.domain.vo.CopySuggestionVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.ELInfo;
@@ -25,7 +28,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Pattern;
 
 /**
  * 链路定义 Service 实现。
@@ -49,6 +52,17 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     private static final int DRAFT_VERSION = 1;
 
     /**
+     * 精选模板标记（is_template：0否 1是）
+     */
+    private static final String TEMPLATE_FLAG_NO = "0";
+    private static final String TEMPLATE_FLAG_YES = "1";
+
+    /**
+     * 模板默认排序（未显式指定时）
+     */
+    private static final int TEMPLATE_DEFAULT_SORT = 0;
+
+    /**
      * 链路名称/编码最大长度（与 Bo @Size 约束一致）
      */
     private static final int CHAIN_NAME_MAX_LEN = 100;
@@ -60,21 +74,19 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     private static final String COPY_NAME_SUFFIX = "副本";
 
     /**
-     * 副本编码后缀（后再追加 6 位十六进制随机串）
+     * 副本编码建议的起始序号（源编码_2、_3 ……）
      */
-    private static final String COPY_CODE_SUFFIX = "_copy";
+    private static final int COPY_CODE_SEQ_START = 2;
 
     /**
-     * 随机段固定 6 位十六进制（0x100000 ≤ n < 0x1000000）
+     * 副本编码建议序号上限（防御性，正常数据远到不了）
      */
-    private static final int COPY_RANDOM_SUFFIX_LEN = 6;
-    private static final int COPY_RANDOM_LOWER = 0x100000;
-    private static final int COPY_RANDOM_UPPER = 0x1000000;
+    private static final int COPY_CODE_SEQ_MAX = 9999;
 
     /**
-     * 生成唯一编码的最大尝试次数
+     * 编码结尾「_数字」：建议值先剥离源编码既有 _N 尾缀，避免 xxx_2_2
      */
-    private static final int COPY_CODE_MAX_ATTEMPTS = 10;
+    private static final Pattern CODE_TRAILING_SEQ = Pattern.compile("_\\d+$");
 
     private final DatabusChainMapper chainMapper;
 
@@ -91,18 +103,32 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     public PageResult<DatabusChainVo> queryPageList(DatabusChainBo bo, PageQuery pageQuery) {
         LambdaQueryWrapper<DatabusChain> lqw = Wrappers.lambdaQuery();
         // 列表白名单：排除 canvas_data / el_expression 两个大字段（列表零消费），
-        // 保留 cmp_property 供卡片迷你拓扑预览递归。queryById 保持全量（编辑器加载走该接口）。
+        // 保留 cmp_property 供卡片迷你拓扑预览递归，模板三字段供模板卡角标/说明/排序。
+        // queryById 保持全量（编辑器加载走该接口）。
         lqw.select(DatabusChain::getId, DatabusChain::getChainCode, DatabusChain::getChainName,
             DatabusChain::getVersion, DatabusChain::getStatus, DatabusChain::getCmpProperty,
             DatabusChain::getLogLevel, DatabusChain::getRemark,
+            DatabusChain::getIsTemplate, DatabusChain::getTemplateDesc, DatabusChain::getTemplateSort,
             DatabusChain::getCreateTime, DatabusChain::getUpdateTime);
         lqw.like(StringUtils.isNotBlank(bo.getChainCode()), DatabusChain::getChainCode, bo.getChainCode());
         lqw.like(StringUtils.isNotBlank(bo.getChainName()), DatabusChain::getChainName, bo.getChainName());
         if (StringUtils.isNotBlank(bo.getStatus())) {
             lqw.eq(DatabusChain::getStatus, bo.getStatus());
         }
-        lqw.orderByDesc(DatabusChain::getUpdateTime)
-            .orderByDesc(DatabusChain::getId);
+        // 双 tab 分流：'1' 精选模板库，'0' 我的链路（排除模板）；null 不追加条件，兼容内部调用
+        boolean templateTab = TEMPLATE_FLAG_YES.equals(bo.getIsTemplate());
+        if (StringUtils.isNotBlank(bo.getIsTemplate())) {
+            lqw.eq(DatabusChain::getIsTemplate, bo.getIsTemplate());
+        }
+        if (templateTab) {
+            // 模板库：手动排序升序，同序按最近更新
+            lqw.orderByAsc(DatabusChain::getTemplateSort)
+                .orderByDesc(DatabusChain::getUpdateTime)
+                .orderByDesc(DatabusChain::getId);
+        } else {
+            lqw.orderByDesc(DatabusChain::getUpdateTime)
+                .orderByDesc(DatabusChain::getId);
+        }
         Page<DatabusChainVo> result = chainMapper.selectVoPage(pageQuery.build(), lqw);
         return PageResult.build(result.getRecords(), result.getTotal());
     }
@@ -116,16 +142,18 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         vo.setDraft(draft);
         vo.setPublished(published);
         vo.setOffline(offline);
+        // 模板是样板不是生产资产，不计入任何状态计数与总数
         vo.setTotal(draft + published + offline);
         return vo;
     }
 
     /**
-     * 按状态计数（delFlag 由 @TableLogic 自动过滤）
+     * 按状态计数（delFlag 由 @TableLogic 自动过滤；精选模板恒为草稿但不计入业务计数）
      */
     private long countByStatus(String status) {
         Long count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
-            .eq(DatabusChain::getStatus, status));
+            .eq(DatabusChain::getStatus, status)
+            .eq(DatabusChain::getIsTemplate, TEMPLATE_FLAG_NO));
         return count == null ? 0L : count;
     }
 
@@ -138,6 +166,8 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         add.setId(null);
         add.setVersion(DRAFT_VERSION);
         add.setStatus(ChainStatusEnum.DRAFT.getCode());
+        // 新建即普通链路：模板标记只能经模板专用端点打在已有链路上
+        add.setIsTemplate(TEMPLATE_FLAG_NO);
         add.setElExpression(generateEl(bo));
         // cmpProperty 由 MapstructUtils 按同名同类型直接拷贝；持久化时 TypeHandler 转 JSON
         boolean flag = chainMapper.insert(add) > 0;
@@ -157,9 +187,11 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         validateLogLevel(bo.getLogLevel());
         InputParamValidator.validateDefs(bo.getInputParams());
         DatabusChain update = MapstructUtils.convert(bo, DatabusChain.class);
-        // 版本/状态不接受编辑接口修改（发布流转走独立接口）
+        // 版本/状态不接受编辑接口修改（发布流转走独立接口）；
+        // 模板标记同理——标记/取消走模板专用端点，通用编辑不触碰三字段（updateById 默认不更新 null）
         update.setVersion(null);
         update.setStatus(null);
+        update.setIsTemplate(null);
         update.setElExpression(generateEl(bo));
         return chainMapper.updateById(update) > 0;
     }
@@ -187,12 +219,19 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
      */
     private void validateChainCodeUnique(DatabusChainBo bo) {
         Long currentId = bo.getId() == null ? -1L : bo.getId();
-        Long count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
-            .eq(DatabusChain::getChainCode, bo.getChainCode())
-            .ne(DatabusChain::getId, currentId));
-        if (count != null && count > 0) {
+        if (existsByChainCode(bo.getChainCode(), currentId)) {
             throw new ServiceException("链路编码'" + bo.getChainCode() + "'已存在");
         }
+    }
+
+    /**
+     * 编码在未删除记录中是否已存在（excludeId 为排除自身的主键，复制新链路传 null）
+     */
+    private boolean existsByChainCode(String chainCode, Long excludeId) {
+        Long count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
+            .eq(DatabusChain::getChainCode, chainCode)
+            .ne(excludeId != null, DatabusChain::getId, excludeId));
+        return count != null && count > 0;
     }
 
     /**
@@ -225,6 +264,10 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         DatabusChain chain = chainMapper.selectById(id);
         if (chain == null) {
             throw new ServiceException("链路不存在或已删除");
+        }
+        // 模板红线：模板是样板不是生产资产，不推 Rule-DB、不进执行入口；请复制副本后发布
+        if (TEMPLATE_FLAG_YES.equals(chain.getIsTemplate())) {
+            throw new ServiceException("精选模板不可发布，请使用模板复制出自己的链路后发布副本");
         }
         // 发布即固化当前编排为运行版本。组件树由实体直接持有（TypeHandler 反序列化），
         // 是 EL 的唯一权威源，不依赖可能为空的存量 el_expression 字段
@@ -275,26 +318,84 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     }
 
     @Override
-    public Boolean copy(Long id) {
+    public Long copy(Long id, ChainCopyBo bo) {
         DatabusChain source = chainMapper.selectById(id);
         if (source == null) {
             throw new ServiceException("链路不存在或已删除");
+        }
+        String chainCode = StringUtils.trim(bo.getChainCode());
+        if (existsByChainCode(chainCode, null)) {
+            throw new ServiceException("链路编码'" + chainCode + "'已存在");
         }
         // 全新实体：不复制 id/审计字段，插入时由 MetaObjectHandler 自动填充
         DatabusChain add = new DatabusChain();
         add.setVersion(DRAFT_VERSION);
         add.setStatus(ChainStatusEnum.DRAFT.getCode());
-        add.setChainName(buildCopyName(source.getChainName()));
-        add.setChainCode(buildCopyCode(source.getChainCode()));
-        // 画布/组件树/记录档位原样复制；组件树中引用的连接器仅复制 connectionId（共享连接器，不复制其本身）
+        add.setChainName(StringUtils.trim(bo.getChainName()));
+        add.setChainCode(chainCode);
+        // 画布/组件树/记录档位/入参登记原样复制；组件树中引用的连接器仅复制 connectionId（共享连接器，不复制其本身）
         add.setCanvasData(source.getCanvasData());
         add.setCmpProperty(source.getCmpProperty());
         add.setLogLevel(source.getLogLevel());
         add.setInputParams(source.getInputParams());
         add.setRemark(source.getRemark());
+        // 有意剥离模板身份：副本一律普通链路（说明/排序不继承，new 实体为 null，标记显式置 0）
+        add.setIsTemplate(TEMPLATE_FLAG_NO);
         // 草稿不推 Rule-DB；与新增草稿同口径，EL 由组件树实时生成而非复制源 EL 文本
         add.setElExpression(generateEl(source.getCmpProperty()));
-        return chainMapper.insert(add) > 0;
+        chainMapper.insert(add);
+        // 雪花 id 回填，供「使用模板」复制后直跳编辑器
+        return add.getId();
+    }
+
+    @Override
+    public CopySuggestionVo getCopySuggestion(Long id) {
+        DatabusChain source = chainMapper.selectById(id);
+        if (source == null) {
+            throw new ServiceException("链路不存在或已删除");
+        }
+        CopySuggestionVo vo = new CopySuggestionVo();
+        vo.setChainName(buildCopyName(source.getChainName()));
+        vo.setChainCode(buildSuggestedCode(source.getChainCode()));
+        return vo;
+    }
+
+    @Override
+    public Boolean markAsTemplate(Long id, TemplateMarkBo bo) {
+        DatabusChain chain = chainMapper.selectById(id);
+        if (chain == null) {
+            throw new ServiceException("链路不存在或已删除");
+        }
+        if (ChainStatusEnum.PUBLISHED.getCode().equals(chain.getStatus())) {
+            throw new ServiceException("当前链路已发布，请先下线后再设为精选模板");
+        }
+        Integer sort = bo.getTemplateSort() == null ? TEMPLATE_DEFAULT_SORT : bo.getTemplateSort();
+        DatabusChain update = new DatabusChain();
+        update.setId(id);
+        update.setIsTemplate(TEMPLATE_FLAG_YES);
+        update.setTemplateDesc(bo.getTemplateDesc());
+        update.setTemplateSort(sort);
+        // 模板恒草稿：已下线链路转模板时回归草稿态（下线时 Rule-DB 规则已移除，无残留）
+        update.setStatus(ChainStatusEnum.DRAFT.getCode());
+        return chainMapper.updateById(update) > 0;
+    }
+
+    @Override
+    public Boolean unmarkTemplate(Long id) {
+        DatabusChain chain = chainMapper.selectById(id);
+        if (chain == null) {
+            throw new ServiceException("链路不存在或已删除");
+        }
+        if (!TEMPLATE_FLAG_YES.equals(chain.getIsTemplate())) {
+            throw new ServiceException("该链路不是精选模板");
+        }
+        // 清空说明/排序需显式 set null：updateById 默认 NOT_NULL 策略不更新 null，故走 UpdateWrapper；
+        // 不触碰 status——模板期间恒为草稿，取消后即普通草稿
+        return chainMapper.update(null, Wrappers.<DatabusChain>lambdaUpdate()
+            .set(DatabusChain::getIsTemplate, TEMPLATE_FLAG_NO)
+            .set(DatabusChain::getTemplateDesc, null)
+            .set(DatabusChain::getTemplateSort, TEMPLATE_DEFAULT_SORT)
+            .eq(DatabusChain::getId, id)) > 0;
     }
 
     /**
@@ -306,25 +407,28 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     }
 
     /**
-     * 副本编码：源编码 + _copy + 随机短串，循环校验直到唯一（最多 10 次）
+     * 副本编码建议值：源编码先剥离结尾既有 _N 尾缀（避免副本的副本变 xxx_2_2），
+     * 再从 _2 起查库取首个未占用值。预留序号段长度保证总长不超 100。
      */
-    private String buildCopyCode(String sourceCode) {
-        String base = sourceCode + COPY_CODE_SUFFIX;
-        // 预留随机段长度（_ + 6 位十六进制），保证总长度不超过 100
-        int maxBaseLen = CHAIN_CODE_MAX_LEN - COPY_RANDOM_SUFFIX_LEN - 1;
+    private String buildSuggestedCode(String sourceCode) {
+        String base = CODE_TRAILING_SEQ.matcher(sourceCode).replaceFirst("");
+        if (StringUtils.isBlank(base)) {
+            // 极端情况：源编码本身就是 "_2" 之类，剥离后为空，回退用源编码
+            base = sourceCode;
+        }
+        // 预留最长序号段 "_9999"
+        int suffixReserve = 1 + String.valueOf(COPY_CODE_SEQ_MAX).length();
+        int maxBaseLen = CHAIN_CODE_MAX_LEN - suffixReserve;
         if (base.length() > maxBaseLen) {
             base = base.substring(0, maxBaseLen);
         }
-        for (int i = 0; i < COPY_CODE_MAX_ATTEMPTS; i++) {
-            String candidate = base + "_" + Integer.toHexString(
-                ThreadLocalRandom.current().nextInt(COPY_RANDOM_LOWER, COPY_RANDOM_UPPER));
-            Long count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
-                .eq(DatabusChain::getChainCode, candidate));
-            if (count == null || count == 0) {
+        for (int seq = COPY_CODE_SEQ_START; seq <= COPY_CODE_SEQ_MAX; seq++) {
+            String candidate = base + "_" + seq;
+            if (!existsByChainCode(candidate, null)) {
                 return candidate;
             }
         }
-        throw new ServiceException("复制失败：无法生成唯一链路编码，请重试");
+        throw new ServiceException("复制失败：无法生成唯一链路编码，请手工指定");
     }
 
 }

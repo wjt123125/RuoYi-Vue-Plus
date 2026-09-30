@@ -74,6 +74,21 @@ public class DatabusChainVo implements Serializable {
     private List<ChainInputParam> inputParams;
 
     /**
+     * 是否精选模板（0否 1是）
+     */
+    private String isTemplate;
+
+    /**
+     * 模板说明（模板库卡片展示）
+     */
+    private String templateDesc;
+
+    /**
+     * 模板排序（升序，值小在前）
+     */
+    private Integer templateSort;
+
+    /**
      * 备注
      */
     private String remark;

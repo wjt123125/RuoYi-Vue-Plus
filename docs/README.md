@@ -23,6 +23,7 @@ docs/
     ├── databus-formula-engine-research.md   # 公式引擎调研：结论不建独立引擎，三层模型 + QLExpress4 内联表达式储备方案
     ├── databus-expression-syntax.md         # 参数表达式语法契约：`{{ }}` 唯一动态标记、类型保留规则、引擎三步演进
     ├── databus-context-concurrency.md       # 并发安全：WHEN 并行写共享树的竞争路径、读写锁方案、两个否决方案
+    ├── databus-featured-templates.md        # 精选模板（近期层）：链路打标记+复制即用，双 tab/红线/首批 10 条种子
     └── n8n-vs-databus-paradigm.md           # 范式对比：n8n 传送带 vs 本项目共享黑板、诚实竞争边界、对标产品地图
 ```
 
@@ -53,3 +54,4 @@ docs/
 | [wiki/databus-expression-syntax.md](wiki/databus-expression-syntax.md) | 参数表达式语法契约：`{{ }}` 唯一动态标记、整字段保留原类型、PathResolver 三分支收敛（含裸子串误判缺陷）、QLExpress4 三步演进与 GraalJS 否决理由 | ruoyi-databus（规范，无代码改动） | 2026-09-24 |
 | [wiki/databus-context-concurrency.md](wiki/databus-context-concurrency.md) | DatabusContext 并发安全：WHEN 并行写共享树的竞争路径（createPath 根 Map + handleArrayPath 活引用）、子树父键概念、ReentrantReadWriteLock 锁分配与不死锁论证、两个否决方案、getDocument 后门 | ruoyi-databus (`org.dromara.databus.context`) | 2026-09-24 |
 | [wiki/n8n-vs-databus-paradigm.md](wiki/n8n-vs-databus-paradigm.md) | 两种数据范式：n8n 传送带（item 数组）vs 本项目共享黑板（全量树）、4 条真实链路逐项对照、双方盲区对称列举、诚实竞争边界（含两处已撤回论证）、对标产品地图 | 架构论证（无代码改动） | 2026-09-24 |
+| [wiki/databus-featured-templates.md](wiki/databus-featured-templates.md) | 精选模板（模板策略近期层）：databus_chain 三字段标记、双 tab 模板库、一键复制跳编辑器、模板不发布红线、template 权限点、首批 10 条种子与实施拆步 | ruoyi-databus + plus-ui `views/databus/chain` | 2026-09-30 |

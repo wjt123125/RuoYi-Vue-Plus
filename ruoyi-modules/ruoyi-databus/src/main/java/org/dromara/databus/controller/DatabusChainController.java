@@ -11,8 +11,11 @@ import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
+import org.dromara.databus.domain.bo.ChainCopyBo;
 import org.dromara.databus.domain.bo.DatabusChainBo;
+import org.dromara.databus.domain.bo.TemplateMarkBo;
 import org.dromara.databus.domain.vo.ChainStatsVo;
+import org.dromara.databus.domain.vo.CopySuggestionVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.service.IDatabusChainService;
 import org.springframework.validation.annotation.Validated;
@@ -134,19 +137,67 @@ public class DatabusChainController extends BaseController {
     }
 
     /**
-     * 复制链路：以源链路的画布与配置生成一条全新草稿
-     * <p>
-     * 新链路为草稿状态（不推 Rule-DB、不影响源链路），副本编码重新生成、名称加"副本"。
+     * 复制建议值：名称「源名称+副本」、编码源编码 _2/_3 递增查重，供复制弹窗预填
      *
      * @param id 源链路主键
+     */
+    @SaCheckPermission("databus:editor:add")
+    @GetMapping("/copy-suggestion/{id}")
+    public R<CopySuggestionVo> copySuggestion(@NotNull(message = "主键不能为空")
+                                              @PathVariable("id") Long id) {
+        return R.ok(chainService.getCopySuggestion(id));
+    }
+
+    /**
+     * 复制链路：弹窗确认副本名称/编码后，以源链路的画布与配置生成一条全新草稿
+     * <p>
+     * 新链路为草稿状态（不推 Rule-DB、不影响源链路）；源链路为模板时副本剥离模板身份。
+     * 返回新链路主键，供「使用模板」复制后直跳编辑器。
+     *
+     * @param id 源链路主键
+     * @param bo 副本名称/编码
+     * @return 新链路主键
      */
     @SaCheckPermission("databus:editor:add")
     @Log(title = "数据总线链路", businessType = BusinessType.INSERT)
     @RepeatSubmit
     @PostMapping("/copy/{id}")
-    public R<Void> copy(@NotNull(message = "主键不能为空")
-                        @PathVariable("id") Long id) {
-        return toAjax(chainService.copy(id));
+    public R<Long> copy(@NotNull(message = "主键不能为空")
+                        @PathVariable("id") Long id,
+                        @Validated @RequestBody ChainCopyBo bo) {
+        return R.ok(chainService.copy(id, bo));
+    }
+
+    /**
+     * 设为精选模板（运营动作）：写模板标记 + 说明 + 排序。
+     * <p>
+     * 已发布链路须先下线；标记后模板恒为草稿，不可发布、不推 Rule-DB。
+     *
+     * @param id 链路主键
+     * @param bo 模板设置（说明必填、排序可空）
+     */
+    @SaCheckPermission("databus:editor:template")
+    @Log(title = "数据总线链路模板", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @PostMapping("/template/{id}")
+    public R<Void> markTemplate(@NotNull(message = "主键不能为空")
+                                @PathVariable("id") Long id,
+                                @Validated @RequestBody TemplateMarkBo bo) {
+        return toAjax(chainService.markAsTemplate(id, bo));
+    }
+
+    /**
+     * 取消精选模板：清除标记/说明/排序，链路回到普通草稿，历史副本不受影响。
+     *
+     * @param id 链路主键
+     */
+    @SaCheckPermission("databus:editor:template")
+    @Log(title = "数据总线链路模板", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @DeleteMapping("/template/{id}")
+    public R<Void> unmarkTemplate(@NotNull(message = "主键不能为空")
+                                  @PathVariable("id") Long id) {
+        return toAjax(chainService.unmarkTemplate(id));
     }
 
 }

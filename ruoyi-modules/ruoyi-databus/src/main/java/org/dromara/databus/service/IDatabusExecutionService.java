@@ -4,6 +4,7 @@ import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.domain.bo.DatabusExecutionBo;
 import org.dromara.databus.domain.bo.ManualExecuteBo;
+import org.dromara.databus.domain.vo.ExecutionCleanupVo;
 import org.dromara.databus.domain.vo.ExecutionDetailVo;
 import org.dromara.databus.domain.vo.DatabusExecutionVo;
 import org.dromara.databus.executor.DatabusExecutionResult;
@@ -11,8 +12,9 @@ import org.dromara.databus.executor.DatabusExecutionResult;
 /**
  * 链路执行记录 Service 接口（设计档 §4.2/§4.5）。
  * <p>
- * 记录只增不改：本服务只提供查询（分页/详情）与执行入口（手动执行/重跑），
- * 不提供修改/删除。记录的产生走执行器追踪牌 + 框架钩子，不经过本服务写入。
+ * 记录只增不改：不提供业务修改/逐条删除，记录的产生走执行器追踪牌 + 框架钩子，
+ * 不经过本服务写入；唯一删除入口是 {@link #cleanup(Integer)} 保留期物理清理
+ * （定时任务与手动端点共用）。
  *
  * @author databus
  */
@@ -52,5 +54,14 @@ public interface IDatabusExecutionService {
      * @return 新一次执行结果（含新记录 recordId）
      */
     DatabusExecutionResult rerun(Long id);
+
+    /**
+     * 物理清理过期执行记录（定时任务与手动端点共用）：总账 start_time 早于
+     * now - 保留天数 的记录整批删除，先删节点明细后删总账，分批循环防长事务。
+     *
+     * @param retentionDaysOverride 保留天数覆盖；null 取配置 databus.execution.cleanup.retention-days
+     * @return 删除计数（总账/明细）与是否达到单轮上限被截断
+     */
+    ExecutionCleanupVo cleanup(Integer retentionDaysOverride);
 
 }

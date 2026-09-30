@@ -2,7 +2,8 @@
 -- 数据总线执行记录两表 databus_execution / databus_execution_node
 -- 2026-09-29 按设计文档 §4.2/§4.3 定稿建表：
 -- 审计（每步入参/出参/状态/耗时/分支）+ 重跑（入参原样留存）两个核心目的。
--- 两表只增不改：无 del_flag 逻辑删除，过期数据由保留期清理任务物理删除（backlog，本件不实现）。
+-- 两表只增不改：无 del_flag 逻辑删除，过期数据由保留期清理任务物理删除
+-- （Spring @Scheduled，databus.execution.cleanup 配置，默认保留 30 天；POST /databus/execution/cleanup 手动触发）。
 -- 采集走「追踪牌 + LiteFlow 框架钩子」：
 --   execute() 先查 databus_chain 按 log_level 决定档位（OFF 不挂牌、不落库），
 --   BASIC 只写执行级总账，FULL 总账 + 节点级每步 IO；
@@ -69,11 +70,11 @@ create table databus_execution_node (
 ) engine=innodb comment='数据总线执行节点记录（节点级明细，FULL 档采集）';
 
 -- ----------------------------
--- 菜单与权限（执行记录页：列表/查询/手动执行与重跑）
+-- 菜单与权限（执行记录页：列表/查询/手动执行与重跑/保留期清理）
 -- 前端动态路由：component 填 databus/execution/index 自动映射 views/databus/execution/index.vue。
 -- 复用父菜单"数据总线"目录 menu_id=1761400000000020000（连接管理 010~015、链路管理 020~026/030 同父）。
 -- 链路卡片上的「执行」按钮与记录页/详情抽屉的「手动执行/重跑」共用 databus:execution:execute。
--- 注意：parent_id 必须指向真实存在的父菜单；非 admin 账号还需在【角色管理】勾选这 3 项（sys_role_menu）。
+-- 注意：parent_id 必须指向真实存在的父菜单；非 admin 账号还需在【角色管理】勾选这 4 项（sys_role_menu）。
 -- sys_menu 22 列顺序：menu_id, menu_name, parent_id, order_num, path, component, query_param,
 --   is_frame, is_cache, menu_type, visible, status, perms, icon, active_menu, ext,
 --   create_dept, create_by, create_time, update_by, update_time, remark
@@ -81,10 +82,11 @@ create table databus_execution_node (
 -- 执行记录取 log.svg（与操作日志同义）；早期误写的 'tickets' 不存在会渲染空白。
 -- 幂等：先按 menu_id 删旧（含 sys_role_menu 关联）再插，本片段可直接重复执行。
 -- ----------------------------
-delete from sys_role_menu where menu_id in (1762000000000000040, 1762000000000000041, 1762000000000000042);
-delete from sys_menu where menu_id in (1762000000000000040, 1762000000000000041, 1762000000000000042);
+delete from sys_role_menu where menu_id in (1762000000000000040, 1762000000000000041, 1762000000000000042, 1762000000000000043);
+delete from sys_menu where menu_id in (1762000000000000040, 1762000000000000041, 1762000000000000042, 1762000000000000043);
 
 insert into sys_menu values
   (1762000000000000040, '执行记录', 1761400000000020000, 3, 'execution', 'databus/execution/index', '', 'N', 'N', 'C', '0', '0', 'databus:execution:list', 'log', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线执行记录台账菜单'),
   (1762000000000000041, '记录查询', 1762000000000000040, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:execution:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '查询执行记录详情（总账+节点明细）'),
-  (1762000000000000042, '手动执行/重跑', 1762000000000000040, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:execution:execute', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '手动执行已发布链路/以历史入参重跑，均产生新记录');
+  (1762000000000000042, '手动执行/重跑', 1762000000000000040, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:execution:execute', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '手动执行已发布链路/以历史入参重跑，均产生新记录'),
+  (1762000000000000043, '保留期清理', 1762000000000000040, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:execution:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '手动物理清理过期执行记录（定时任务每天凌晨按保留期自动执行）');

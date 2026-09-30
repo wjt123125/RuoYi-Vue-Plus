@@ -273,6 +273,24 @@ liteflow:
       # 留空自动复用容器 DataSource bean（连接池化）；lf_* 四表启动时自动建（首次部署）
       auto-init-table: true
 
+--- # 数据总线执行记录保留期清理
+# databus_execution / databus_execution_node 两表只增不改（无 del_flag），
+# 过期数据由 Spring @Scheduled 定时任务物理删除；手动触发 POST /databus/execution/cleanup。
+# 单节点幂等维护，多节点部署阶段迁 SnailJob（见 DatabusSchedulingConfig 注释）。
+databus:
+  execution:
+    cleanup:
+      # 清理任务开关（false 只停定时任务，手动端点仍可用）
+      enabled: true
+      # Spring cron：默认每天凌晨 03:00
+      cron: "0 0 3 * * ?"
+      # 保留天数：总账 start_time 严格早于 now - N 天的记录被清理（节点明细随总账联动）
+      retention-days: 30
+      # 单批删除总账条数（FULL 档带 longtext 快照，分批避免大 DELETE 长事务锁表）
+      batch-size: 500
+      # 单次任务最多批数（默认上限 5 万条总账），仍有剩余截断留到下一轮
+      max-rounds: 100
+
 --- # mqtt 配置
 # 具体配置还需查看文档
 # https://mica-mqtt.dreamlu.net/guide/spring/client.html

@@ -11,7 +11,8 @@ import java.time.LocalDateTime;
 /**
  * 链路执行记录（执行级总账）对象 databus_execution
  * <p>
- * 只增不改的审计表：无逻辑删除字段，过期数据由保留期清理任务物理删除（backlog）。
+ * 只增不改的审计表：无逻辑删除字段，过期数据由保留期清理任务物理删除
+ * （Spring @Scheduled，默认保留 30 天；手动端点 /databus/execution/cleanup）。
  * 采集口径见设计文档 §4.3——execute() 挂追踪牌，流程结束后 PostProcessFlowExecuteLifeCycle
  * 一次性落库；OFF 档不产生记录，BASIC 只写总账，FULL 另写节点明细。
  *

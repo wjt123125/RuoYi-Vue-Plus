@@ -8,6 +8,7 @@ import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.dromara.databus.config.properties.DatabusExecutionCleanupProperties;
 import org.dromara.databus.context.JsonCodec;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.DatabusExecution;
@@ -16,6 +17,7 @@ import org.dromara.databus.domain.bo.DatabusExecutionBo;
 import org.dromara.databus.domain.bo.ManualExecuteBo;
 import org.dromara.databus.domain.vo.DatabusExecutionNodeVo;
 import org.dromara.databus.domain.vo.DatabusExecutionVo;
+import org.dromara.databus.domain.vo.ExecutionCleanupVo;
 import org.dromara.databus.domain.vo.ExecutionDetailVo;
 import org.dromara.databus.enums.ChainStatusEnum;
 import org.dromara.databus.executor.DatabusExecutionResult;
@@ -26,6 +28,7 @@ import org.dromara.databus.mapper.DatabusExecutionNodeMapper;
 import org.dromara.databus.service.IDatabusExecutionService;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -48,6 +51,8 @@ public class DatabusExecutionServiceImpl implements IDatabusExecutionService {
     private final DatabusChainMapper chainMapper;
 
     private final DatabusExecutor databusExecutor;
+
+    private final DatabusExecutionCleanupProperties cleanupProperties;
 
     @Override
     public PageResult<DatabusExecutionVo> queryPageList(DatabusExecutionBo bo, PageQuery pageQuery) {
@@ -112,6 +117,53 @@ public class DatabusExecutionServiceImpl implements IDatabusExecutionService {
         // 原样取历史入参（OFF 档没有记录故不会走到这里；request_data 理论非空）
         Object requestData = parseRequestJson(record.getRequestData());
         return databusExecutor.execute(chain.getChainCode(), requestData);
+    }
+
+    @Override
+    public ExecutionCleanupVo cleanup(Integer retentionDaysOverride) {
+        int retentionDays = retentionDaysOverride != null
+            ? retentionDaysOverride : cleanupProperties.getRetentionDays();
+        if (retentionDays <= 0) {
+            throw new ServiceException("保留天数必须大于 0");
+        }
+        int batchSize = cleanupProperties.getBatchSize();
+        int maxRounds = cleanupProperties.getMaxRounds();
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(retentionDays);
+
+        ExecutionCleanupVo vo = new ExecutionCleanupVo();
+        vo.setRetentionDays(retentionDays);
+        long executionDeleted = 0L;
+        long nodeDeleted = 0L;
+        boolean truncated = false;
+        // 分批循环：每批只查过期总账主键（走 idx_exec_start_time；start_time 为 null 的异常行不选中），
+        // 先删节点明细再删总账。不包外层大事务——两条删除各自提交，中途失败后下轮重新选中总账，
+        // 明细重删幂等，保证最终无孤儿明细。
+        for (int round = 0; round < maxRounds; round++) {
+            List<Long> expiredIds = executionMapper.selectList(
+                    Wrappers.<DatabusExecution>lambdaQuery()
+                        .select(DatabusExecution::getId)
+                        .lt(DatabusExecution::getStartTime, cutoff)
+                        // batchSize 为 yml 整型配置，不存在 SQL 注入面
+                        .last("limit " + batchSize))
+                .stream().map(DatabusExecution::getId).toList();
+            if (expiredIds.isEmpty()) {
+                break;
+            }
+            nodeDeleted += nodeMapper.delete(Wrappers.<DatabusExecutionNode>lambdaQuery()
+                .in(DatabusExecutionNode::getExecutionId, expiredIds));
+            executionDeleted += executionMapper.deleteByIds(expiredIds);
+            if (expiredIds.size() < batchSize) {
+                break;
+            }
+            if (round == maxRounds - 1) {
+                // 末批仍是满批，说明可能还有剩余，留给下一轮
+                truncated = true;
+            }
+        }
+        vo.setExecutionDeleted(executionDeleted);
+        vo.setNodeDeleted(nodeDeleted);
+        vo.setTruncated(truncated);
+        return vo;
     }
 
     /**

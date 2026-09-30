@@ -15,9 +15,11 @@ import org.dromara.databus.connector.ConnectorDescriptor;
 import org.dromara.databus.connector.ConnectorException;
 import org.dromara.databus.connector.ConnectorRegistry;
 import org.dromara.databus.context.JsonCodec;
+import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.SysDatabusConnection;
 import org.dromara.databus.domain.bo.SysDatabusConnectionBo;
 import org.dromara.databus.domain.vo.SysDatabusConnectionVo;
+import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.SysDatabusConnectionMapper;
 import org.dromara.databus.service.ISysDatabusConnectionService;
 import org.springframework.stereotype.Service;
@@ -70,6 +72,8 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
 
     private final ConnectorRegistry connectorRegistry;
 
+    private final DatabusChainMapper chainMapper;
+
     @Override
     public SysDatabusConnectionVo queryById(Long id) {
         SysDatabusConnection entity = connectionMapper.selectById(id);
@@ -90,6 +94,9 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
 
     @Override
     public Boolean insertByBo(SysDatabusConnectionBo bo) {
+        if (StringUtils.isBlank(bo.getApiSecret())) {
+            throw new ServiceException("Secret 不能为空");
+        }
         validateConnectionIdUnique(bo);
         validateConnectorTypeExists(bo.getConnectorType());
         SysDatabusConnection add = buildEntityFromBo(bo);
@@ -107,6 +114,14 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
         if (existing == null) {
             throw new ServiceException("连接不存在或已删除");
         }
+        // Secret 输入框留空表示不修改：沿用库中原密钥，避免空值覆盖
+        if (StringUtils.isBlank(bo.getApiSecret())) {
+            String existingSecret = extractApiSecret(existing);
+            if (StringUtils.isBlank(existingSecret)) {
+                throw new ServiceException("原连接未配置 Secret，请填写新的 Secret 后再保存");
+            }
+            bo.setApiSecret(existingSecret);
+        }
         validateConnectionIdUnique(bo);
         validateConnectorTypeExists(bo.getConnectorType());
         SysDatabusConnection update = buildEntityFromBo(bo);
@@ -115,6 +130,7 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
 
     @Override
     public Boolean deleteByIds(Collection<Long> ids) {
+        validateNotReferenced(ids);
         return connectionMapper.deleteByIds(ids) > 0;
     }
 
@@ -122,6 +138,15 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     public String testConnection(SysDatabusConnectionBo bo) {
         if (StringUtils.isBlank(bo.getConnectorType())) {
             throw new ServiceException("Connector 类型不能为空");
+        }
+        // 编辑场景 Secret 框留空表示沿用原密钥：从库中取回再实测
+        if (bo.getId() != null && StringUtils.isBlank(bo.getApiSecret())) {
+            SysDatabusConnection existing = connectionMapper.selectById(bo.getId());
+            String existingSecret = existing == null ? null : extractApiSecret(existing);
+            if (StringUtils.isBlank(existingSecret)) {
+                throw new ServiceException("连接不存在或原连接未配置 Secret，请填写 Secret 后再测试");
+            }
+            bo.setApiSecret(existingSecret);
         }
         Connector connector = connectorRegistry.ofType(bo.getConnectorType());
         Connection runtimeConn = boToRuntimeConnection(bo);
@@ -192,6 +217,55 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
         } catch (ConnectorException e) {
             throw new ServiceException("Connector 类型 '" + connectorType + "' 未注册: " + e.getMessage());
         }
+    }
+
+    /**
+     * 删除前校验：所选连接未被任何未删除链路的组件引用。
+     * <p>在 cmp_property JSON 文本中匹配完整片段 {@code "connectionId":"<值>"}，
+     * 完整片段避免短 connectionId 子串误匹配；命中则拦截并列出引用链路。
+     */
+    private void validateNotReferenced(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        List<SysDatabusConnection> connections = connectionMapper.selectByIds(ids);
+        List<String> connectionIds = connections.stream()
+            .map(SysDatabusConnection::getConnectionId)
+            .filter(StringUtils::isNotBlank)
+            .toList();
+        if (connectionIds.isEmpty()) {
+            return;
+        }
+        LambdaQueryWrapper<DatabusChain> wrapper = Wrappers.<DatabusChain>lambdaQuery()
+            .select(DatabusChain::getId, DatabusChain::getChainName, DatabusChain::getChainCode)
+            .and(orGroup -> {
+                for (int i = 0; i < connectionIds.size(); i++) {
+                    if (i > 0) {
+                        orGroup.or();
+                    }
+                    orGroup.like(DatabusChain::getCmpProperty, referenceLikePattern(connectionIds.get(i)));
+                }
+            });
+        List<DatabusChain> referenced = chainMapper.selectList(wrapper);
+        if (!referenced.isEmpty()) {
+            String names = referenced.stream()
+                .map(chain -> chain.getChainName() + "(" + chain.getChainCode() + ")")
+                .collect(Collectors.joining("、"));
+            throw new ServiceException("所选连接仍被链路引用，无法删除：" + names
+                + "；请先在对应链路中移除或更换连接");
+        }
+    }
+
+    /** cmp_property 中的精确引用片段（已转义 LIKE 通配符），外层由 MP 包裹 % 匹配 */
+    private String referenceLikePattern(String connectionId) {
+        return "\"connectionId\":\"" + escapeLike(connectionId) + "\"";
+    }
+
+    /** 转义 MySQL LIKE 通配符（MySQL 默认转义符为反斜杠，无需显式 ESCAPE 子句） */
+    private String escapeLike(String value) {
+        return value.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_");
     }
 
     // ---------------------------- 平铺 BO ↔ config/credentials JSON ----------------------------
@@ -280,12 +354,12 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
 
     /**
      * 实体 → 平铺 VO（列表/详情/编辑回显）。
-     * <p>1D-P0 密码随详情/列表解密回填（与步骤 7 平铺模型行为一致，前端写死表单零改动）；
-     * 动态表单阶段再改为"密码留空表示不修改"。
+     * <p>安全口径：apiSecret 不回填——列表与详情均不下发明文密钥，
+     * 前端 Secret 输入框常态空白，留空即表示沿用原密钥（update/test 两条路径均已支持），
+     * 填新值才替换。
      */
     private SysDatabusConnectionVo entityToVo(SysDatabusConnection entity) {
         Map<String, Object> config = parseJsonMap(entity.getConfig());
-        Map<String, Object> credentials = parseJsonMap(entity.getCredentials());
 
         SysDatabusConnectionVo vo = new SysDatabusConnectionVo();
         vo.setId(entity.getId());
@@ -299,10 +373,14 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
 
         vo.setEndpoint(asString(config.get(CFG_ENDPOINT)));
         vo.setAccessKey(asString(config.get(CFG_ACCESS_KEY)));
-        vo.setApiSecret(asString(credentials.get(CFG_API_SECRET)));
         vo.setTimeout(asInteger(config.get(CFG_TIMEOUT_MS), DEFAULT_TIMEOUT_MS));
         vo.setRetryCount(asInteger(config.get(CFG_RETRY_COUNT), DEFAULT_RETRY_COUNT));
         return vo;
+    }
+
+    /** 从实体（credentials 已由 MyBatis 解密）提取原 apiSecret；无则返回 null */
+    private String extractApiSecret(SysDatabusConnection entity) {
+        return asString(parseJsonMap(entity.getCredentials()).get(CFG_API_SECRET));
     }
 
     /**

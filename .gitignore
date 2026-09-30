@@ -53,3 +53,6 @@ nbdist/
 
 application-local.yml
 application-ga.yml
+
+# LiteFlow enable-node-instance-id 开启后在项目根目录生成的本地运行时产物
+.node_instance_id/

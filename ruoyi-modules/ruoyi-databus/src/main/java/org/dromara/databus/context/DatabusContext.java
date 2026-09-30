@@ -1,5 +1,6 @@
 package org.dromara.databus.context;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
@@ -10,6 +11,7 @@ import com.jayway.jsonpath.spi.mapper.JacksonMappingProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.connector.Connection;
+import org.dromara.databus.executor.trace.ExecutionTrace;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -123,8 +125,33 @@ public class DatabusContext {
 
     private final DocumentContext document;
 
+    /**
+     * 本次执行的审计追踪牌（仅正式执行且 log_level≠OFF 时由执行器挂上；试运行不挂）。
+     * <p>
+     * 必须排除序列化：它不参与数据树内容（{@link #toJsonString()} 只序列化 jayway 文档根），
+     * 但牌内持有节点行队列与 ThreadLocal，任何 Jackson 路径的上下文序列化都不该触及它
+     * （设计档 §4.3 红线：trace 字段 {@code @JsonIgnore}/transient 双保险，防循环引用与快照污染）。
+     */
+    @JsonIgnore
+    private transient ExecutionTrace executionTrace;
+
     private DatabusContext(DocumentContext document) {
         this.document = document;
+    }
+
+    /**
+     * 挂上本次执行的追踪牌（执行器入口调用一次；null 表示不审计）。
+     */
+    public void attachTrace(ExecutionTrace trace) {
+        this.executionTrace = trace;
+    }
+
+    /**
+     * 取本次执行的追踪牌；未挂牌（OFF/试运行/非数据总线链路）返回 null，
+     * 采集钩子与落库钩子凭「有无追踪牌」决定是否工作。
+     */
+    public ExecutionTrace getExecutionTrace() {
+        return executionTrace;
     }
 
     /**

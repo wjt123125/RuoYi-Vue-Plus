@@ -20,6 +20,15 @@ public class DatabusExecutionResult {
     /** 执行记录业务 id（DatabusExecutor 生成）。 */
     private String executionId;
 
+    /**
+     * 执行记录总账主键（databus_execution.id，雪花 id）。
+     * <p>
+     * 来自追踪牌 {@code ExecutionTrace.recordId}：正式执行（BASIC/FULL 档）afterFlow
+     * 钩子同步落库后必有值，前端据此直接打开新记录详情；OFF 档不挂牌、试运行不挂牌，
+     * 此两种路径为 null。
+     */
+    private Long recordId;
+
     /** 链路编码。 */
     private String chainId;
 

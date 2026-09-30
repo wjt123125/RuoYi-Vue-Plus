@@ -179,17 +179,17 @@ Rule-DB 是 LiteFlow v2.16.1 统一规则数据库，作为执行引擎层的高
 | 字段 | 来源（PostProcessNodeExecuteLifeCycle + Slot） | 说明 |
 |:---|:---|:---|
 | id | — | 主键 |
-| node_instance_id | `CmpStep.getNodeInstanceId()`（步骤实例 id） | 区分循环多轮同 tag 的多行 |
+| node_instance_id | `CmpStep.getRefNode().getNodeInstanceId()`（需开 `liteflow.enable-node-instance-id=true`，Rule-DB 加载链时由 RuleDbRuntime 分配） | 区分同一 nodeId 在链中的多次出现；**循环多轮同 tag 靠 branch_info 的 LOOP 轮次**（实例 id 按链中出现分配，不按轮次变） |
 | execution_id | 追踪牌 executionId 关联 | 关联 execution |
 | tag | `cmp.getTag()`（NodeComponent 的 tag，即组件实例 dataSpace 名） | EL 里 tag |
 | node_type | `cmp.getNodeId()`（注册类型名，实例唯一性靠 tag 区分） | 组件注册名（httpRequest/condition/...） |
-| input_json | 节点执行前数据树快照（`slot.getInput()` 普通组件恒为空，不可用，见 §4.3） | 节点输入 JSON（可缺省） |
+| input_json | before 钩子拍数据树**整树**快照存追踪牌 ThreadLocal，after 钩子消费（`slot.getInput()` 普通组件恒为空，不可用，见 §4.3） | 节点输入 JSON（可缺省） |
 | output_json | `context.snapshotDataSpace(tag)` 当场快照；布尔组件取布尔判定（不写数据树） | 节点输出 JSON |
 | status | `e == null ? SUCCESS : FAILED`（after 钩子第三参 Exception 判断） | 节点状态 |
 | error_msg | `e != null ? e.getMessage() : null`（after 钩子异常参数） | 错误信息 |
 | start_time / end_time | `CmpStep.getStartTime()/getEndTime()` 直接取（比 currentTimeMillis 反推准） | 起止时间 |
 | duration | `CmpStep.getTimeSpent()`（毫秒） | 耗时 |
-| branch_info | `slot.getIfResult(tag)` / `slot.getSwitchResult(tag)` / 循环轮次从 `slot.getExecuteSteps()` 的 `CmpStep` 取 | 分支标记（IF 真假/SWITCH 命中 case/循环轮次） |
+| branch_info | 布尔组件复用 after 钩子已取的 `getItemResultMetaValue(slotIndex)` 判定值；SWITCH 走 `NodeSwitchComponent.getItemResultMetaValue(slotIndex)`；循环轮次取 `CmpStep.getLoopIndex()`。**不能按 tag 直取**——Slot 元数据键是 `getMetaValueKey()`（组件实现类名，protected 拿不到），`getIfResult(tag)` 恒 null | 分支标记（IF 真假/SWITCH 命中 case/循环轮次） |
 | + BaseEntity | — | — |
 
 > **采集实现**：`PostProcessNodeExecuteLifeCycle.postProcessAfterNodeExecute(NodeComponent cmp, long timeSpent, Exception e)` 在 `NodeComponent.execute()` 的 `finally` 块中触发（源码 `liteflow-core/.../core/NodeComponent.java:184-188`），无论成功异常都触发，能拿到配对的耗时/异常信息。配合 `PostProcessFlowExecuteLifeCycle.postProcessAfterFlowExecute(chainId, Slot slot)` 在整次流程结束后一次性 dump 执行级（databus_execution，从 Slot 取 requestData/responseData/exception/executeSteps/chainId 等）。详见 [lifecycle.md](file:///e:/01.code/databus-meta/.trae/skills/how2useliteflow/references/lifecycle.md) §三.3 与 §四。
@@ -211,7 +211,7 @@ Rule-DB 是 LiteFlow v2.16.1 统一规则数据库，作为执行引擎层的高
 - **节点缓冲必须线程安全**：WHEN 经 `ParallelSupplier.get()` 在 CompletableFuture 工作线程调节点 `execute`，节点钩子并发触发；ExecutionTrace 的 FULL 档节点行缓冲须用 `ConcurrentLinkedQueue` 或加锁列表（ArrayList 会丢数据）。`snapshotDataSpace` 已持读锁；allOf 的 join 构成 happens-before，afterFlow 读缓冲时数据必齐。
 - **禁止改用 `slot.getContextBean(Class)`**：找不到上下文时该方法抛 `NoSuchContextBeanException`（不返回 null），在工作流模块链上危险；沿用遍历 `getContextBeanList()` 自行 instanceof 匹配的现有手法。
 - **afterFlow 钩子在 doExecute 的 finally 中**（FlowExecutor :659-671），成败必到；`DataBus.releaseSlot` 仅从注册表摘除 Slot、不清数据，钩子读取正常。但 `LiteFlowChainELBuilder.build()` 失败在 doExecute 之外，钩子不触发——试运行建链失败不落库符合预期，正式 execute 无建链步骤不受影响。
-- **CmpStep 字段**：nodeInstanceId/nodeId/nodeName/tag/stepType/startTime/endTime/timeSpent/success/exception/refNode/stepData，节点行字段均有出处。
+- **CmpStep 字段**：nodeId/nodeName/tag/stepType/startTime/endTime/timeSpent/success/exception/refNode/stepData/loopIndex 均有出处。**陷阱（2026-09-29 实施时核实纠正）**：`CmpStep.getNodeInstanceId()` 是死 getter——其 setter 在 2.16.1.3 全源码零调用，运行期恒为 null；真实实例 id 在 `getRefNode().getNodeInstanceId()` 上，仅开 `liteflow.enable-node-instance-id=true` 后由 RuleDbRuntime（Rule-DB 链）/ELBuilder 发布编译（动态链）分配，且按链中出现分配、**不随循环轮次变**，循环多轮区分靠 `CmpStep.getLoopIndex()`（已并入 branch_info）。同理 Slot 的 getIfResult/getSwitchResult 键是 protected 的 `getMetaValueKey()`（组件实现类名），外部只能走组件公开的 `getItemResultMetaValue(slotIndex)`。
 - **WHEN 超时记录语义**：超时是 `completeExceptionally`、不中断工作线程；迟到节点跑完后向 trace 的追加不再入库（落库仅一次快照），故无孤儿 DB 行，记录反映超时窗口内状态。
 - **入口收敛约束（架构红线）**：手动执行、未来外部 invoke、定时/MQ 等一切执行入口必须统一调 `DatabusExecutor.execute()`，校验/挂牌/落库只此一处，禁止入口旁路（否则出现"有的调用有记录、有的没有"）。
 

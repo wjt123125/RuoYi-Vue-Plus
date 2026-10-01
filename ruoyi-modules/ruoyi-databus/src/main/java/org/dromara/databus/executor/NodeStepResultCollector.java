@@ -36,10 +36,12 @@ import java.util.List;
  * 追加进追踪牌的线程安全缓冲，afterFlow 钩子一次性批量落库。不另注册第二个生命周期 Bean
  * （同接口多实现的回调顺序框架无保证）。BASIC 档与试运行（无牌）零额外开销。
  * <p>
- * <b>为什么不直接在钩子里调 {@code cmp.setStepData()}</b>：2.16.1.3 源码中
- * {@code NodeComponent.execute()} 的 finally 先执行 {@code cmpStep.setStepData(refNode.getStepData())}
- * （约 :170），之后才回调本钩子（约 :187），写 refNode 已赶不上本次拷贝。
- * 这里改为从 {@code slot.getExecuteSteps()} 实时队列里反查出当前 CmpStep 直接挂载。
+ * <b>为什么不直接在钩子里调 {@code cmp.setStepData()}</b>：2.16.3.1 源码中
+ * {@code NodeComponent.execute()} 的 finally 顺序为 afterProcess(:163) →
+ * {@code cmpStep.setStepData(refNode.getStepData())}(:170) → 本钩子(:186)，
+ * 钩子虽在拷贝之后，但直接写 CmpStep 本体即可；写 refNode 则赶不上本次拷贝。
+ * 这里从 {@code slot.getExecuteSteps()} 实时队列里反查出当前 CmpStep 直接挂载
+ * （同时承担循环多轮/WHEN 并发下同实例多步骤的定位，非仅为绕过拷贝时序）。
  * <p>
  * 该钩子是全局注册的（ruoyi-workflow 等模块也用 LiteFlow），上下文中没有
  * {@link DatabusContext} 时直接跳过，绝不影响其他链路。
@@ -117,9 +119,9 @@ public class NodeStepResultCollector implements PostProcessNodeExecuteLifeCycle 
     private NodeTraceRow toTraceRow(NodeComponent cmp, Exception e, CmpStep currentStep,
                                     String outputJson, String inputJson, Boolean booleanResult) {
         NodeTraceRow row = new NodeTraceRow();
-        // 实例 id 必须取 refNode：2.16.1.3 中 CmpStep.getNodeInstanceId() 是死 getter
-        // （setter 全源码零调用），真实 id 由框架在开 enable-node-instance-id 时挂到 Node 上；
-        // 未开开关或动态建链时为 null（列可空，循环多轮另靠 branch_info 的 LOOP 轮次区分）
+        // 实例 id 统一取 refNode 通道：真实 id 由框架在开 enable-node-instance-id 时挂到 Node 上；
+        // 2.16.3.1 起 CmpStep.setRefNode 已把该 id 同步到 CmpStep 自身（getter 复活），两通道等价，
+        // 此处保持 refNode 写法不变。未开开关或动态建链时为 null（列可空，循环多轮另靠 branch_info 的 LOOP 轮次区分）
         row.setNodeInstanceId(currentStep != null && currentStep.getRefNode() != null
             ? currentStep.getRefNode().getNodeInstanceId()
             : null);

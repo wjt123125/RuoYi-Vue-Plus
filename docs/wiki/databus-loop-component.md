@@ -1,6 +1,6 @@
 # 循环组件（FOR/ITERATOR/WHILE）与 SWITCH 路由组件规格
 
-> 适用版本：LiteFlow `2.16.1.3` · 模块：`ruoyi-databus` + plus-ui `views/databus/editor`
+> 适用版本：LiteFlow `2.16.3.1`（2.16.1.x 起机制一致，2026-10-02 升级核验）· 模块：`ruoyi-databus` + plus-ui `views/databus/editor`
 > 更新日期：2026-09-20
 
 ## 1. 解决什么问题

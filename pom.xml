@@ -63,7 +63,9 @@
         <sms4j.version>3.3.5</sms4j.version>
         <!-- 工作流配置 -->
         <warm-flow.version>1.8.9</warm-flow.version>
-        <liteflow.version>2.16.1.3</liteflow.version>
+        <!-- 2.16.3.1：修复 execute2RespWithEL 对 data()/tag() 字面量删空格、单引号转双引号的问题（#IKH1YA）；
+             旧版绕行见 DatabusExecutor.executeByEl 的 LiteFlowChainELBuilder 原文建链，暂保留 -->
+        <liteflow.version>2.16.3.1</liteflow.version>
         <!-- mqtt客户端 -->
         <mica-mqtt.version>2.6.8</mica-mqtt.version>
 

@@ -13,7 +13,7 @@ import org.dromara.databus.context.DatabusContext;
  * {@link #getPreNLoopIndex} 探测当前节点所处的真实循环深度，驱动
  * {@link DatabusContext#reconcileLoopIndices} 进层压变量名、出层截断。
  * <p>
- * 关键机制（LiteFlow 2.16.1.3 源码实证）：
+ * 关键机制（LiteFlow 2.16.3.1 源码实证，2.16.1.x 起一致）：
  * <ul>
  *     <li>{@code getLoopIndex()} 在循环体外返回 null（不抛异常），故循环外节点
  *     探测到深度 0；{@code getPreNLoopIndex(n)} 返回外 n 层下标，栈深不足时返回 null；</li>

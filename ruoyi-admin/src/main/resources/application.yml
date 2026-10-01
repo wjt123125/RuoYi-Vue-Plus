@@ -254,7 +254,8 @@ liteflow:
   # 开启节点实例 id：同一 nodeId 在链中多次出现（THEN(a,b,a)）时框架为每个出现分配
   # Chain 内唯一实例 id，Rule-DB 加载链时由 RuleDbRuntime 挂到 Node 上，
   # 执行记录节点行经 CmpStep.getRefNode().getNodeInstanceId() 取它区分重复出现
-  # （循环多轮同 tag 另靠 CmpStep.loopIndex；2.16.1.3 的 CmpStep.getNodeInstanceId 是死 getter）。
+  # （循环多轮同 tag 另靠 CmpStep.loopIndex；2.16.3.1 起 CmpStep.setRefNode 会同步实例 id，
+  # getNodeInstanceId() 不再是死 getter，采集代码仍统一走 refNode 通道）。
   enable-node-instance-id: true
   # 2.16.1+ 起 liteflow-metrics 随 starter 引入且默认开启：会采集链路/节点计时指标，
   # 并注册 /actuator/liteflow 端点（返回链元数据，含 EL 原文）。本项目不接入指标平台，

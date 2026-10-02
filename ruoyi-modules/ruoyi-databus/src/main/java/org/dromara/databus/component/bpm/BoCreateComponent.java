@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.BoCreateCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.BoCreateRequest;
@@ -29,6 +31,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("boCreate")
+@DatabusCmp(
+    code = "boCreate", name = "BPM 建 BO", shortName = "建 BO",
+    icon = "ph:database", color = "#9c27b0",
+    description = "创建 BPM 业务对象（BO），method=create 时 bindId 必填且引用上一步 processStart.processInstanceId，支持 6 种回写策略",
+    cfg = BoCreateCfg.class, sort = 120
+)
 public class BoCreateComponent extends DatabusNodeComponent {
 
     private static final String DEFAULT_METHOD = "create";

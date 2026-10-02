@@ -10,7 +10,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.dromara.databus.component.script.ScriptCfg;
+import org.dromara.databus.component.cfg.ScriptCfg;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.context.DatabusContext;
 import org.dromara.databus.context.InputParamValidator;

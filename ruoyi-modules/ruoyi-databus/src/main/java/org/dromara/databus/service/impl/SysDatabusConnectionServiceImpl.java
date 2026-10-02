@@ -18,6 +18,7 @@ import org.dromara.databus.context.JsonCodec;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.SysDatabusConnection;
 import org.dromara.databus.domain.bo.SysDatabusConnectionBo;
+import org.dromara.databus.domain.vo.ConnectionOptionVo;
 import org.dromara.databus.domain.vo.SysDatabusConnectionVo;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.SysDatabusConnectionMapper;
@@ -78,6 +79,17 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     public SysDatabusConnectionVo queryById(Long id) {
         SysDatabusConnection entity = connectionMapper.selectById(id);
         return entity == null ? null : entityToVo(entity);
+    }
+
+    @Override
+    public List<ConnectionOptionVo> queryOptions() {
+        List<SysDatabusConnection> entities = connectionMapper.selectList(
+            Wrappers.<SysDatabusConnection>lambdaQuery()
+                .eq(SysDatabusConnection::getEnabled, ENABLED_YES)
+                .orderByAsc(SysDatabusConnection::getId));
+        return entities.stream()
+            .map(e -> new ConnectionOptionVo(e.getId(), e.getConnectionId(), e.getConnectionName(), e.getConnectorType()))
+            .toList();
     }
 
     @Override

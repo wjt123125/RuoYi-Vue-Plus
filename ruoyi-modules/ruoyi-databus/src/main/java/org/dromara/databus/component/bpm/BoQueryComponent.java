@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.BoQueryCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.BoQueryRequest;
@@ -27,6 +29,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("boQuery")
+@DatabusCmp(
+    code = "boQuery", name = "BPM 查 BO", shortName = "查 BO",
+    icon = "ph:magnifying-glass", color = "#409eff",
+    description = "查询 BPM 业务对象（BO）数据，支持 list/listPage/count 三种方法、maxRecord 影响量校验、动态条件与关联表/子表挂载",
+    cfg = BoQueryCfg.class, sort = 130
+)
 public class BoQueryComponent extends DatabusNodeComponent {
 
     private static final String DEFAULT_METHOD = "list";

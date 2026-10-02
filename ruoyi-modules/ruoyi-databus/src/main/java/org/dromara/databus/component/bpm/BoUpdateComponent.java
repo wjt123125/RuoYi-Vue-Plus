@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.BoUpdateCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.BoItem;
@@ -27,6 +29,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("boUpdate")
+@DatabusCmp(
+    code = "boUpdate", name = "BPM 改 BO", shortName = "改 BO",
+    icon = "ph:pencil-line", color = "#e6a23c",
+    description = "按记录 ID 更新 BPM 业务对象（BO）数据，records 必须含 ID 字段（可先 boQuery 查出再整体回写），BPM 端整体事务 all-or-nothing",
+    cfg = BoUpdateCfg.class, sort = 140
+)
 public class BoUpdateComponent extends DatabusNodeComponent {
 
     private static final String FIELD_ID = "ID";

@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.BoDeleteCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.BoDeleteRequest;
@@ -27,6 +29,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("boDelete")
+@DatabusCmp(
+    code = "boDelete", name = "BPM 删 BO", shortName = "删 BO",
+    icon = "ph:trash", color = "#f56c6c",
+    description = "删除 BPM 业务对象（BO）数据，method=remove 按记录 ID 逐条删 / removeByBindId 按流程实例批量删，BPM 端整体事务 all-or-nothing",
+    cfg = BoDeleteCfg.class, sort = 150
+)
 public class BoDeleteComponent extends DatabusNodeComponent {
 
     private static final String DEFAULT_METHOD = "remove";

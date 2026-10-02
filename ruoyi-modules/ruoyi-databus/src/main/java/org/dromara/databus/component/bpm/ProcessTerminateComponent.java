@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.ProcessTerminateCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.ProcessTerminateRequest;
@@ -24,6 +26,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("processTerminate")
+@DatabusCmp(
+    code = "processTerminate", name = "BPM 终止流程", shortName = "终止流程",
+    icon = "ph:prohibit", color = "#909399",
+    description = "终止 BPM 流程实例（userId 为终止操作人），流程已结束时幂等返回 terminated=false 不报错",
+    cfg = ProcessTerminateCfg.class, sort = 160
+)
 public class ProcessTerminateComponent extends DatabusNodeComponent {
 
     @Override

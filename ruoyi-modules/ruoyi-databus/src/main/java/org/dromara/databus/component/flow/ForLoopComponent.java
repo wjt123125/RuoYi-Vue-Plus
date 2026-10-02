@@ -4,6 +4,9 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import com.yomahub.liteflow.core.NodeForComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.databus.component.cfg.ForLoopCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
+import org.dromara.databus.component.schema.enums.NodeTypeKind;
 import org.dromara.databus.context.DatabusContext;
 
 /**
@@ -19,6 +22,11 @@ import org.dromara.databus.context.DatabusContext;
  */
 @Slf4j
 @LiteflowComponent("forLoop")
+@DatabusCmp(
+    code = "forLoop", name = "计数循环组件", icon = "ph:number-circle-one", color = "#67c23a",
+    description = "FOR 算子条件位：count 填循环次数（整数或 {{ $.路径 }} 表达式），体内用 $i 引用当前轮下标；indexVar 可自定义下标名",
+    nodeType = NodeTypeKind.FOR, cfg = ForLoopCfg.class, sort = 40
+)
 public class ForLoopComponent extends NodeForComponent {
 
     @Override

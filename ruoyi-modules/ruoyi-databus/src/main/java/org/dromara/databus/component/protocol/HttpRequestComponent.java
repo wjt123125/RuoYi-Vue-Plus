@@ -5,6 +5,8 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.HttpRequestCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.context.DatabusContext;
 import org.dromara.databus.context.JsonCodec;
 import org.springframework.http.HttpHeaders;
@@ -54,6 +56,11 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @LiteflowComponent("httpRequest")
+@DatabusCmp(
+    code = "httpRequest", name = "Http 请求", icon = "ph:globe", color = "#409eff",
+    description = "通用 HTTP：GET/POST/PUT/PATCH/DELETE，JSON/表单/raw 三种请求体，basic/bearer 鉴权；状态码与响应存入 $.数据空间.status/response，mappings 抽取字段",
+    cfg = HttpRequestCfg.class, sort = 20
+)
 public class HttpRequestComponent extends DatabusNodeComponent {
 
     private static final long DEFAULT_TIMEOUT_MS = 10_000L;

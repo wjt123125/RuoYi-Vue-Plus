@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.RdsExecuteCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.RdsExecuteRequest;
@@ -28,6 +30,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("rdsExecute")
+@DatabusCmp(
+    code = "rdsExecute", name = "BPM SQL 执行", shortName = "SQL 执行",
+    icon = "ph:table", color = "#16a34a",
+    description = "在 BPM 后台注册的 RDS 数据源上执行 SQL：标量/单行/多行查询、更新与批量（8 种方法），结果存 $.数据空间.data",
+    cfg = RdsExecuteCfg.class, sort = 180
+)
 public class RdsExecuteComponent extends DatabusNodeComponent {
 
     private static final String DEFAULT_METHOD = "getMaps";

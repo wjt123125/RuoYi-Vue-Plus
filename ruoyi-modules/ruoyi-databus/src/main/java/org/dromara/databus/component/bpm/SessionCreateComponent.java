@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.SessionCreateCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.SessionCreateRequest;
@@ -24,6 +26,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("sessionCreate")
+@DatabusCmp(
+    code = "sessionCreate", name = "BPM 会话", shortName = "会话",
+    icon = "ph:sign-in", color = "#409eff",
+    description = "创建 BPM 会话（登录获取 sid），响应平铺到 $.数据空间",
+    cfg = SessionCreateCfg.class, sort = 100
+)
 public class SessionCreateComponent extends DatabusNodeComponent {
 
     private static final String DEFAULT_CLIENT_IP = "0.0.0.0";

@@ -4,6 +4,9 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import com.yomahub.liteflow.core.NodeBooleanComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.databus.component.cfg.ConditionCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
+import org.dromara.databus.component.schema.enums.NodeTypeKind;
 import org.dromara.databus.context.DatabusContext;
 
 import java.math.BigDecimal;
@@ -20,6 +23,11 @@ import java.util.Objects;
  */
 @Slf4j
 @LiteflowComponent("condition")
+@DatabusCmp(
+    code = "condition", name = "条件判断", icon = "ph:equals", color = "#e6a23c",
+    description = "布尔条件：按 {{ $.路径 }} 表达式与比较符求值，供 IF/WHILE 条件槽使用",
+    nodeType = NodeTypeKind.BOOLEAN, cfg = ConditionCfg.class, sort = 30
+)
 public class ConditionComponent extends NodeBooleanComponent {
 
     @Override

@@ -4,6 +4,8 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.SetValueCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 
 /**
  * 变量赋值组件（注册名 {@code setValue}）。
@@ -19,6 +21,15 @@ import org.dromara.databus.component.DatabusNodeComponent;
  */
 @Slf4j
 @LiteflowComponent("setValue")
+@DatabusCmp(
+    code = "setValue",
+    name = "赋值",
+    icon = "ph:pencil-simple",
+    color = "#67c23a",
+    description = "把值（常量或 {{ $.路径 }} 表达式取值）写入上下文 $.数据空间.path",
+    cfg = SetValueCfg.class,
+    sort = 10
+)
 public class SetValueComponent extends DatabusNodeComponent {
 
     @Override

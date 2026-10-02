@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.ProcessStartCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.ProcessStartRequest;
@@ -25,6 +27,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("processStart")
+@DatabusCmp(
+    code = "processStart", name = "BPM 启流程", shortName = "启流程",
+    icon = "ph:rocket", color = "#e6a23c",
+    description = "启动 BPM 流程实例，title 支持 {{ $.xxx }} 表达式，响应平铺到 $.数据空间（含 processInstanceId 供下游 boCreate.bindId 引用）",
+    cfg = ProcessStartCfg.class, sort = 110
+)
 public class ProcessStartComponent extends DatabusNodeComponent {
 
     @Override

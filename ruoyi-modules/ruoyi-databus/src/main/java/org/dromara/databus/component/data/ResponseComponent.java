@@ -3,6 +3,8 @@ package org.dromara.databus.component.data;
 import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.ResponseCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 
 /**
  * 响应组装组件（注册名 {@code response}）。
@@ -20,6 +22,11 @@ import org.dromara.databus.component.DatabusNodeComponent;
  */
 @Slf4j
 @LiteflowComponent("response")
+@DatabusCmp(
+    code = "response", name = "流程响应", icon = "ph:flag-checkered", color = "#f56c6c",
+    description = "设置链路返回结果，固定写入 $.response.result/msg/data",
+    cfg = ResponseCfg.class, sort = 90
+)
 public class ResponseComponent extends DatabusNodeComponent {
 
     @Override

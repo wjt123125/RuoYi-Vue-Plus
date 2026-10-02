@@ -12,12 +12,14 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.SysDatabusConnectionBo;
+import org.dromara.databus.domain.vo.ConnectionOptionVo;
 import org.dromara.databus.domain.vo.SysDatabusConnectionVo;
 import org.dromara.databus.service.ISysDatabusConnectionService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * 数据总线连接管理接口（连接管理页配套）。
@@ -25,6 +27,7 @@ import java.util.Arrays;
  * <p>端点：
  * <ul>
  *   <li>GET  /databus/connection/list          分页列表</li>
+ *   <li>GET  /databus/connection/options       启用连接轻量选项（编辑器控件用）</li>
  *   <li>GET  /databus/connection/{id}          详情</li>
  *   <li>POST /databus/connection              新增</li>
  *   <li>PUT  /databus/connection              修改</li>
@@ -49,6 +52,16 @@ public class SysDatabusConnectionController extends BaseController {
     @GetMapping("/list")
     public R<PageResult<SysDatabusConnectionVo>> list(SysDatabusConnectionBo bo, PageQuery pageQuery) {
         return R.ok(connectionService.queryPageList(bo, pageQuery));
+    }
+
+    /**
+     * 启用连接的轻量选项（编辑器 ConnectionSelect 控件用，不分页、不回密钥）。
+     * <p>权限沿用编辑器只读权限：配置链路的用户需要看得到连接，不要求有连接管理权限。
+     */
+    @SaCheckPermission("databus:editor:list")
+    @GetMapping("/options")
+    public R<List<ConnectionOptionVo>> options() {
+        return R.ok(connectionService.queryOptions());
     }
 
     /**

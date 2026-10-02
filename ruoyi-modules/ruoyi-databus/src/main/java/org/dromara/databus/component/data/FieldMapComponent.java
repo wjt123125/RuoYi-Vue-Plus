@@ -4,6 +4,8 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.FieldMapCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.context.PathResolver;
 
 import java.util.ArrayList;
@@ -29,6 +31,11 @@ import java.util.List;
  */
 @Slf4j
 @LiteflowComponent("fieldMap")
+@DatabusCmp(
+    code = "fieldMap", name = "字段映射", icon = "ph:arrows-left-right", color = "#9c27b0",
+    description = "按 mappings 把 from 表达式（{{ $.路径 }}）取值逐条搬到 to 位置名（裸路径）；from/to 同时含 [*] 触发数组批量搬运，可选 type 做类型转换（int/string/boolean/double）",
+    cfg = FieldMapCfg.class, sort = 70
+)
 public class FieldMapComponent extends DatabusNodeComponent {
 
     @Override

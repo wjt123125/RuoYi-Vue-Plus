@@ -5,10 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
-import org.dromara.databus.context.PathResolver;
+import org.dromara.databus.component.cfg.IdCardToUserIdCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.IdCardToUserIdRequest;
+import org.dromara.databus.context.PathResolver;
 
 import java.util.List;
 import java.util.Map;
@@ -28,6 +30,12 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @LiteflowComponent("idCardToUserId")
+@DatabusCmp(
+    code = "idCardToUserId", name = "身份证换用户", shortName = "证换用户",
+    icon = "ph:identification-card", color = "#0891b2",
+    description = "按 path 表达式（{{ $.路径 }}）读取逗号分隔的身份证号，查 BPM 用户表换成 userId 写回解包路径；全部未命中报错，部分未命中告警",
+    cfg = IdCardToUserIdCfg.class, sort = 190
+)
 public class IdCardToUserIdComponent extends DatabusNodeComponent {
 
     private static final String DEFAULT_SEPARATOR = ",";

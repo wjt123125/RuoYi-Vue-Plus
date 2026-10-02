@@ -12,13 +12,13 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
+import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
 import org.dromara.databus.service.IDatabusComponentService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
-import java.util.List;
 
 /**
  * 数据总线组件元信息接口。
@@ -46,12 +46,12 @@ public class DatabusComponentController extends BaseController {
     }
 
     /**
-     * 查询全部启用组件（编辑器组件面板物料，不分页）
+     * 查询编辑器物料合流选项（内置注解件 + 启用的自定义件，不分页）
      */
     @SaCheckPermission("databus:editor:list")
     @GetMapping("/options")
-    public R<List<DatabusComponentVo>> options() {
-        return R.ok(componentService.queryEnabledList());
+    public R<ComponentOptionsVo> options() {
+        return R.ok(componentService.queryOptions());
     }
 
     /**

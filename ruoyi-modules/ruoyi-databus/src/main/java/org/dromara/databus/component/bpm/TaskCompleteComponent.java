@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.TaskCompleteCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.TaskCompleteRequest;
@@ -28,6 +30,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("taskComplete")
+@DatabusCmp(
+    code = "taskComplete", name = "BPM 完任务", shortName = "完任务",
+    icon = "ph:seal-check", color = "#67c23a",
+    description = "按 processInstanceId 提交 BPM 任务（全部尝试），部分失败按 failOnError 决定是否中断",
+    cfg = TaskCompleteCfg.class, sort = 170
+)
 public class TaskCompleteComponent extends DatabusNodeComponent {
 
     @Override

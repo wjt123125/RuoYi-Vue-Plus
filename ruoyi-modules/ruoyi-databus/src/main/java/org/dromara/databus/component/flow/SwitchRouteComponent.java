@@ -4,6 +4,7 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import com.yomahub.liteflow.core.NodeSwitchComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.databus.component.cfg.SwitchRouteCfg;
 import org.dromara.databus.context.DatabusContext;
 
 import java.math.BigDecimal;

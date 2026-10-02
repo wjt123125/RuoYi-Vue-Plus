@@ -4,26 +4,35 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.MapstructUtils;
 import org.dromara.common.core.utils.StringUtils;
+import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.dromara.databus.component.schema.registry.ComponentSchemaRegistry;
 import org.dromara.databus.domain.DatabusComponent;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
+import org.dromara.databus.domain.vo.ComponentOptionVo;
+import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.service.IDatabusComponentService;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 组件元信息 Service 实现
  *
  * @author databus
  */
+@Slf4j
 @RequiredArgsConstructor
 @Service
 public class DatabusComponentServiceImpl implements IDatabusComponentService {
@@ -34,6 +43,8 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
     private static final String STATUS_ENABLED = "0";
 
     private final DatabusComponentMapper componentMapper;
+
+    private final ComponentSchemaRegistry componentSchemaRegistry;
 
     @Override
     public DatabusComponentVo queryById(Long id) {
@@ -48,12 +59,47 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
     }
 
     @Override
-    public List<DatabusComponentVo> queryEnabledList() {
-        LambdaQueryWrapper<DatabusComponent> lqw = Wrappers.<DatabusComponent>lambdaQuery()
+    public ComponentOptionsVo queryOptions() {
+        // 1. 内置注解件（注册中心已按 sort、code 排序）
+        List<ComponentOptionVo> options = componentSchemaRegistry.all().stream()
+            .map(ComponentOptionVo::ofSystem)
+            .collect(Collectors.toCollection(ArrayList::new));
+        Set<String> builtinCodes = options.stream()
+            .map(ComponentOptionVo::code)
+            .collect(Collectors.toSet());
+
+        // 2. 自定义启用行（按 id），code 冲突内置优先、DB 行丢弃
+        List<DatabusComponent> rows = componentMapper.selectList(Wrappers.<DatabusComponent>lambdaQuery()
             .eq(DatabusComponent::getStatus, STATUS_ENABLED)
-            .orderByAsc(DatabusComponent::getCategory)
-            .orderByAsc(DatabusComponent::getId);
-        return componentMapper.selectVoList(lqw);
+            .orderByAsc(DatabusComponent::getId));
+        for (DatabusComponent row : rows) {
+            if (builtinCodes.contains(row.getComponentCode())) {
+                log.warn("[databus-schema] 自定义物料 code 与内置件冲突，DB 行丢弃 code={}, id={}",
+                    row.getComponentCode(), row.getId());
+                continue;
+            }
+            ComponentOptionVo parsed = parseCustomOption(row.getParamSchema(), row.getComponentCode(), row.getId());
+            options.add(ComponentOptionVo.ofCustom(parsed,
+                row.getComponentCode(), row.getComponentName(), row.getIcon(), row.getDescription()));
+        }
+        return ComponentOptionsVo.of(options);
+    }
+
+    /**
+     * 解析自定义行 param_schema（同构 JSON）；空或解析失败返回 null，
+     * 调用方降级为只有身份元信息的选项（前端回退 JSON 编辑器，不阻断 /options）。
+     */
+    private ComponentOptionVo parseCustomOption(String paramSchema, String code, Long id) {
+        if (StringUtils.isBlank(paramSchema)) {
+            return null;
+        }
+        try {
+            return JsonUtils.parseObject(paramSchema, ComponentOptionVo.class);
+        } catch (Exception e) {
+            log.warn("[databus-schema] 自定义物料 param_schema 解析失败，降级仅元信息 code={}, id={}, err={}",
+                code, id, e.getMessage());
+            return null;
+        }
     }
 
     private LambdaQueryWrapper<DatabusComponent> buildQueryWrapper(DatabusComponentBo bo) {

@@ -4,6 +4,8 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.DataPatchCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -35,6 +37,11 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @LiteflowComponent("dataPatch")
+@DatabusCmp(
+    code = "dataPatch", name = "数据补丁", icon = "ph:git-diff", color = "#009688",
+    description = "按 merge 语义把 patch 覆盖到 target 命中的每个对象（target 写目标裸路径，patch 叶子为常量或 {{ $.路径 }} 表达式）：[*] 全量/[i] 索引/[?(...)] 过滤均可，未声明字段（含 ID）保留、缺失字段新增；典型用于 boQuery 后改字段再交 boUpdate 回写，命中对象数写入 $.数据空间.patchedCount",
+    cfg = DataPatchCfg.class, sort = 80
+)
 public class DataPatchComponent extends DatabusNodeComponent {
 
     /** 补丁键（含嵌套层级）只接受安全标识符，拒绝点号/通配/表达式，杜绝歧义。 */

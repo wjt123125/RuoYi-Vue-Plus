@@ -4,6 +4,7 @@ import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.domain.bo.SysDatabusConnectionBo;
+import org.dromara.databus.domain.vo.ConnectionOptionVo;
 import org.dromara.databus.domain.vo.SysDatabusConnectionVo;
 
 import java.util.Collection;
@@ -28,6 +29,12 @@ public interface ISysDatabusConnectionService {
      * 查询单条连接详情。
      */
     SysDatabusConnectionVo queryById(Long id);
+
+    /**
+     * 查询启用连接的轻量选项（编辑器 ConnectionSelect 控件用）：
+     * 只含 id/connectionName/connectorType，不分页、不回密钥。
+     */
+    List<ConnectionOptionVo> queryOptions();
 
     /**
      * 分页查询连接列表（支持 connectionId / connectionName / connectorType / enabled 模糊与等值过滤）。

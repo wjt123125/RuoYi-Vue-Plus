@@ -6,6 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.databus.component.DatabusNodeComponent;
+import org.dromara.databus.component.cfg.FileUploadCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.bpm.BpmHttpConnector;
 import org.dromara.databus.connector.bpm.dto.FileUploadRequest;
@@ -30,6 +32,12 @@ import java.util.Map;
  */
 @Slf4j
 @LiteflowComponent("fileUpload")
+@DatabusCmp(
+    code = "fileUpload", name = "BPM 上传附件", shortName = "上传附件",
+    icon = "ph:upload-simple", color = "#7c3aed",
+    description = "sourcePath 表达式（{{ $.路径 }}）取出文件数组（base64），本地摘要校验后上传到 BO 记录附件字段，结果存 $.数据空间.files",
+    cfg = FileUploadCfg.class, sort = 200
+)
 public class FileUploadComponent extends DatabusNodeComponent {
 
     @Override

@@ -3,10 +3,10 @@ package org.dromara.databus.service;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
+import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
 
 import java.util.Collection;
-import java.util.List;
 
 /**
  * 组件元信息 Service 接口
@@ -33,11 +33,12 @@ public interface IDatabusComponentService {
     PageResult<DatabusComponentVo> queryPageList(DatabusComponentBo bo, PageQuery pageQuery);
 
     /**
-     * 查询全部启用的组件（编辑器组件面板物料用），按分类、创建时间排序
+     * 查询编辑器物料合流选项（/options）：内置注解件（source=SYSTEM，按 sort）+
+     * databus_component 启用行（source=CUSTOM，按 id），code 冲突内置优先、DB 行丢弃并 warn。
      *
-     * @return 启用组件列表
+     * @return 带 schemaVersion 的合流响应
      */
-    List<DatabusComponentVo> queryEnabledList();
+    ComponentOptionsVo queryOptions();
 
     /**
      * 新增组件元信息

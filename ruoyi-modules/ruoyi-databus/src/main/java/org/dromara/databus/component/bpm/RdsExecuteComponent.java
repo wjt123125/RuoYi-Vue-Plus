@@ -34,7 +34,10 @@ import java.util.Map;
     code = "rdsExecute", name = "BPM SQL 执行", shortName = "SQL 执行",
     icon = "ph:table", color = "#16a34a",
     description = "在 BPM 后台注册的 RDS 数据源上执行 SQL：标量/单行/多行查询、更新与批量（8 种方法），结果存 $.数据空间.data",
-    cfg = RdsExecuteCfg.class, sort = 180
+    cfg = RdsExecuteCfg.class, sort = 180,
+    dataExample = """
+        {"connectionId":"bpm-default","rdsId":"default","method":"getMaps","sql":"select userid,ext1 as idCard from orguser where ext1=?","args":["{{ $.request.idCard }}"],"maxRows":100}
+        """
 )
 public class RdsExecuteComponent extends DatabusNodeComponent {
 

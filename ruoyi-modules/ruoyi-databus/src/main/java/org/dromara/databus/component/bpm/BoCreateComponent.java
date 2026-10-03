@@ -35,7 +35,10 @@ import java.util.Map;
     code = "boCreate", name = "BPM 建 BO", shortName = "建 BO",
     icon = "ph:database", color = "#9c27b0",
     description = "创建 BPM 业务对象（BO），method=create 时 bindId 必填且引用上一步 processStart.processInstanceId，支持 6 种回写策略",
-    cfg = BoCreateCfg.class, sort = 120
+    cfg = BoCreateCfg.class, sort = 120,
+    dataExample = """
+        {"connectionId":"bpm-default","method":"create","bindId":"{{ $.processStart1.processInstanceId }}","uid":"admin","boList":[{"boName":"UserBO","sourcePath":"{{ $.request.users }}","rewrite":{"strategy":"all","path":"$.response.users"}}]}
+        """
 )
 public class BoCreateComponent extends DatabusNodeComponent {
 

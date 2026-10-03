@@ -34,7 +34,10 @@ import java.util.Map;
     code = "taskComplete", name = "BPM 完任务", shortName = "完任务",
     icon = "ph:seal-check", color = "#67c23a",
     description = "按 processInstanceId 提交 BPM 任务（全部尝试），部分失败按 failOnError 决定是否中断",
-    cfg = TaskCompleteCfg.class, sort = 170
+    cfg = TaskCompleteCfg.class, sort = 170,
+    dataExample = """
+        {"connectionId":"bpm-default","processInstanceId":"{{ $.processStart1.processInstanceId }}","uid":"admin","failOnError":false}
+        """
 )
 public class TaskCompleteComponent extends DatabusNodeComponent {
 

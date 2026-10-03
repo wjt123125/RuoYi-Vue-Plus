@@ -59,7 +59,10 @@ import java.util.regex.Pattern;
 @DatabusCmp(
     code = "httpRequest", name = "Http 请求", icon = "ph:globe", color = "#409eff",
     description = "通用 HTTP：GET/POST/PUT/PATCH/DELETE，JSON/表单/raw 三种请求体，basic/bearer 鉴权；状态码与响应存入 $.数据空间.status/response，mappings 抽取字段",
-    cfg = HttpRequestCfg.class, sort = 20
+    cfg = HttpRequestCfg.class, sort = 20,
+    dataExample = """
+        {"method":"POST","url":"http://localhost:8080/api/login","headers":{"X-Tenant":"default"},"query":{"ids":["{{ $.id1 }}","{{ $.id2 }}"]},"bodyType":"json","body":{"username":"admin","password":"{{ $.pwd }}"},"rawContentType":"text/plain","auth":{"type":"bearer","token":"{{ $.login.token }}"},"timeoutMs":10000,"failOnHttpError":true,"responseCharset":"UTF-8","responseHeaders":["X-Total-Count"],"mappings":[{"field":"bizCode","path":"{{ $.code }}","required":true}]}
+        """
 )
 public class HttpRequestComponent extends DatabusNodeComponent {
 

@@ -22,6 +22,7 @@ import java.util.List;
  * @param nodeType    LiteFlow 节点类型
  * @param editor      配置区编辑器形态
  * @param sort        排序
+ * @param dataExample 配置 JSON 示例（仅前端 JSON 高级模式占位提示，可空）
  * @param fields      配置字段 schema（SCRIPT 物料也反射其 Cfg，仅供台账展示）
  * @author databus
  */
@@ -36,6 +37,7 @@ public record CmpSchema(String code,
                         NodeTypeKind nodeType,
                         EditorKind editor,
                         int sort,
+                        String dataExample,
                         List<PropSchema> fields) {
 
     public CmpSchema {

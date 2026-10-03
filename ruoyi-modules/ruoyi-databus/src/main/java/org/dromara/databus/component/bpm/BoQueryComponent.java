@@ -33,7 +33,10 @@ import java.util.Map;
     code = "boQuery", name = "BPM 查 BO", shortName = "查 BO",
     icon = "ph:magnifying-glass", color = "#409eff",
     description = "查询 BPM 业务对象（BO）数据，支持 list/listPage/count 三种方法、maxRecord 影响量校验、动态条件与关联表/子表挂载",
-    cfg = BoQueryCfg.class, sort = 130
+    cfg = BoQueryCfg.class, sort = 130,
+    dataExample = """
+        {"connectionId":"bpm-default","main":{"boName":"BO_EU_API_TEST_MAIN","method":"list","maxRecord":50,"conditionSourcePath":"{{ $.request.conditions }}"},"sub":["BO_EU_API_TEST_SUB"]}
+        """
 )
 public class BoQueryComponent extends DatabusNodeComponent {
 

@@ -30,7 +30,10 @@ import java.util.Map;
     code = "fileDownload", name = "BPM 下载附件", shortName = "下载附件",
     icon = "ph:download-simple", color = "#0369a1",
     description = "按 boId + 附件字段名读取 BO 记录全部文件转 base64，结果存 $.数据空间.files（可直接接上传组件）",
-    cfg = FileDownloadCfg.class, sort = 210
+    cfg = FileDownloadCfg.class, sort = 210,
+    dataExample = """
+        {"connectionId":"bpm-default","boId":"{{ $.boCreate1.boResults[0].records[0].ID }}","fieldName":"BO_FIELD_FILE"}
+        """
 )
 public class FileDownloadComponent extends DatabusNodeComponent {
 

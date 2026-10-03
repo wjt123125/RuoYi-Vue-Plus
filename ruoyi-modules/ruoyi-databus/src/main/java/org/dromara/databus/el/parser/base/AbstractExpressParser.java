@@ -157,8 +157,8 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (null == propertyId && null == tag) {
             return null;
         }
-        // title / outletLabels 为纯编辑态字段，EL 反向解析不产出，恒为 null
-        return new Properties(propertyId, tag, null, null, null);
+        // title / outletLabels / chainRef 为纯编辑态字段，EL 反向解析不产出，builder 缺省 null
+        return Properties.builder().id(propertyId).tag(tag).build();
     }
 
     /**
@@ -172,8 +172,8 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (null == propertyId && null == tag && null == data) {
             return null;
         }
-        // title / outletLabels 为纯编辑态字段，EL 反向解析不产出，恒为 null
-        return new Properties(propertyId, tag, data, null, null);
+        // title / outletLabels / chainRef 为纯编辑态字段，EL 反向解析不产出，builder 缺省 null
+        return Properties.builder().id(propertyId).tag(tag).data(data).build();
     }
 
     /**

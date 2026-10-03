@@ -56,6 +56,14 @@ public @interface DatabusCmp {
     String description();
 
     /**
+     * 配置 JSON 示例（JDK 文本块直写，建议用 {@code """ ... """}）。
+     * <p>
+     * 仅作前端「JSON 高级模式」编辑器的占位提示，不参与运行时；表单模式不展示。
+     * 为空字符串（缺省）时前端回退通用占位文案。
+     */
+    String dataExample() default "";
+
+    /**
      * LiteFlow 节点类型，默认普通件；布尔/循环/选择件显式声明。
      */
     NodeTypeKind nodeType() default NodeTypeKind.NODE;

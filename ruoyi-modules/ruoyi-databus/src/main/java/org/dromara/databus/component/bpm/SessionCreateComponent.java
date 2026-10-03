@@ -30,7 +30,10 @@ import java.util.Map;
     code = "sessionCreate", name = "BPM 会话", shortName = "会话",
     icon = "ph:sign-in", color = "#409eff",
     description = "创建 BPM 会话（登录获取 sid），响应平铺到 $.数据空间",
-    cfg = SessionCreateCfg.class, sort = 100
+    cfg = SessionCreateCfg.class, sort = 100,
+    dataExample = """
+        {"connectionId":"bpm-default","userName":"admin","password":"{{ $.request.password }}"}
+        """
 )
 public class SessionCreateComponent extends DatabusNodeComponent {
 

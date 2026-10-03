@@ -36,7 +36,10 @@ import java.util.Map;
     code = "fileUpload", name = "BPM 上传附件", shortName = "上传附件",
     icon = "ph:upload-simple", color = "#7c3aed",
     description = "sourcePath 表达式（{{ $.路径 }}）取出文件数组（base64），本地摘要校验后上传到 BO 记录附件字段，结果存 $.数据空间.files",
-    cfg = FileUploadCfg.class, sort = 200
+    cfg = FileUploadCfg.class, sort = 200,
+    dataExample = """
+        {"connectionId":"bpm-default","sourcePath":"{{ $.request.files }}","boId":"{{ $.boCreate1.boResults[0].records[0].ID }}","appId":"com.awspaas.user.apps.data.bus","boName":"BO_EU_API_TEST_MAIN","boItemName":"BO_FIELD_FILE","processInstId":"{{ $.processStart1.processInstanceId }}","validateChecksum":false}
+        """
 )
 public class FileUploadComponent extends DatabusNodeComponent {
 

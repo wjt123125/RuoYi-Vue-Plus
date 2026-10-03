@@ -25,7 +25,10 @@ import org.dromara.databus.component.schema.annotation.DatabusCmp;
 @DatabusCmp(
     code = "response", name = "流程响应", icon = "ph:flag-checkered", color = "#f56c6c",
     description = "设置链路返回结果，固定写入 $.response.result/msg/data",
-    cfg = ResponseCfg.class, sort = 90
+    cfg = ResponseCfg.class, sort = 90,
+    dataExample = """
+        {"result":true,"msg":"成功","dataPath":"{{ $.fieldMap1 }}"}
+        """
 )
 public class ResponseComponent extends DatabusNodeComponent {
 

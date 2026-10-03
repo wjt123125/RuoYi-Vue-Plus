@@ -33,7 +33,10 @@ import java.util.Map;
     code = "boUpdate", name = "BPM 改 BO", shortName = "改 BO",
     icon = "ph:pencil-line", color = "#e6a23c",
     description = "按记录 ID 更新 BPM 业务对象（BO）数据，records 必须含 ID 字段（可先 boQuery 查出再整体回写），BPM 端整体事务 all-or-nothing",
-    cfg = BoUpdateCfg.class, sort = 140
+    cfg = BoUpdateCfg.class, sort = 140,
+    dataExample = """
+        {"connectionId":"bpm-default","boList":[{"boName":"BO_EU_API_TEST_MAIN","sourcePath":"{{ $.boQuery1.records }}"}]}
+        """
 )
 public class BoUpdateComponent extends DatabusNodeComponent {
 

@@ -34,7 +34,10 @@ import java.util.List;
 @DatabusCmp(
     code = "fieldMap", name = "字段映射", icon = "ph:arrows-left-right", color = "#9c27b0",
     description = "按 mappings 把 from 表达式（{{ $.路径 }}）取值逐条搬到 to 位置名（裸路径）；from/to 同时含 [*] 触发数组批量搬运，可选 type 做类型转换（int/string/boolean/double）",
-    cfg = FieldMapCfg.class, sort = 70
+    cfg = FieldMapCfg.class, sort = 70,
+    dataExample = """
+        {"mappings":[{"from":"{{ $.httpRequest1.response.code }}","to":"$.fieldMap1.code","type":"int"},{"from":"{{ $.httpRequest1.response.data[*].NAME }}","to":"$.fieldMap1.items[*].name","type":"string"}]}
+        """
 )
 public class FieldMapComponent extends DatabusNodeComponent {
 

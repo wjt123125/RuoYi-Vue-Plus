@@ -127,7 +127,7 @@ values
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark)
 values
-  (1762000000000100025, 'chain-ref', 'CHAIN 子流程引用', 1, '0', null, null, '{"type":"THEN","children":[{"id":"subChain_demo","type":"NodeComponent","properties":{"tag":"subChain_demo"}}]}', 'BASIC', sysdate(), '引用子链 subChain_demo（结构展示）');
+  (1762000000000100025, 'chain-ref', 'CHAIN 子流程引用', 1, '0', null, null, '{"type":"THEN","children":[{"id":"subChain_demo","type":"NodeComponent","properties":{"tag":"subChain_demo","chainRef":true}}]}', 'BASIC', sysdate(), '引用子链 subChain_demo（结构展示）');
 
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark)
@@ -138,3 +138,9 @@ insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark)
 values
   (1762000000000100027, 'nested-catch-in-then', 'THEN 内嵌 CATCH（正常路径）', 1, '0', null, null, '{"type":"THEN","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue1","data":"{\\"path\\":\\"$.setValue1.out\\",\\"value\\":\\"串行头\\"}"}},{"type":"CATCH","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue2","data":"{\\"path\\":\\"$.setValue2.out\\",\\"value\\":\\"try 主体\\"}"}},{"id":"response","type":"NodeComponent","properties":{"tag":"response1","data":"{\\"result\\":false,\\"msg\\":\\"进入异常处理\\"}"}}]},{"id":"response","type":"NodeComponent","properties":{"tag":"response2","data":"{\\"result\\":true,\\"msg\\":\\"主流程完成\\"}"}}]}', 'BASIC', sysdate(), 'THEN 内嵌 CATCH，异常槽不触发');
+
+-- chain-ref 引用的子链本体（非模板普通链，供 CHAIN 节点下拉选择；纯本地无入参）
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark)
+values
+  (1762000000000100028, 'subChain_demo', '子链示例（被 chain-ref 引用）', 1, '0', null, null, '{"type":"THEN","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue1","data":"{\\"path\\":\\"$.sub.out\\",\\"value\\":\\"子链执行\\"}"}},{"id":"response","type":"NodeComponent","properties":{"tag":"response1","data":"{\\"result\\":true,\\"msg\\":\\"subChain_demo 已执行\\"}"}}]}', 'BASIC', sysdate(), '被 chain-ref 的 CHAIN 节点引用，验证子流程下拉与运行时 chainMap 解析');

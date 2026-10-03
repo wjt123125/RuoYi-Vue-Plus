@@ -40,7 +40,10 @@ import java.util.regex.Pattern;
 @DatabusCmp(
     code = "dataPatch", name = "数据补丁", icon = "ph:git-diff", color = "#009688",
     description = "按 merge 语义把 patch 覆盖到 target 命中的每个对象（target 写目标裸路径，patch 叶子为常量或 {{ $.路径 }} 表达式）：[*] 全量/[i] 索引/[?(...)] 过滤均可，未声明字段（含 ID）保留、缺失字段新增；典型用于 boQuery 后改字段再交 boUpdate 回写，命中对象数写入 $.数据空间.patchedCount",
-    cfg = DataPatchCfg.class, sort = 80
+    cfg = DataPatchCfg.class, sort = 80,
+    dataExample = """
+        {"target":"$.boQuery1.records[*]","patch":{"BO_FIELD_USER":"{{ $.request.newUser }}","BO_FIELD_NUM":99}}
+        """
 )
 public class DataPatchComponent extends DatabusNodeComponent {
 

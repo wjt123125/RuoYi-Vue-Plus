@@ -45,12 +45,15 @@ public class ComponentSchemaScanner implements ApplicationRunner {
         Map<String, String> codeOwners = new LinkedHashMap<>();
         Map<String, String> unannotated = new LinkedHashMap<>();
 
-        applicationContext.getBeansOfType(DatabusNodeComponent.class).forEach((beanName, bean) -> {
+        // 必须按 @DatabusCmp 注解散列扫描，不能按 DatabusNodeComponent 基类：
+        // 布尔/循环/路由件分别继承 NodeBooleanComponent/NodeForComponent/
+        // NodeIteratorComponent/NodeSwitchComponent，不在 DatabusNodeComponent（extends NodeComponent）
+        // 类型体系内——按基类扫会静默漏掉它们，前端只能回退 JSON 编辑器。
+        applicationContext.getBeansWithAnnotation(DatabusCmp.class).forEach((beanName, bean) -> {
             Class<?> beanClass = ClassUtils.getUserClass(bean);
             DatabusCmp cmp = AnnotationUtils.findAnnotation(beanClass, DatabusCmp.class);
             if (cmp == null) {
-                unannotated.put(beanName, beanClass.getName());
-                return;
+                return; // 理论不可能（getBeansWithAnnotation 已按注解散列）
             }
             String code = resolveCode(cmp, beanClass, beanName);
             if (cmp.cfg() == void.class) {
@@ -68,6 +71,7 @@ public class ComponentSchemaScanner implements ApplicationRunner {
                 cmp.nodeType(),
                 EditorKind.FORM,
                 cmp.sort(),
+                cmp.dataExample().isBlank() ? null : cmp.dataExample(),
                 CfgIntrospector.introspect(cmp.cfg())
             );
             CmpSchema previous = snapshot.put(code, schema);
@@ -76,6 +80,16 @@ public class ComponentSchemaScanner implements ApplicationRunner {
                     + codeOwners.get(code) + " 与 " + beanClass.getName() + " 注册");
             }
             codeOwners.put(code, beanClass.getName());
+        });
+
+        // 未注解件统计（仅信息日志）：扫普通组件基类；已注册的件排除。
+        // 特殊基类（布尔/循环/路由）未注解时不入统计——它们目前已全部带注解。
+        applicationContext.getBeansOfType(DatabusNodeComponent.class).forEach((beanName, bean) -> {
+            Class<?> beanClass = ClassUtils.getUserClass(bean);
+            DatabusCmp cmp = AnnotationUtils.findAnnotation(beanClass, DatabusCmp.class);
+            if (cmp == null) {
+                unannotated.put(beanName, beanClass.getName());
+            }
         });
 
         registerSupplement(snapshot, codeOwners,
@@ -124,7 +138,7 @@ public class ComponentSchemaScanner implements ApplicationRunner {
         }
         snapshot.put(code, new CmpSchema(
             code, name, shortName, "business", icon, color, description,
-            nodeType, EditorKind.SCRIPT, 100,
+            nodeType, EditorKind.SCRIPT, 100, null,
             CfgIntrospector.introspect(ScriptCfg.class)));
         codeOwners.put(code, "script-supplement:" + code);
     }

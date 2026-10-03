@@ -33,7 +33,10 @@ import java.util.Map;
     code = "boDelete", name = "BPM 删 BO", shortName = "删 BO",
     icon = "ph:trash", color = "#f56c6c",
     description = "删除 BPM 业务对象（BO）数据，method=remove 按记录 ID 逐条删 / removeByBindId 按流程实例批量删，BPM 端整体事务 all-or-nothing",
-    cfg = BoDeleteCfg.class, sort = 150
+    cfg = BoDeleteCfg.class, sort = 150,
+    dataExample = """
+        {"connectionId":"bpm-default","method":"remove","boList":[{"boName":"BO_EU_API_TEST_MAIN","sourcePath":"{{ $.boQuery1.records }}"}]}
+        """
 )
 public class BoDeleteComponent extends DatabusNodeComponent {
 

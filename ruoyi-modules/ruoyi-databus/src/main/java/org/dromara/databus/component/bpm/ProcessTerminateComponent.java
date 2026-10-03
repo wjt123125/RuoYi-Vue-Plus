@@ -30,7 +30,10 @@ import java.util.Map;
     code = "processTerminate", name = "BPM 终止流程", shortName = "终止流程",
     icon = "ph:prohibit", color = "#909399",
     description = "终止 BPM 流程实例（userId 为终止操作人），流程已结束时幂等返回 terminated=false 不报错",
-    cfg = ProcessTerminateCfg.class, sort = 160
+    cfg = ProcessTerminateCfg.class, sort = 160,
+    dataExample = """
+        {"connectionId":"bpm-default","instanceId":"{{ $.processStart1.processInstanceId }}","userId":"admin"}
+        """
 )
 public class ProcessTerminateComponent extends DatabusNodeComponent {
 

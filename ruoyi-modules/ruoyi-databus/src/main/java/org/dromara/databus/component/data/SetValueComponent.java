@@ -28,7 +28,10 @@ import org.dromara.databus.component.schema.annotation.DatabusCmp;
     color = "#67c23a",
     description = "把值（常量或 {{ $.路径 }} 表达式取值）写入上下文 $.数据空间.path",
     cfg = SetValueCfg.class,
-    sort = 10
+    sort = 10,
+    dataExample = """
+        {"path":"$.setValue1.demo","value":"常量 或 {{ $.入参路径 }}"}
+        """
 )
 public class SetValueComponent extends DatabusNodeComponent {
 

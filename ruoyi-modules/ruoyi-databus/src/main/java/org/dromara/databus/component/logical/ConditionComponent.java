@@ -26,7 +26,10 @@ import java.util.Objects;
 @DatabusCmp(
     code = "condition", name = "条件判断", icon = "ph:equals", color = "#e6a23c",
     description = "布尔条件：按 {{ $.路径 }} 表达式与比较符求值，供 IF/WHILE 条件槽使用",
-    nodeType = NodeTypeKind.BOOLEAN, cfg = ConditionCfg.class, sort = 30
+    nodeType = NodeTypeKind.BOOLEAN, cfg = ConditionCfg.class, sort = 30,
+    dataExample = """
+        {"path":"{{ $.httpRequest1.response.code }}","op":"eq","value":200}
+        """
 )
 public class ConditionComponent extends NodeBooleanComponent {
 

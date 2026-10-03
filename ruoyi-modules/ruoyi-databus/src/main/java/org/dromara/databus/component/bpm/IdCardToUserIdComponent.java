@@ -34,7 +34,10 @@ import java.util.regex.Pattern;
     code = "idCardToUserId", name = "身份证换用户", shortName = "证换用户",
     icon = "ph:identification-card", color = "#0891b2",
     description = "按 path 表达式（{{ $.路径 }}）读取逗号分隔的身份证号，查 BPM 用户表换成 userId 写回解包路径；全部未命中报错，部分未命中告警",
-    cfg = IdCardToUserIdCfg.class, sort = 190
+    cfg = IdCardToUserIdCfg.class, sort = 190,
+    dataExample = """
+        {"connectionId":"bpm-default","fields":[{"path":"{{ $.request.idCards }}","separator":","}]}
+        """
 )
 public class IdCardToUserIdComponent extends DatabusNodeComponent {
 

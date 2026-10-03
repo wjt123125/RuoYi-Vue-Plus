@@ -31,7 +31,10 @@ import java.util.Map;
     code = "processStart", name = "BPM 启流程", shortName = "启流程",
     icon = "ph:rocket", color = "#e6a23c",
     description = "启动 BPM 流程实例，title 支持 {{ $.xxx }} 表达式，响应平铺到 $.数据空间（含 processInstanceId 供下游 boCreate.bindId 引用）",
-    cfg = ProcessStartCfg.class, sort = 110
+    cfg = ProcessStartCfg.class, sort = 110,
+    dataExample = """
+        {"connectionId":"bpm-default","processDefId":"proc-001","uid":"admin","title":"申请-{{ $.request.code }}"}
+        """
 )
 public class ProcessStartComponent extends DatabusNodeComponent {
 

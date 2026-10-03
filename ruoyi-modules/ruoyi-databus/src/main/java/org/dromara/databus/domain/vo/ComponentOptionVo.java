@@ -22,6 +22,7 @@ import org.dromara.databus.component.schema.model.CmpSchema;
  * @param editor      配置区编辑器形态（form/script）
  * @param source      物料来源（SYSTEM/CUSTOM）
  * @param sort        排序
+ * @param dataExample 配置 JSON 示例（仅前端 JSON 高级模式占位提示，可空）
  * @param schema      配置字段 schema 体
  * @author databus
  */
@@ -37,6 +38,7 @@ public record ComponentOptionVo(String code,
                                 EditorKind editor,
                                 ComponentSource source,
                                 Integer sort,
+                                String dataExample,
                                 ComponentSchemaBody schema) {
 
     /**
@@ -55,6 +57,7 @@ public record ComponentOptionVo(String code,
             cmp.editor(),
             ComponentSource.SYSTEM,
             cmp.sort(),
+            cmp.dataExample(),
             new ComponentSchemaBody(cmp.fields())
         );
     }
@@ -86,6 +89,7 @@ public record ComponentOptionVo(String code,
             parsed != null ? parsed.editor() : null,
             ComponentSource.CUSTOM,
             parsed != null ? parsed.sort() : null,
+            parsed != null ? parsed.dataExample() : null,
             parsed != null ? parsed.schema() : null
         );
     }

@@ -9,7 +9,7 @@ import org.springframework.http.MediaType;
  *
  * @author databus
  */
-interface HttpBodyStrategy {
+public interface HttpBodyStrategy {
 
     /**
      * 媒介标识：json / form / raw。

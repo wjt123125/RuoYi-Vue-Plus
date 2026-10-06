@@ -1,21 +1,13 @@
 /**
- * BPM 业务组件：每个组件继承 {@link org.dromara.databus.component.DatabusNodeComponent}，
- * 通过 {@link org.dromara.databus.connector.bpm.BpmHttpConnector} 调 BPM 端总线 app 的对应端点。
- * <p>
- * 8 个 BPM 组件对应 BPM 端 8 个原子端点：
- * <ul>
- *   <li>{@code sessionCreate} - SESSION_CREATE 端点</li>
- *   <li>{@code boCreate} - BO_CREATE 端点（含 6 回写策略：no/all/boId/add/exclude/include）</li>
- *   <li>{@code boUpdate} - BO_UPDATE 端点（按记录 ID 更新，整体事务 all-or-nothing）</li>
- *   <li>{@code boDelete} - BO_DELETE 端点（remove / removeByBindId，整体事务 all-or-nothing）</li>
- *   <li>{@code boQuery} - BO_QUERY 端点（list/listPage/count + 关联表/子表挂载）</li>
- *   <li>{@code processStart} - PROCESS_START 端点</li>
- *   <li>{@code processTerminate} - PROCESS_TERMINATE 端点（已结束幂等返回）</li>
- *   <li>{@code taskComplete} - TASK_COMPLETE 端点</li>
- * </ul>
+ * BPM 业务组件（已脚本化）。
  *
- * <p>每个组件按各自 Cfg 配置（{@code connectionId} 引用 Connection）+ Connector 协议层调用，
- * 响应按字段写入数据空间 {@code $.<tag>.*}。
+ * <p>原 12 个 BPM 节点组件（sessionCreate/processStart/boCreate/boQuery/boUpdate/boDelete/
+ * processTerminate/taskComplete/rdsExecute/idCardToUserId/fileUpload/fileDownload）
+ * 已于 2026-10-06 迁入 databus_component 脚本工件（包 org.dromara.databus.script），
+ * 由脚本宿主启动注册、Web 端可改可回滚；本包不再放组件类。
+ *
+ * <p>BPM 协议层仍在 {@link org.dromara.databus.connector.bpm.BpmHttpConnector}
+ * （/portal/openapi 签名网关），脚本组件经 SpringUtils.getBean 静态查找调用。
  *
  * @author databus
  */

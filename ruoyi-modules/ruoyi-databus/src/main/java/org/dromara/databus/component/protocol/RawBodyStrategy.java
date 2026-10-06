@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets;
  *
  * @author databus
  */
-class RawBodyStrategy implements HttpBodyStrategy {
+public class RawBodyStrategy implements HttpBodyStrategy {
 
     private static final MediaType DEFAULT_RAW_TYPE =
         new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8);

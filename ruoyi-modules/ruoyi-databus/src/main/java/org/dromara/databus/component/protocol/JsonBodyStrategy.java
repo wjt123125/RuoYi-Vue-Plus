@@ -11,7 +11,7 @@ import org.springframework.http.MediaType;
  *
  * @author databus
  */
-class JsonBodyStrategy implements HttpBodyStrategy {
+public class JsonBodyStrategy implements HttpBodyStrategy {
 
     @Override
     public String type() {

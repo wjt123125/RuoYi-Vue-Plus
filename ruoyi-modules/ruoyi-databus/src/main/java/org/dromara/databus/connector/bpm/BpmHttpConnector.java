@@ -1,7 +1,6 @@
 package org.dromara.databus.connector.bpm;
 
 import lombok.extern.slf4j.Slf4j;
-import org.dromara.databus.component.protocol.HttpRequestComponent;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.connector.Connector;
 import org.dromara.databus.connector.ConnectorDescriptor;
@@ -52,7 +51,7 @@ import java.util.Map;
  *   <li>{@link #fileDownload(Connection, FileDownloadRequest)}</li>
  * </ul>
  *
- * <p>HTTP 调用用 Spring {@link RestClient}（与 {@link HttpRequestComponent} 范式一致）。
+ * <p>HTTP 调用用 Spring {@link RestClient}（与 httpRequest 组件脚本的 RestClient 范式一致）。
  * 错误时解析 BPM 端 ApiResponse 的 result/errorCode/msg 转 {@link ConnectorException}。
  *
  * <p>1D-P0 不实现重试（{@link BpmHttpConnectionCfg#getRetryCount()} 保留字段供未来）。

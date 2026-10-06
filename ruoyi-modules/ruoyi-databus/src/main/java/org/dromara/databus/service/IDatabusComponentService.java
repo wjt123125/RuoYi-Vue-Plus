@@ -3,10 +3,16 @@ package org.dromara.databus.service;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
+import org.dromara.databus.domain.bo.ScriptRollbackBo;
+import org.dromara.databus.domain.bo.ScriptSaveBo;
 import org.dromara.databus.domain.vo.ComponentOptionsVo;
+import org.dromara.databus.domain.vo.DatabusComponentVersionVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
+import org.dromara.databus.domain.vo.ScriptRuntimeVo;
+import org.dromara.databus.domain.vo.ScriptSaveResultVo;
 
 import java.util.Collection;
+import java.util.List;
 
 /**
  * 组件元信息 Service 接口
@@ -63,5 +69,37 @@ public interface IDatabusComponentService {
      * @return 是否删除成功
      */
     Boolean deleteByIds(Collection<Long> ids);
+
+    /**
+     * 保存脚本正文：保存即编译——编译/实例化失败整体不落库（事务回滚、FlowBus 不换）；
+     * 成功则版本表追加一行、主表版本号+1、回填契约缓存列、热替换 FlowBus 节点。
+     *
+     * @param bo 脚本保存入参
+     * @return 新版本号与物化契约
+     */
+    ScriptSaveResultVo saveScript(ScriptSaveBo bo);
+
+    /**
+     * 一键回滚：取目标版本源码重走保存管线，产生一条内容等同旧版的新版本行。
+     *
+     * @param bo 回滚入参
+     * @return 新版本号与物化契约
+     */
+    ScriptSaveResultVo rollbackScript(ScriptRollbackBo bo);
+
+    /**
+     * 查询组件脚本版本历史（版本号倒序）。
+     *
+     * @param componentId 组件主键
+     * @return 版本列表
+     */
+    List<DatabusComponentVersionVo> queryVersions(Long componentId);
+
+    /**
+     * 查询脚本组件运行时注册健康快照（失败件在前，供台账露出）。
+     *
+     * @return 健康列表
+     */
+    List<ScriptRuntimeVo> queryRuntimeHealth();
 
 }

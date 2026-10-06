@@ -15,7 +15,7 @@ import java.util.Map;
  *
  * @author databus
  */
-class FormBodyStrategy implements HttpBodyStrategy {
+public class FormBodyStrategy implements HttpBodyStrategy {
 
     @Override
     public String type() {

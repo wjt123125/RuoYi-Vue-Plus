@@ -15,6 +15,7 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.annotation.AnnotationUtils;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.util.ClassUtils;
 
@@ -33,6 +34,7 @@ import java.util.Map;
  */
 @Slf4j
 @Component
+@Order(100)
 @RequiredArgsConstructor
 public class ComponentSchemaScanner implements ApplicationRunner {
 

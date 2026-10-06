@@ -52,6 +52,11 @@ public class DatabusComponentVo implements Serializable {
     private String groupName;
 
     /**
+     * 业务叶子业务域（bpm/common，仅 business 组普通叶子使用）
+     */
+    private String domain;
+
+    /**
      * 组件图标
      */
     private String icon;

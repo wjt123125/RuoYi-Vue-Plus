@@ -57,6 +57,11 @@ public class DatabusComponent extends BaseEntity {
     private String groupName;
 
     /**
+     * 业务叶子业务域（bpm/common，仅 business 组普通叶子使用；条件槽件留空）【治理】
+     */
+    private String domain;
+
+    /**
      * 组件图标（svg 名或 Iconify 名）【治理】
      */
     private String icon;

@@ -5,6 +5,8 @@ import com.yomahub.liteflow.core.NodeSwitchComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.component.cfg.SwitchRouteCfg;
+import org.dromara.databus.component.schema.annotation.DatabusCmp;
+import org.dromara.databus.component.schema.enums.NodeTypeKind;
 import org.dromara.databus.context.DatabusContext;
 
 import java.math.BigDecimal;
@@ -28,6 +30,11 @@ import java.util.Objects;
  */
 @Slf4j
 @LiteflowComponent("switchRoute")
+@DatabusCmp(
+    code = "switchRoute", name = "选择路由组件", icon = "ph:signpost", color = "#e6a23c",
+    description = "SWITCH 算子条件位：source 表达式求出当前值，按 cases 顺序匹配分支名跳转；全不命中报错（暂不支持 DEFAULT）",
+    nodeType = NodeTypeKind.SWITCH, cfg = SwitchRouteCfg.class, sort = 60
+)
 public class SwitchRouteComponent extends NodeSwitchComponent {
 
     @Override

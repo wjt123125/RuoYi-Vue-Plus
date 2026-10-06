@@ -47,6 +47,32 @@ create table databus_chain (
 -- sys_menu / sys_dict_* 为框架共享表（本脚本不 drop），统一 insert ignore 保证脚本可重复执行：
 -- 已存在同 id 行则跳过不报错；若需更新菜单/字典内容，请先按 id 手动删除再跑（ignore 不会覆盖旧行）。
 -- ----------------------------
+-- 顶层父菜单：数据总线目录（原 databus-meta 旧 databus_menu.sql 唯一有效段，2026-10-06 迁入正本）
+-- 本文件与 connection/execution/component 各脚本的菜单全部挂在此节点下；
+-- 只跑子脚本不建此节点，菜单会变孤儿（菜单管理可见、侧边栏不显示）。
+-- ----------------------------
+insert ignore into sys_menu values
+  (1761400000000020000, '数据总线', 0, 7, 'databus', null, '', 'N', 'Y', 'M', '0', '0', '', 'tree', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线目录');
+
+-- ----------------------------
+-- 编排器直入菜单 20001~20008（2026-10-06 保留，幂等托底）
+-- 20001＝侧边栏「编排器」入口（无 query.id，进编辑器空白画布/实验模式）；
+-- 20002~20008 挂隐藏菜单 030 下，是 databus:editor:query/add/edit/remove/export/import/run
+-- 七个权限点的载体（与 021~024 有同 perms 重复，但部分角色只授了本段，均保留）。
+-- 幂等：只先删后插 sys_menu 行、不动 sys_role_menu（同 id 立即重建，授权继续有效，两表无外键）。
+-- ----------------------------
+delete from sys_menu where menu_id between 1761400000000020001 and 1761400000000020008;
+
+insert into sys_menu values
+  (1761400000000020001, '编排器', 1761400000000020000, 1, 'editor', 'databus/editor/index', '', 'N', 'Y', 'C', '0', '0', 'databus:editor:list', 'edit', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线编排器入口'),
+  (1761400000000020002, '编排器查询', 1762000000000000030, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020003, '编排器新增', 1762000000000000030, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020004, '编排器修改', 1762000000000000030, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020005, '编排器删除', 1762000000000000030, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020006, '编排器导出', 1762000000000000030, 5, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:export', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020007, '编排器导入', 1762000000000000030, 6, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:import', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020008, '编排器试运行', 1762000000000000030, 7, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:run', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '画布预览试运行（1A 仅 EL 生成与语法校验）');
+
 insert ignore into sys_menu values
   (1762000000000000020, '链路管理', 1761400000000020000, 1, 'chain', 'databus/chain/index', '', 'N', 'N', 'C', '0', '0', 'databus:editor:list', 'tree', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线链路管理菜单'),
   (1762000000000000021, '链路查询', 1762000000000000020, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),

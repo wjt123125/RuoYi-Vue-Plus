@@ -130,6 +130,7 @@ client 的模型是一棵 ELNode 树（与 CmpProperty 同构），`toCells()` �
 - **CATCH**：gateway（异常网关）两路 try/catch → junction。
 - **AND/OR**：gateway（圆形，标注 &/≥1）两路；**NOT**：单路。边带 +/*/- 标签。
 - **CHAIN**：引用子链，渲染为一个业务卡样式的引用节点（现状语义保留）。
+- **CHAIN 子链查看（2026-10-06 拍板）**：ChainSelect 可选 `openable` 能力（默认关），开窗行为内聚在控件内——选中真实候选才可点，按选中项表主键 id 动态解析编辑器路由（不硬编码），`window.open` 命名窗口 `databus_chain_<chainCode>` 打开**完整可编辑**编辑器，同链路复用窗口，使用方只加一个 prop。启用场景：CHAIN 属性面板（查看/发布子链）、手动执行弹窗（执行前查看链路结构，开窗不打断弹窗与已填入参；链路卡片锁定入口按钮随禁用）。独立 JS 上下文天然保活，父窗口未保存编排不受影响，跳回＝切回父窗口。已否掉：系统内 TagsView 多标签（标签按 path 去重、router-view 单 key、编辑器 noCache，改造波及 store/TagsView/AppMain 三件公共件）与只读模式（额外禁用态无收益）。
 
 ### 5.4 算子形状（顺带解决"全是方框"问题）
 

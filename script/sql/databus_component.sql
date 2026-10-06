@@ -25,6 +25,7 @@ create table databus_component (
     short_name        varchar(50)     default null              comment '物料网格短名（缺省用组件名称）【治理】',
     category          varchar(32)     not null                  comment '台账五分类（PROTOCOL/DATA/FLOW_CONTROL/AI/PLATFORM）【治理】',
     group_name        varchar(32)     default null              comment '物料面板七组（flow/sequence/branch/loop/other/subflow/business）【治理】',
+    domain            varchar(16)     default null              comment '业务叶子业务域（bpm=BPM 平台集成件/common=通用加工；仅 group_name=business 普通叶子使用，条件槽件留空；空按 common 展示）【治理】',
     icon              varchar(100)    default null              comment '图标（svg 名或 Iconify 名如 ph:atom）【治理】',
     color             varchar(16)     default null              comment '面板色值（如 #409eff）【治理】',
     sort              int(11)         default 100               comment '面板排序（升序）【治理】',
@@ -57,23 +58,22 @@ create table databus_component (
 ) engine=innodb comment='数据总线组件元信息表（原子物料的家：契约缓存+治理真身+脚本工件）';
 
 -- ----------------------------
--- 菜单：组件管理（2026-10-06 组件管理页落地）
--- 父目录 1761400000000020000（数据总线）；本段取 050~054（010 连接/020 链路/030 编辑器/040 记录）
--- sys_menu 22 列顺序：menu_id, menu_name, parent_id, order_num, path, component, query_param,
---   is_frame, is_cache, menu_type, visible, status, perms, icon, active_menu, ext,
---   create_dept, create_by, create_time, update_by, update_time, remark
--- icon 取 plus-ui/src/assets/icons/svg 下真实存在的 component.svg。
--- 台账页同时消费 /databus/component/options（权限 databus:editor:list）与 /list，
--- 授权时组件管理与编辑器权限需一并授予。
--- 幂等：先按 menu_id 删旧（含 sys_role_menu 关联）再插，本片段可直接重复执行；
--- 重跑会刷新菜单定义（名称/perms/备注等随脚本正本走），代价是角色需重新勾选这 5 项授权。
+-- 菜单：组件管理（2026-10-06 终局正本，menu_id 20009~014）
+-- 挂父目录 1761400000000020000（数据总线，由 databus_chain.sql 播种）。
+-- 旧 050~055（component/version 脚本历史种子，与本段同 path 同 perms）已废弃：
+--   连授权一并清除，防止两套「组件管理」菜单并存。
+-- 幂等：sys_menu 先按 id 删后插，sys_role_menu 中 20009~014 的角色授权不动
+--   （删除的是菜单行、同 id 立即重建，授权行继续有效；两表无物理外键），可直接重复执行。
+-- 台账页同时消费 /databus/component/options 与 /list，授权时组件管理与编辑器权限需一并授予。
 -- ----------------------------
-delete from sys_role_menu where menu_id in (1762000000000000050, 1762000000000000051, 1762000000000000052, 1762000000000000053, 1762000000000000054);
-delete from sys_menu where menu_id in (1762000000000000050, 1762000000000000051, 1762000000000000052, 1762000000000000053, 1762000000000000054);
+delete from sys_role_menu where menu_id in (1762000000000000050, 1762000000000000051, 1762000000000000052, 1762000000000000053, 1762000000000000054, 1762000000000000055);
+delete from sys_menu where menu_id in (1762000000000000050, 1762000000000000051, 1762000000000000052, 1762000000000000053, 1762000000000000054, 1762000000000000055,
+                                      1761400000000020009, 1761400000000020010, 1761400000000020011, 1761400000000020012, 1761400000000020013, 1761400000000020014);
 
 insert into sys_menu values
-  (1762000000000000050, '组件管理', 1761400000000020000, 4, 'component', 'databus/component/index', '', 'N', 'N', 'C', '0', '0', 'databus:component:list', 'component', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线组件物料台账（内置只读+自定义件增删改）'),
-  (1762000000000000051, '组件查询', 1762000000000000050, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '查看组件参数 schema 详情'),
-  (1762000000000000052, '组件新增', 1762000000000000050, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '注册自定义组件元信息'),
-  (1762000000000000053, '组件修改', 1762000000000000050, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '修改自定义组件（含启用/停用/废弃）'),
-  (1762000000000000054, '组件删除', 1762000000000000050, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '删除自定义组件（后端先校验链路引用）');
+  (1761400000000020009, '组件管理', 1761400000000020000, 2, 'component', 'databus/component/index', '', 'N', 'Y', 'C', '0', '0', 'databus:component:list', 'component', '', '', NULL, NULL, sysdate(), NULL, NULL, '组件元信息管理'),
+  (1761400000000020010, '组件查询', 1761400000000020009, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020011, '组件新增', 1761400000000020009, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020012, '组件修改', 1761400000000020009, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020013, '组件删除', 1761400000000020009, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
+  (1761400000000020014, '脚本编辑', 1761400000000020009, 5, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:script:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '受信作者：保存即编译热更，等同服务端代码发布');

@@ -19,6 +19,7 @@ import java.util.List;
  * @param name          物料名
  * @param shortName     网格短名
  * @param group         物料分组
+ * @param domain        业务叶子业务域（bpm/common；jar 注解件恒为 null，仅 DB 治理行有值）
  * @param icon          Iconify 图标名
  * @param color         面板色值
  * @param description   一句话描述
@@ -38,6 +39,7 @@ public record ComponentOptionVo(String code,
                                 String name,
                                 String shortName,
                                 String group,
+                                String domain,
                                 String icon,
                                 String color,
                                 String description,
@@ -60,6 +62,7 @@ public record ComponentOptionVo(String code,
             cmp.name(),
             cmp.shortName(),
             cmp.group(),
+            null,
             cmp.icon(),
             cmp.color(),
             cmp.description(),
@@ -88,6 +91,7 @@ public record ComponentOptionVo(String code,
             row.getComponentName(),
             row.getShortName(),
             row.getGroupName(),
+            row.getDomain(),
             row.getIcon(),
             row.getColor(),
             row.getDescription(),
@@ -117,6 +121,7 @@ public record ComponentOptionVo(String code,
             row.getComponentName(),
             firstNonBlank(row.getShortName(), sys.shortName()),
             firstNonBlank(row.getGroupName(), sys.group()),
+            firstNonBlank(row.getDomain(), null),
             firstNonBlank(row.getIcon(), sys.icon()),
             firstNonBlank(row.getColor(), sys.color()),
             firstNonBlank(row.getDescription(), sys.description()),

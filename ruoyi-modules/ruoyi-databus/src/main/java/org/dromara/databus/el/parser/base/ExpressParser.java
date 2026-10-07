@@ -43,6 +43,22 @@ public interface ExpressParser {
     ConditionTypeEnum parserType();
 
     /**
+     * 注册 key：{@code ExpressParserFactory.PARSER_MAP} 的实际注册名，
+     * 默认取 {@link #parserType()} 的小写类型名（如 "then"）。
+     * <p>
+     * 绝大多数解析器与 Condition 类型一一对应，直接用默认值；
+     * 特例是 CHAIN 引用——它不是 Condition 类型
+     * （{@link ConditionTypeEnum} 没有 chain 项），ChainParser 覆盖本方法
+     * 返回自定义 key（"chain"）并让 {@code parserType()} 返回 null，
+     * 只服务 JSON→EL 根节点为 CHAIN 的场景，不参与 Condition 路由。
+     *
+     * @see ExpressParserFactory
+     */
+    default String parserKey() {
+        return parserType() == null ? null : parserType().getType();
+    }
+
+    /**
      * 反向映射：给定 LiteFlow 的 Condition，返回它对应的 EL 关键字枚举。
      * （如 AndOrCondition 可能是 AND 也可能是 OR，由实现类自行判断。）
      */
@@ -56,7 +72,7 @@ public interface ExpressParser {
     CmpProperty builderVO(Condition condition);
 
     /**
-     * 把被引用的子编排链转成 type=CHAIN 的 CmpProperty（含其内部 condition 列表）。
+     * 把被引用的子链转成 type=CHAIN 的引用叶子（不展开子链内部编排）。
      */
     CmpProperty buildChildrenChain(Chain chain);
 

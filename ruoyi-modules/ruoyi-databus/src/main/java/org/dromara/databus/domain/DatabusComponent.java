@@ -57,7 +57,7 @@ public class DatabusComponent extends BaseEntity {
     private String groupName;
 
     /**
-     * 业务叶子业务域（bpm/common，仅 business 组普通叶子使用；条件槽件留空）【治理】
+     * 业务域（取值见 databus_component_domain 字典行；空＝未指派：business 普通叶子按字典 is_default 行归兜底域，node_type ≠ NODE 的槽件由后端派生为 slot）【治理】
      */
     private String domain;
 

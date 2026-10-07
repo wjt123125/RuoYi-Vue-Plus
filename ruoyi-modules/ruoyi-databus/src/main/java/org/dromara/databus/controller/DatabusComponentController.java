@@ -14,6 +14,8 @@ import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
 import org.dromara.databus.domain.bo.ScriptSaveBo;
+import org.dromara.databus.domain.vo.ComponentDomainVo;
+import org.dromara.databus.domain.vo.ComponentGroupVo;
 import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.DatabusComponentVersionVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
@@ -59,6 +61,24 @@ public class DatabusComponentController extends BaseController {
     @GetMapping("/options")
     public R<ComponentOptionsVo> options() {
         return R.ok(componentService.queryOptions());
+    }
+
+    /**
+     * 查询物料面板分组字典（编辑器面板与台账树共用，不分页）
+     */
+    @SaCheckPermission("databus:editor:list")
+    @GetMapping("/groups")
+    public R<List<ComponentGroupVo>> groups() {
+        return R.ok(componentService.queryGroups());
+    }
+
+    /**
+     * 查询物料业务域字典（含兜底域标记 isDefault，不分页）
+     */
+    @SaCheckPermission("databus:editor:list")
+    @GetMapping("/domains")
+    public R<List<ComponentDomainVo>> domains() {
+        return R.ok(componentService.queryDomains());
     }
 
     /**

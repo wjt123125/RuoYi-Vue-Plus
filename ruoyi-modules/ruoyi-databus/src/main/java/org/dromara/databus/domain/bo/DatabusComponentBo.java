@@ -63,7 +63,7 @@ public class DatabusComponentBo implements Serializable {
     private String groupName;
 
     /**
-     * 业务叶子业务域（bpm/common，仅 business 组普通叶子使用）
+     * 业务域（取值见 databus_component_domain 字典行；空＝未指派，按 is_default 行归兜底域）
      */
     @Size(max = 16, message = "业务域长度不能超过{max}个字符", groups = {AddGroup.class, EditGroup.class})
     private String domain;

@@ -52,7 +52,7 @@ public class DatabusComponentVo implements Serializable {
     private String groupName;
 
     /**
-     * 业务叶子业务域（bpm/common，仅 business 组普通叶子使用）
+     * 业务域（取值见 databus_component_domain 字典行；空＝未指派，由前端按 is_default 行归兜底域）
      */
     private String domain;
 

@@ -5,6 +5,8 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
 import org.dromara.databus.domain.bo.ScriptSaveBo;
+import org.dromara.databus.domain.vo.ComponentDomainVo;
+import org.dromara.databus.domain.vo.ComponentGroupVo;
 import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.DatabusComponentVersionVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
@@ -45,6 +47,22 @@ public interface IDatabusComponentService {
      * @return 带 schemaVersion 的合流响应
      */
     ComponentOptionsVo queryOptions();
+
+    /**
+     * 查询物料面板分组字典（databus_component_group）：编辑器面板与台账树共用，
+     * 不分页、不缓存（表内 <10 行，走唯一索引，缓存反引入「改了字典页面不变」的排障成本）。
+     *
+     * @return 分组字典列表（sort asc, id asc）
+     */
+    List<ComponentGroupVo> queryGroups();
+
+    /**
+     * 查询物料业务域字典（databus_component_domain）：含兜底域标记 isDefault，
+     * domain 为空的普通叶子件由前端按该标记归入兜底域。不分页、不缓存。
+     *
+     * @return 业务域字典列表（sort asc, id asc）
+     */
+    List<ComponentDomainVo> queryDomains();
 
     /**
      * 新增组件元信息

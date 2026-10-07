@@ -16,10 +16,14 @@ import org.dromara.databus.component.schema.model.CmpSchema;
 import org.dromara.databus.component.schema.registry.ComponentSchemaRegistry;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.DatabusComponent;
+import org.dromara.databus.domain.DatabusComponentDomain;
+import org.dromara.databus.domain.DatabusComponentGroup;
 import org.dromara.databus.domain.DatabusComponentVersion;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
 import org.dromara.databus.domain.bo.ScriptSaveBo;
+import org.dromara.databus.domain.vo.ComponentDomainVo;
+import org.dromara.databus.domain.vo.ComponentGroupVo;
 import org.dromara.databus.domain.vo.ComponentOptionVo;
 import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.ComponentSchemaBody;
@@ -28,6 +32,8 @@ import org.dromara.databus.domain.vo.DatabusComponentVo;
 import org.dromara.databus.domain.vo.ScriptRuntimeVo;
 import org.dromara.databus.domain.vo.ScriptSaveResultVo;
 import org.dromara.databus.mapper.DatabusChainMapper;
+import org.dromara.databus.mapper.DatabusComponentDomainMapper;
+import org.dromara.databus.mapper.DatabusComponentGroupMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusComponentVersionMapper;
 import org.dromara.databus.script.host.JavaSourceCompiler;
@@ -71,7 +77,16 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
      */
     private static final String SCRIPT_LANG_JAVA = "java";
 
+    /**
+     * 字典表 char(1) 标记的肯定值（databus_component_domain.is_default）
+     */
+    private static final String FLAG_YES = "Y";
+
     private final DatabusComponentMapper componentMapper;
+
+    private final DatabusComponentGroupMapper componentGroupMapper;
+
+    private final DatabusComponentDomainMapper componentDomainMapper;
 
     private final DatabusChainMapper chainMapper;
 
@@ -131,6 +146,30 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
         });
         options.addAll(dbOptions);
         return ComponentOptionsVo.of(options);
+    }
+
+    @Override
+    public List<ComponentGroupVo> queryGroups() {
+        // 手动装配而非 selectVoList：VO 字段名（key/label）与实体属性名（groupKey/groupName）
+        // 不一致，mapstruct-plus 的属性名映射拷不上
+        return componentGroupMapper.selectList(Wrappers.<DatabusComponentGroup>lambdaQuery()
+                .orderByAsc(DatabusComponentGroup::getSort)
+                .orderByAsc(DatabusComponentGroup::getId))
+            .stream()
+            .map(row -> new ComponentGroupVo(row.getGroupKey(), row.getGroupName(), row.getColor(), row.getSort()))
+            .toList();
+    }
+
+    @Override
+    public List<ComponentDomainVo> queryDomains() {
+        // 同上手动装配；is_default 的 char(1) Y/N 在此收敛为 Boolean
+        return componentDomainMapper.selectList(Wrappers.<DatabusComponentDomain>lambdaQuery()
+                .orderByAsc(DatabusComponentDomain::getSort)
+                .orderByAsc(DatabusComponentDomain::getId))
+            .stream()
+            .map(row -> new ComponentDomainVo(row.getDomainKey(), row.getDomainName(), row.getColor(),
+                row.getSort(), FLAG_YES.equals(row.getIsDefault())))
+            .toList();
     }
 
     /**

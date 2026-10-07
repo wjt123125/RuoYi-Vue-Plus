@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 
 /**
@@ -104,13 +103,15 @@ public abstract class AbstractExpressParser implements ExpressParser {
     }
 
     /**
-     * EL→JSON：把"被引用的子编排链"转成 type=CHAIN 的单元。
+     * EL→JSON：把"被引用的子编排链"转成 type=CHAIN 的引用叶子。
      * <p>
      * 场景：EL 里出现 {@code SWITCH(a).to(b, subChain);}，其中 subChain 是另一条链。
-     * 转换结果形如：
-     * <pre>{"id":"subChain","type":"CHAIN","children":[ ...子链内的 condition 列表... ]}</pre>
-     * 注意：子链内每个 condition 也要通过 {@link ParserSelector} 找到各自的解析器
-     * 递归处理（但只填 type/properties/children，不再展开一层 condition 位）。
+     * 画布上「子流程」节点是一张不展开的卡片（子链内部编排是独立的另一条链数据，
+     * 由用户单独打开子链画布编辑），所以这里只产出引用叶子：
+     * <pre>{"id":"subChain","type":"CHAIN"}</pre>
+     * 不展开子链的 conditionList：JSON→EL 重建时该叶子按 id 即可还原引用
+     * （LiteFlow 运行时按 id 在 chainMap 解析子链），展开只会让画布 JSON
+     * 混入子链的整棵编排树，造成同一份编排两处存储。
      */
     @Override
     public CmpProperty buildChildrenChain(Chain chain){
@@ -121,16 +122,7 @@ public abstract class AbstractExpressParser implements ExpressParser {
                 .properties(getProperties(null, chain.getTag()))
                 .build();
         chainProperty.setCondition(null);
-        List<CmpProperty> childVos = chain.getConditionList().stream().map(condition -> {
-            ExpressParser parser = ParserSelector.getParser(condition);
-            CmpProperty vo = CmpProperty.builder()
-                    .type(parser.getExpressType(condition).getType())
-                    .properties(getProperties(chain.getChainId(), condition.getTag()))
-                    .build();
-            vo.setChildren(parser.builderChildren(condition));
-            return vo;
-        }).collect(Collectors.toList());
-        chainProperty.setChildren(childVos);
+        chainProperty.setChildren(null);
         return chainProperty;
     }
 
@@ -157,7 +149,7 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (null == propertyId && null == tag) {
             return null;
         }
-        // title / outletLabels / chainRef 为纯编辑态字段，EL 反向解析不产出，builder 缺省 null
+        // title / outletLabels 为纯编辑态字段，EL 反向解析不产出，builder 缺省 null
         return Properties.builder().id(propertyId).tag(tag).build();
     }
 
@@ -172,7 +164,7 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (null == propertyId && null == tag && null == data) {
             return null;
         }
-        // title / outletLabels / chainRef 为纯编辑态字段，EL 反向解析不产出，builder 缺省 null
+        // title / outletLabels 为纯编辑态字段，EL 反向解析不产出，builder 缺省 null
         return Properties.builder().id(propertyId).tag(tag).data(data).build();
     }
 
@@ -194,9 +186,11 @@ public abstract class AbstractExpressParser implements ExpressParser {
 
     /**
      * 本解析器对应的 LiteFlow 默认 condition id，如 THEN 解析器 → "condition-then"。
+     * 取 {@link #parserKey()} 而非 parserType().getType()，保证 ChainParser 这类
+     * parserType() 为 null 的解析器继承本方法时不会 NPE。
      */
     protected String defaultConditionId() {
-        return StrUtil.format("condition-{}", this.parserType().getType().toLowerCase());
+        return StrUtil.format("condition-{}", this.parserKey());
     }
 
     // ==================== 子表达式转换（EL→JSON） ====================

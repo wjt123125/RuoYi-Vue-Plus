@@ -127,7 +127,7 @@ values
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark)
 values
-  (1762000000000100025, 'chain-ref', 'CHAIN 子流程引用', 1, '0', null, null, '{"type":"THEN","children":[{"id":"subChain_demo","type":"NodeComponent","properties":{"tag":"subChain_demo","chainRef":true}}]}', 'BASIC', sysdate(), '引用子链 subChain_demo（结构展示）');
+  (1762000000000100025, 'chain-ref', 'CHAIN 子流程引用', 1, '0', null, null, '{"type":"THEN","children":[{"id":"subChain_demo","type":"CHAIN"}]}', 'BASIC', sysdate(), '引用子链 subChain_demo（结构展示，生成 EL：THEN(subChain_demo);）');
 
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark)

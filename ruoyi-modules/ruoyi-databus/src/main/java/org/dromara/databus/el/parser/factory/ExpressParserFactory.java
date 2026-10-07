@@ -1,6 +1,7 @@
 package org.dromara.databus.el.parser.factory;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.StrUtil;
 import org.dromara.databus.el.parser.base.ExpressParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 所有标记了 {@code @Component} 的解析器实现（ThenConditionParser、
  * IfConditionParser……）注入进来，逐个注册到 PARSER_MAP：
  * <pre>
- * key   = parser.parserType()  即 ConditionTypeEnum.getType()，如 "then"、"switch"
+ * key   = parser.parserKey()  即 ConditionTypeEnum.getType()，如 "then"、"switch"
+ *         （ChainParser 覆盖 parserKey() 返回 "chain"）
  * value = 解析器实例本身
  * </pre>
  * 之后 {@link org.dromara.databus.el.parser.selector.ParserSelector} 全部
@@ -51,15 +53,21 @@ public class ExpressParserFactory {
     }
 
     /**
-     * 注册单个解析器；parserType() 为 null 的（未绑定类型的）直接忽略。
+     * 注册单个解析器；parserKey() 为空（未绑定注册 key）的直接忽略。
+     * <p>
+     * key 取 {@link ExpressParser#parserKey()}：常规解析器等于
+     * ConditionTypeEnum.getType()（如 "then"）；ChainParser 这类
+     * "非 Condition 类型"的解析器通过覆盖 parserKey() 自定义注册名，
+     * 此时 parserType() 为 null（不再作为忽略条件）。
      */
     public void register(ExpressParser parser) {
-        if (parser.parserType() == null) {
+        Assert.notNull(parser, "ExpressParser parser must not be null");
+        String key = parser.parserKey();
+        if (StrUtil.isBlank(key)) {
             return;
         }
-        Assert.notNull(parser, "ExpressParser parser must not be null");
-        PARSER_MAP.put(parser.parserType().getType(), parser);
-        log.info("ExpressParser[{}] has been found", parser.parserType());
+        PARSER_MAP.put(key, parser);
+        log.info("ExpressParser[key={}, type={}] has been found", key, parser.parserType());
     }
 
 

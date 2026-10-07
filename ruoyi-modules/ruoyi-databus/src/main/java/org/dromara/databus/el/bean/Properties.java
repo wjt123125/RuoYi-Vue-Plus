@@ -62,14 +62,4 @@ public class Properties {
      * 按 tag 命中分支。不参与表达式语义的其他部分，仅随画布 JSON 往返。
      */
     private List<String> outletLabels;
-
-    /**
-     * CHAIN 子流程引用标记（数据总线扩展，纯编辑态字段）。
-     * <p>
-     * 画布上的「子流程(CHAIN)」节点序列化为普通 NodeComponent 叶子（id=子链 chainCode），
-     * 借 LiteFlow 运行时按 id 在 chainMap 解析子链；后端没有 CHAIN 的 JSON→EL 生成器，
-     * 必须保持 NodeComponent 形态才能生成 EL。本标记用于反向加载时把这种叶子识别回
-     * CHAIN 引用节点，避免子流程卡片退化成「未知组件」。不参与 EL 生成，仅随画布 JSON 往返。
-     */
-    private Boolean chainRef;
 }

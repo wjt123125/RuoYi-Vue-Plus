@@ -4,6 +4,7 @@ import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.ELInfo;
 import org.dromara.databus.el.bean.Properties;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
+import com.yomahub.liteflow.builder.el.LiteFlowChainELBuilder;
 import com.yomahub.liteflow.common.ChainConstant;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -202,5 +203,108 @@ class ExpressGeneratorTest {
         ELInfo output = expressGenerator.generateEL(jsonEl);
         assertNotNull(output);
         assertEquals("THEN(hello,delay);", output.getElStr());
+    }
+
+    // ==================== CHAIN 子流程引用（ChainParser） ====================
+
+    /**
+     * 构造 THEN(hello, subChain) 对应的画布 JSON——CHAIN 引用叶子直发 type=CHAIN
+     * （新格式，id=子链 chainCode，不再伪装成 NodeComponent）。
+     */
+    private CmpProperty buildThenWithChainLeaf() {
+        CmpProperty hello = CmpProperty.builder()
+                .id("hello")
+                .type("NodeComponent")
+                .build();
+        CmpProperty subChainLeaf = CmpProperty.builder()
+                .id("subChain")
+                .type("CHAIN")
+                .build();
+        return CmpProperty.builder()
+                .type("THEN")
+                .children(Arrays.asList(hello, subChainLeaf))
+                .build();
+    }
+
+    /**
+     * JSON→EL：THEN 内的 CHAIN 叶子按 id 还原引用。
+     * generateNodeComponent 对 id 非空的子项统一拼 id（不查 type），
+     * 产出 THEN(hello,subChain);，LiteFlow 运行时按 id 在 chainMap 解析子链。
+     */
+    @Test
+    void generateEL_thenWithChainLeaf_shouldProduceExpectedExpression() {
+        ELInfo elInfo = expressGenerator.generateEL(buildThenWithChainLeaf());
+
+        assertNotNull(elInfo);
+        assertEquals("THEN(hello,subChain);", elInfo.getElStr());
+    }
+
+    /**
+     * JSON→EL：根节点是 CHAIN（整条链只有一个子流程引用节点）。
+     * 历史行为：ParserSelector.getParser("chain") 找不到解析器直接抛 RuntimeException；
+     * ChainParser 通过覆盖 parserKey() 以 "chain" 注册后兜住该场景。
+     */
+    @Test
+    void generateEL_rootChain_shouldProduceExpectedExpression() {
+        CmpProperty rootChain = CmpProperty.builder()
+                .id("subChain")
+                .type("CHAIN")
+                .build();
+        assertEquals("subChain;", expressGenerator.generateEL(rootChain).getElStr());
+
+        // 带 tag 的引用叶子：id.tag("x") 与普通节点的拼接方式一致
+        CmpProperty taggedChain = CmpProperty.builder()
+                .id("subChain")
+                .type("CHAIN")
+                .properties(Properties.builder().tag("chainTag1").build())
+                .build();
+        assertEquals("subChain.tag(\"chainTag1\");",
+                expressGenerator.generateEL(taggedChain).getElStr());
+    }
+
+    /**
+     * EL→JSON→EL 往返全等（裸 chain，不带 tag）：THEN(hello,subChain);。
+     * <p>
+     * 子链 subChain 用 LiteFlowChainELBuilder 动态注册（hello/delay 为 smoke
+     * 测试应用已注册的组件）。generateJsonEL 执行 EL 时上下文预置 FlowBus 全部
+     * chain，THEN(…, subChain) 求值结果的 executableList 里是 Chain 引用对象，
+     * buildChildrenChain 转成 type=CHAIN 的引用叶子——重点断言<b>不展开子链内部
+     * 编排</b>（condition/children 均为 null，子链编排是独立的另一条链数据）。
+     * <p>
+     * 注意不能用带 tag 的 chain 做全等断言：EL 里 {@code subChain.tag("x")} 的
+     * 求值结果是 ThenCondition 包裹（tag 设在 THEN 上、Chain 在其 executableList 里，
+     * LiteFlow 的 Chain 对象全局唯一无法复制），往返后形态变为
+     * {@code THEN(subChain).tag("x")}——语义等价但字符串不同。
+     */
+    @Test
+    void roundTrip_thenWithChainLeaf_shouldBeConsistent() {
+        // 动态注册子链 subChain
+        LiteFlowChainELBuilder.createChain()
+                .setChainId("subChain")
+                .setEL("THEN(hello,delay)")
+                .build();
+
+        // EL -> JSON
+        ELInfo input = new ELInfo();
+        input.setChainId("chainRoundTripMain");
+        input.setElStr("THEN(hello,subChain);");
+        CmpProperty jsonEl = expressGenerator.generateJsonEL(input);
+
+        assertNotNull(jsonEl);
+        assertEquals("THEN", jsonEl.getType());
+        assertNotNull(jsonEl.getChildren());
+        assertEquals(2, jsonEl.getChildren().size());
+        assertEquals("NodeComponent", jsonEl.getChildren().get(0).getType());
+        // CHAIN 引用叶子：id=子链 chainCode，不展开子链编排
+        CmpProperty chainLeaf = jsonEl.getChildren().get(1);
+        assertEquals("CHAIN", chainLeaf.getType());
+        assertEquals("subChain", chainLeaf.getId());
+        assertNull(chainLeaf.getCondition());
+        assertNull(chainLeaf.getChildren());
+
+        // JSON -> EL
+        ELInfo output = expressGenerator.generateEL(jsonEl);
+        assertNotNull(output);
+        assertEquals("THEN(hello,subChain);", output.getElStr());
     }
 }

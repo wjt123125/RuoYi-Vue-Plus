@@ -22,6 +22,8 @@ create table if not exists databus_component_version (
     create_dept       bigint(20)      default null              comment '创建部门',
     create_by         bigint(20)      default null              comment '创建者',
     create_time       datetime        default null              comment '创建时间',
+    update_by         bigint(20)      default null              comment '更新者',
+    update_time       datetime        default null              comment '更新时间',
     primary key (id),
     unique key uk_component_version (component_id, version_no),
     key idx_component_id (component_id)

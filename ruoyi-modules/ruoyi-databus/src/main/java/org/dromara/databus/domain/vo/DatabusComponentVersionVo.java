@@ -1,6 +1,8 @@
 package org.dromara.databus.domain.vo;
 
+import io.github.linpeilie.annotations.AutoMapper;
 import lombok.Data;
+import org.dromara.databus.domain.DatabusComponentVersion;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -12,6 +14,7 @@ import java.time.LocalDateTime;
  * @author databus
  */
 @Data
+@AutoMapper(target = DatabusComponentVersion.class)
 public class DatabusComponentVersionVo implements Serializable {
 
     @Serial

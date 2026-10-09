@@ -70,13 +70,17 @@ public class DatabusChainController extends BaseController {
 
     /**
      * 保存链路草稿（新增）
+     *
+     * @return 新链路主键（工作台树右键新建即命名即落库，前端凭此直接打开画布 tab；
+     *         Long 经全局 Jackson 配置序列化为字符串，避免雪花 id 精度丢失）
      */
     @SaCheckPermission("databus:editor:add")
     @Log(title = "数据总线链路", businessType = BusinessType.INSERT)
     @RepeatSubmit
     @PostMapping()
-    public R<Void> add(@Validated @RequestBody DatabusChainBo bo) {
-        return toAjax(chainService.insertByBo(bo));
+    public R<Long> add(@Validated @RequestBody DatabusChainBo bo) {
+        boolean flag = chainService.insertByBo(bo);
+        return flag ? R.ok(bo.getId()) : R.fail();
     }
 
     /**

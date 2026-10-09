@@ -32,9 +32,12 @@ alter table databus_chain add index idx_chain_directory (directory_id);
 -- ----------------------------
 -- 菜单与权限（链路工作台：三栏同构组件台——左 AI + 中多 tab 工作面板 + 右链资源树）
 -- 前端走动态路由：菜单 component 填 databus/chain/workbench/index 即自动映射
--- views/databus/chain/workbench/index.vue（与链路管理页 databus/chain/index 并列，两入口并存）。
+-- views/databus/chain/workbench/index.vue（2026-10-09 起为链路唯一入口；旧编排器/链路管理
+-- 两个页面菜单已在 databus_chain.sql 删除，工作台内嵌 ChainCanvasPane，不走 editor 路由）。
 -- 权限 key 独立成 databus:chain:directory:* 前缀（目录是链路工作台的资源树层，非编排器语义）；
--- 工作台内 canvas tab / 链列表复用既有 databus:editor:* 权限（逻辑单源，不重复建点）。
+-- 工作台内 canvas tab / 链列表复用既有 databus:editor:* 权限（逻辑单源，不重复建点），
+-- 这批 databus:editor:* F 行（含 030 list 载体、021~027、20002~20008）也已一并挂到本段 040 下，
+-- 定义与幂等重建仍在 databus_chain.sql，两脚本配套执行。
 -- 段 1762000000000000040~44：先删后插保证幂等（不动 sys_role_menu，同 id 重建授权继续有效）。
 -- 非 admin 账号还需在【系统管理 → 角色管理】勾选本段 5 项菜单/按钮权限（sys_role_menu）。
 -- sys_menu 22 列顺序：menu_id, menu_name, parent_id, order_num, path, component, query_param,

@@ -87,6 +87,11 @@ public class DatabusChain extends BaseEntity {
     private List<ChainInputParam> inputParams;
 
     /**
+     * 所属目录id（null=未归组，链路工作台树兜底为未归组虚拟节点；databus_chain_directory 自引用多级树）
+     */
+    private Long directoryId;
+
+    /**
      * 是否精选模板（0否 1是）
      * <p>
      * 模板恒为草稿（status='0'）：不可发布、不推 Rule-DB、不进手动执行入口；

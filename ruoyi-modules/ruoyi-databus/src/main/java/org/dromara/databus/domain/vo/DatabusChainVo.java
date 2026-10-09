@@ -94,6 +94,11 @@ public class DatabusChainVo implements Serializable {
     private String remark;
 
     /**
+     * 所属目录id（null=未归组，工作台树据此归组渲染）
+     */
+    private Long directoryId;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;

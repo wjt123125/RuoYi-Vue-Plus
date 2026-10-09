@@ -80,6 +80,12 @@ public class DatabusChainBo implements Serializable {
     private String remark;
 
     /**
+     * 所属目录id（可空：新建链路时可指定归属目录——工作台树右键新建直挂；
+     * null 落库即未归组；归属变更走目录 move-chain 端点，普通编辑传 null 不更新）
+     */
+    private Long directoryId;
+
+    /**
      * 状态（仅列表查询过滤用：0草稿 1已发布 2已下线）。
      * <p>
      * 保存时不接收此字段——insertByBo 显式置 DRAFT、updateByBo 显式置 null（不更新），

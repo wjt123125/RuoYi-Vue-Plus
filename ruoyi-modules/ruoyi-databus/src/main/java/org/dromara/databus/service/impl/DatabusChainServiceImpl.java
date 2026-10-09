@@ -107,6 +107,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         // queryById 保持全量（编辑器加载走该接口）。
         lqw.select(DatabusChain::getId, DatabusChain::getChainCode, DatabusChain::getChainName,
             DatabusChain::getVersion, DatabusChain::getStatus, DatabusChain::getCmpProperty,
+            DatabusChain::getDirectoryId,
             DatabusChain::getLogLevel, DatabusChain::getRemark,
             DatabusChain::getIsTemplate, DatabusChain::getTemplateDesc, DatabusChain::getTemplateSort,
             DatabusChain::getCreateTime, DatabusChain::getUpdateTime);
@@ -115,6 +116,8 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         if (StringUtils.isNotBlank(bo.getStatus())) {
             lqw.eq(DatabusChain::getStatus, bo.getStatus());
         }
+        // 目录归属过滤（链路工作台树按目录拉链用；null 不追加条件）
+        lqw.eq(bo.getDirectoryId() != null, DatabusChain::getDirectoryId, bo.getDirectoryId());
         // 双 tab 分流：'1' 精选模板库，'0' 我的链路（排除模板）；null 不追加条件，兼容内部调用
         boolean templateTab = TEMPLATE_FLAG_YES.equals(bo.getIsTemplate());
         if (StringUtils.isNotBlank(bo.getIsTemplate())) {

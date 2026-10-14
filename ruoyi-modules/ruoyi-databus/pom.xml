@@ -77,6 +77,13 @@
             <artifactId>ruoyi-common-web</artifactId>
         </dependency>
 
+        <!-- 邮件通知：告警引擎触发邮件（MailBuilder）。mail.enabled=false 时通道不可用，
+             评估侧捕获异常并将 notify_status 记 FAILED，不影响告警评估主流程 -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-mail</artifactId>
+        </dependency>
+
         <!-- LiteFlow 规则编排引擎，复用 ruoyi-common-liteflow 间接引入 liteflow-spring-boot-starter -->
         <dependency>
             <groupId>org.dromara</groupId>

@@ -23,11 +23,9 @@ create table databus_chain_directory (
 ) engine=innodb comment='数据总线链路目录表';
 
 -- ----------------------------
--- 链表挂目录（可空外键：null/0 = 未归组链，工作台树兜底为「未归组」虚拟节点）
--- 注意：MySQL 8 的 add column 无 if not exists，重复执行会报列已存在（无害，可忽略）。
+-- 链表挂目录的 directory_id 列与 idx_chain_directory 索引：随建表一并定义在
+-- databus_chain.sql 的 CREATE TABLE 内（本库 DDL 一律 drop + 全量重建，不写 alter 补丁）。
 -- ----------------------------
-alter table databus_chain add column directory_id bigint(20) default null comment '所属目录id（null=未归组，链路工作台树兜底为未归组虚拟节点；2026-10-08 增）';
-alter table databus_chain add index idx_chain_directory (directory_id);
 
 -- ----------------------------
 -- 菜单与权限（链路工作台：三栏同构组件台——左 AI + 中多 tab 工作面板 + 右链资源树）

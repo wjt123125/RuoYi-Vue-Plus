@@ -19,6 +19,7 @@ create table databus_chain (
     cmp_property      text            default null               comment '画布逻辑组件树 JSON（CmpProperty 序列化，EL 权威源的输入；发布时据此提取脚本节点推 lf_script）',
     log_level         varchar(16)     default 'BASIC'            comment '执行记录档位（OFF/BASIC/FULL，默认 BASIC；OFF 不落库，BASIC 仅执行级，FULL 含节点级每步 IO）',
     input_params      text            default null               comment '链路入参登记表 JSON（ChainInputParam 列表：路径/类型/默认值/必填，2026-09-27 增）',
+    directory_id      bigint(20)      default null               comment '所属目录id（null=未归组，链路工作台树兜底为未归组虚拟节点；2026-10-08 增）',
     is_template       char(1)         default '0'                comment '是否精选模板（0否 1是，2026-09-30 增；模板恒为草稿，不可发布）',
     template_desc     varchar(500)    default null               comment '模板说明（适用场景/前置条件，模板库卡片展示，标记模板时必填）',
     template_sort     int(11)         default 0                  comment '模板排序（升序，值小在前，默认 0；同值按 update_time desc）',
@@ -30,7 +31,8 @@ create table databus_chain (
     remark            varchar(500)    default null              comment '备注',
     del_flag          char(1)         default '0'               comment '删除标志（0存在 1删除）',
     primary key (id),
-    unique key uk_chain_code (chain_code)
+    unique key uk_chain_code (chain_code),
+    key idx_chain_directory (directory_id)
 ) engine=innodb comment='数据总线链路定义表';
 
 -- ----------------------------

@@ -274,7 +274,7 @@ liteflow:
       # 留空自动复用容器 DataSource bean（连接池化）；lf_* 四表启动时自动建（首次部署）
       auto-init-table: true
 
---- # 数据总线执行记录保留期清理
+--- # 数据总线执行记录保留期清理 + 监控指标聚合
 # databus_execution / databus_execution_node 两表只增不改（无 del_flag），
 # 过期数据由 Spring @Scheduled 定时任务物理删除；手动触发 POST /databus/execution/cleanup。
 # 单节点幂等维护，多节点部署阶段迁 SnailJob（见 DatabusSchedulingConfig 注释）。
@@ -291,6 +291,25 @@ databus:
       batch-size: 500
       # 单次任务最多批数（默认上限 5 万条总账），仍有剩余截断留到下一轮
       max-rounds: 100
+  # 监控指标聚合：每小时把上一完整小时的执行记录预聚合进三张宽表，大盘只读宽表不回扫原始记录。
+  # 手动触发 POST /databus/monitor/aggregate（可传 hour 补算历史小时）。
+  monitor:
+    aggregate:
+      # 聚合任务开关（false 只停定时任务，手动端点仍可用）
+      enabled: true
+      # Spring cron：默认每小时第 5 分钟聚合上一个完整小时
+      cron: "0 5 * * * ?"
+      # 指标宽表保留天数（与 databus_execution 保留期口径一致）
+      retention-days: 30
+      # 单次批量落库行数
+      batch-size: 500
+    # 告警引擎：每分钟扫描启用规则，命中即触发告警记录并发邮件，恢复时翻转记录。
+    # 手动触发 POST /databus/alert/evaluate。邮件通道依赖 mail.enabled=true，未启用时仅留痕不阻断评估。
+    alert:
+      # 告警评估任务开关（false 只停定时任务，手动端点仍可用）
+      enabled: true
+      # Spring cron：默认每分钟整点扫描一次
+      cron: "0 * * * * ?"
 
 --- # mqtt 配置
 # 具体配置还需查看文档

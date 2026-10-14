@@ -1,9 +1,22 @@
 -- ----------------------------
--- 数据总线示例链路种子数据（开发期手工维护：mock-presets.ts 与生成脚本已删除；零 ALTER 约束，改完 drop 重建库后按序重跑）
+-- 数据总线示例链路种子数据（开发期手工维护：mock-presets.ts 与生成脚本已删除；零 ALTER 约束，整文件可直接重复执行）
 -- 执行顺序：先 databus_chain.sql（含 drop table 与建表/菜单）再跑本文件。带 is_template=1 的 10 条为精选模板库首批模板。
 -- 全部为草稿状态（status=0）；发布走前端/接口 publish，后端实时生成 EL 推 Rule-DB。
 -- id 段 1762000000000100001 起。
+-- 本文件可重复执行：开头先按全部种子 id 清场再逐条插入（早期残留 code alert-test-always-fail 一并清掉）。
+-- 只清 databus_chain 草稿本体；已发布链路留在 lf_chain 的旧规则不动，重新发布会覆盖。
 -- ----------------------------
+delete from databus_chain
+where chain_code = 'alert-test-always-fail'
+   or id in
+( 1762000000000100001, 1762000000000100002, 1762000000000100003, 1762000000000100004, 1762000000000100005,
+  1762000000000100006, 1762000000000100007, 1762000000000100008, 1762000000000100009, 1762000000000100010,
+  1762000000000100011, 1762000000000100012, 1762000000000100013, 1762000000000100014, 1762000000000100015,
+  1762000000000100016, 1762000000000100017, 1762000000000100018, 1762000000000100019, 1762000000000100020,
+  1762000000000100021, 1762000000000100022, 1762000000000100023, 1762000000000100024, 1762000000000100025,
+  1762000000000100026, 1762000000000100027, 1762000000000100028, 1762000000000100029,
+  1762000000000100901, 1762000000000100902 );
+
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, is_template, template_desc, template_sort)
 values
@@ -148,3 +161,25 @@ insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark)
 values
   (1762000000000100029, 'catch-type-route', 'CATCH 按异常类型路由（纯本地·组件版）', 1, '0', null, null, '{\"type\":\"CATCH\",\"children\":[{\"id\":\"exceptionThrower\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"exceptionThrower1\",\"data\":\"{\\"exceptionClass\\":\\"{{ $.exceptionClass }}\\",\\"message\\":\\"模拟异常：{{ $.exceptionClass }}\\"}\"}},{\"type\":\"THEN\",\"children\":[{\"id\":\"exceptionInspect\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"exceptionInspect1\",\"data\":\"{\\"routes\\":[{\\"type\\":\\"ARGUMENT\\",\\"className\\":\\"java.lang.IllegalArgumentException\\"},{\\"type\\":\\"NPE\\",\\"className\\":\\"java.lang.NullPointerException\\"},{\\"type\\":\\"STATE\\",\\"className\\":\\"java.lang.IllegalStateException\\"}],\\"matchCause\\":true,\\"defaultType\\":\\"OTHER\\"}\"}},{\"type\":\"SWITCH\",\"properties\":{\"outletLabels\":[\"argHandler\",\"npeHandler\",\"stateHandler\",\"otherHandler\"]},\"condition\":{\"id\":\"switchRoute\",\"type\":\"NodeSwitchComponent\",\"properties\":{\"tag\":\"exSwitch1\",\"data\":\"{\\"source\\":\\"{{ $.exceptionInspect1.type }}\\",\\"cases\\":[{\\"value\\":\\"ARGUMENT\\",\\"target\\":\\"argHandler\\"},{\\"value\\":\\"NPE\\",\\"target\\":\\"npeHandler\\"},{\\"value\\":\\"STATE\\",\\"target\\":\\"stateHandler\\"},{\\"value\\":\\"OTHER\\",\\"target\\":\\"otherHandler\\"}]}\"}},\"children\":[{\"id\":\"setValue\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"setValue1\",\"data\":\"{\\"path\\":\\"$.exHandler.result\\",\\"value\\":\\"参数异常已兜底：{{ $.exceptionInspect1.message }}\\"}\"}},{\"id\":\"setValue\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"setValue2\",\"data\":\"{\\"path\\":\\"$.exHandler.result\\",\\"value\\":\\"空指针已兜底：{{ $.exceptionInspect1.message }}\\"}\"}},{\"id\":\"setValue\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"setValue3\",\"data\":\"{\\"path\\":\\"$.exHandler.result\\",\\"value\\":\\"状态冲突已兜底：{{ $.exceptionInspect1.message }}\\"}\"}},{\"id\":\"setValue\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"setValue4\",\"data\":\"{\\"path\\":\\"$.exHandler.result\\",\\"value\\":\\"其他异常已兜底：{{ $.exceptionInspect1.className }}\\"}\"}}]},{\"id\":\"response\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"response1\",\"data\":\"{\\"result\\":false,\\"msg\\":\\"异常已按类型路由：{{ $.exceptionInspect1.type }}\\",\\"dataPath\\":\\"{{ $.exHandler }}\\"}\"}}]}]}', 'BASIC', '[{\"path\":\"$.exceptionClass\",\"type\":\"text\",\"defaultValue\":\"java.lang.IllegalArgumentException\",\"required\":false}]', sysdate(), '零脚本 CATCH 分流示范：入参 exceptionClass 传异常全限定类名，exceptionThrower 抛异常，DO 内 exceptionInspect 按有序 instanceof 识别（支持子类/cause 链），SWITCH 四路兜底。测法：java.lang.IllegalArgumentException→ARGUMENT，java.lang.NullPointerException→NPE，java.lang.IllegalStateException→STATE，java.lang.RuntimeException→OTHER');
+
+-- ----------------------------
+-- 告警/邮件通道自测链路（2026-10-12 增，阶段5 监控体系落地·验收②）
+-- 两条都是草稿（status=0）：需在链路工作台点发布、推 Rule-DB 后才可正式执行。
+-- 告警引擎只认 databus_execution 记录，而试运行不落库（DatabusExecutor.executeByEl 不挂牌），
+-- 故验 B 必须走正式执行。
+-- ----------------------------
+-- A：链路上发信。使用 Java 脚本原子组件 sendMail（databus_component 一行，
+-- script_lang=java、script_body 为完整类源码，见 databus_component_seed.sql 的 sendMail 行），
+-- 节点 id 引用组件编码 sendMail；收件人取入参 $.mailTo（缺省 wjt123125@qq.com）。
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark)
+values
+  (1762000000000100901, 'alert-test-send-mail', '告警测试·发信（sendMail 组件）', 1, '0', null, null, '{\"type\":\"THEN\",\"children\":[{\"id\":\"sendMail\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"sendMail1\",\"data\":\"{\\"mailTo\\":\\"{{ $.mailTo }}\\",\\"mailSubject\\":\\"【数据总线自测】告警邮件通道\\",\\"mailText\\":\\"本邮件由链路 alert-test-send-mail 发出，收到即证明数据总线侧邮件通道可用。\\"}\"}}]}', 'BASIC', '[{\"path\":\"$.mailTo\",\"type\":\"text\",\"defaultValue\":\"wjt123125@qq.com\",\"required\":false}]', sysdate(), '邮件通道自测：发布后执行（或画布试运行）本链路，sendMail 组件调平台邮件通道发信，收件人取入参 $.mailTo，缺省 wjt123125@qq.com。组件源码随 databus_component_seed.sql 灌库。');
+
+-- B：随机失败。randomFail 组件（源码见 databus_component_seed.sql 第 20 行）每次执行按 0.8 概率抛异常，
+-- 大概率失败、偶尔成功：配「连错 3 次」告警规则后很容易凑齐触发序列，偶尔的成功又能验证自动恢复。
+-- 本行由旧版 alert-test-always-fail 改名而来，旧 code 的清场已在文件头部统一处理。
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark)
+values
+  (1762000000000100902, 'alert-test-random-fail', '告警测试·随机失败（randomFail）', 1, '0', null, null, '{\"type\":\"THEN\",\"children\":[{\"id\":\"randomFail\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"randomFail1\",\"data\":\"{\\"failRate\\":0.8}\"}}]}', 'BASIC', null, sysdate(), '告警引擎自测：发布后连续手动执行，八成随机失败、两成成功；连错 3 次触发 FIRING 告警，偶发成功后自动恢复，可无限循环复测（规则见 databus_alert_seed.sql）。');

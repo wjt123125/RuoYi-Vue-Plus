@@ -5,10 +5,12 @@ import com.yomahub.liteflow.slot.Slot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.dromara.databus.alert.AlertEvaluateTrigger;
 import org.dromara.databus.context.DatabusContext;
 import org.dromara.databus.domain.DatabusExecution;
 import org.dromara.databus.domain.DatabusExecutionNode;
 import org.dromara.databus.enums.ExecutionStatusEnum;
+import org.dromara.databus.enums.TriggerSourceEnum;
 import org.dromara.databus.executor.trace.ExecutionTrace;
 import org.dromara.databus.executor.trace.ExecutionTraceRecorder;
 import org.dromara.databus.executor.trace.NodeTraceRow;
@@ -37,6 +39,9 @@ import java.util.List;
  * </ol>
  * 试运行链路（preview-el-*）上下文不挂牌，本钩子直接跳过；ruoyi-workflow 等
  * 非数据总线链路没有 DatabusContext，同样跳过。
+ * <p>
+ * 总账落库成功后顺带触发事件驱动告警（{@link AlertEvaluateTrigger}，异步评估该链路
+ * 启用规则，秒级）；ALERT 源执行不触发，分钟级定时评估保留作兜底。
  *
  * @author databus
  */
@@ -46,6 +51,8 @@ import java.util.List;
 public class FlowExecutionTraceLifeCycle implements PostProcessFlowExecuteLifeCycle {
 
     private final ExecutionTraceRecorder recorder;
+
+    private final AlertEvaluateTrigger alertEvaluateTrigger;
 
     @Override
     public void postProcessBeforeFlowExecute(String chainId, Slot slot) {
@@ -78,6 +85,13 @@ public class FlowExecutionTraceLifeCycle implements PostProcessFlowExecuteLifeCy
                 return;
             }
 
+            // 事件驱动告警：总账落库即触发该链路的规则评估（秒级，投递即返回不拖执行线程）。
+            // ALERT 源（告警通知链）不触发：其执行本就被评估口径排除，唤评估纯属空转，
+            // 还能挡住「通知链失败→再评估→再通知」的自我放大
+            if (!TriggerSourceEnum.ALERT.getCode().equals(trace.getTriggerSource())) {
+                alertEvaluateTrigger.trigger(trace.getChainCode());
+            }
+
             if (trace.isFull()) {
                 saveNodesBestEffort(trace);
             }
@@ -104,6 +118,7 @@ public class FlowExecutionTraceLifeCycle implements PostProcessFlowExecuteLifeCy
         master.setStatus(ex == null
             ? ExecutionStatusEnum.SUCCESS.getCode()
             : ExecutionStatusEnum.FAILED.getCode());
+        master.setTriggerSource(trace.getTriggerSource());
         master.setErrorMsg(resolveErrorMessage(ex));
         master.setStartTime(toLocalDateTime(trace.getStartTime()));
         master.setEndTime(toLocalDateTime(endTime));
@@ -144,6 +159,8 @@ public class FlowExecutionTraceLifeCycle implements PostProcessFlowExecuteLifeCy
         node.setEndTime(toLocalDateTime(row.getEndTime()));
         node.setDuration(row.getDuration());
         node.setBranchInfo(row.getBranchInfo());
+        node.setDepth(row.getDepth());
+        node.setOwnerChain(row.getOwnerChain());
         return node;
     }
 

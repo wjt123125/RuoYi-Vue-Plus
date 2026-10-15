@@ -8,6 +8,9 @@
 --   execute() 先查 databus_chain 按 log_level 决定档位（OFF 不挂牌、不落库），
 --   BASIC 只写执行级总账，FULL 总账 + 节点级每步 IO；
 --   总账独立事务必达，节点明细尽力批量插入、失败只 warn 不连累总账。
+-- 2026-10-15 databus_execution_node 增加 depth/owner_chain 两列：
+--   子流程嵌套（CHAIN 引用）时节点明细区分层级——depth 主链步骤=0、子链按层递增，
+--   owner_chain 记该步所属链编码；存量库升级见文件末尾「存量库升级」段。
 -- ----------------------------
 
 -- ----------------------------
@@ -23,6 +26,7 @@ create table databus_execution (
     request_data      longtext        default null              comment '执行入参 JSON（数据树根，重跑据此还原）',
     response_data     longtext        default null              comment '最终输出 JSON（执行结束时数据树快照）',
     status            varchar(16)     not null                  comment '执行状态（RUNNING进行中/SUCCESS成功/FAILED失败）',
+    trigger_source    varchar(16)     not null default 'MANUAL' comment '触发来源（MANUAL页面手动/API接口调用/ALERT告警通知链；ALERT 不参与告警评估，防「通知链失败→再告警→再通知」死循环）',
     error_msg         text            default null              comment '失败时错误信息',
     start_time        datetime        default null              comment '执行开始时间',
     end_time          datetime        default null              comment '执行结束时间',
@@ -60,6 +64,8 @@ create table databus_execution_node (
     end_time          datetime        default null              comment '节点结束时间（CmpStep.endTime）',
     duration          bigint(20)      default null              comment '节点耗时（毫秒，CmpStep.timeSpent）',
     branch_info       varchar(500)    default null              comment '分支标记（IF 真假/SWITCH 命中 case/循环轮次）',
+    depth             int(4)          default null              comment '链路嵌套深度（主链步骤=0，子链按层递增；旧数据为 null，前端按 0 处理）',
+    owner_chain       varchar(100)    default null              comment '该步所属链的 chainCode（子链步骤标明归属；主链步骤即执行链本身）',
     create_dept       bigint(20)      default null              comment '创建部门',
     create_by         bigint(20)      default null              comment '创建者',
     create_time       datetime        default null              comment '创建时间',

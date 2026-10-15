@@ -86,6 +86,16 @@ public class DatabusExecutionNodeVo implements Serializable {
     private String branchInfo;
 
     /**
+     * 链路嵌套深度：主链步骤=0，子链步骤按层级递增（旧数据为 null，前端按 0 处理）
+     */
+    private Integer depth;
+
+    /**
+     * 该步所属链的 chainCode（子链步骤标明归属）
+     */
+    private String ownerChain;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;

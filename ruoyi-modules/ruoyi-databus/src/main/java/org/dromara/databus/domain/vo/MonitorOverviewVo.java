@@ -57,6 +57,26 @@ public class MonitorOverviewVo {
     private Long avgDuration;
 
     /**
+     * 当前窗口 P95 耗时（毫秒）。小时桶分位不可跨桶加权，取窗口内各链路-小时桶的最劣值；无样本时为 null。
+     */
+    private Long p95Duration;
+
+    /**
+     * 当前窗口 P99 耗时（毫秒，口径同 P95）；无样本时为 null。
+     */
+    private Long p99Duration;
+
+    /**
+     * 当前窗口有执行的链路数（活跃链路）。
+     */
+    private Integer activeChainCount;
+
+    /**
+     * 当前处于 FIRING 状态的告警数（时点值，非窗口统计，无环比）。
+     */
+    private Long firingAlertCount;
+
+    /**
      * 上一窗口总执行次数。
      */
     private Integer prevTotalCount;
@@ -80,5 +100,20 @@ public class MonitorOverviewVo {
      * 上一窗口加权平均耗时（毫秒）；无样本时为 null。
      */
     private Long prevAvgDuration;
+
+    /**
+     * 上一窗口 P95 耗时（毫秒，口径同当前窗口）；无样本时为 null。
+     */
+    private Long prevP95Duration;
+
+    /**
+     * 上一窗口 P99 耗时（毫秒）；无样本时为 null。
+     */
+    private Long prevP99Duration;
+
+    /**
+     * 上一窗口有执行的链路数。
+     */
+    private Integer prevActiveChainCount;
 
 }

@@ -98,7 +98,10 @@ public class NodeStepResultCollector implements PostProcessNodeExecuteLifeCycle 
 
             CmpStep currentStep = findCurrentStep(slot, cmp);
             if (currentStep != null) {
-                currentStep.setStepData(new StepResultPayload(summary, detailJson));
+                // depth/ownerChain 取自 Chain 级探针的线程链栈：CmpStep 自身不含层级信息，
+                // 扁平步骤队列事后无法还原子链嵌套，只能在此刻就地打戳
+                currentStep.setStepData(new StepResultPayload(summary, detailJson,
+                    ChainDepthTracker.currentDepth(), ChainDepthTracker.currentChainId()));
             }
 
             // FULL 档执行记录：追加节点轨迹行（WHEN 并发安全队列），试运行/ BASIC 档无牌不进
@@ -140,6 +143,10 @@ public class NodeStepResultCollector implements PostProcessNodeExecuteLifeCycle 
             row.setDuration(currentStep.getTimeSpent());
             row.setBranchInfo(resolveBranchInfo(cmp, currentStep, booleanResult));
         }
+        // depth/ownerChain 与上面打戳同线程同时刻，直接取 Chain 级探针的线程链栈
+        // （不依赖 currentStep：反查失败时层级信息照样可采）
+        row.setDepth(ChainDepthTracker.currentDepth());
+        row.setOwnerChain(ChainDepthTracker.currentChainId());
         return row;
     }
 

@@ -3,18 +3,23 @@ package org.dromara.databus.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.databus.config.properties.DatabusMonitorProperties;
+import org.dromara.databus.domain.DatabusAlertRecord;
 import org.dromara.databus.domain.DatabusExecution;
 import org.dromara.databus.domain.DatabusMetricErrorHourly;
 import org.dromara.databus.domain.DatabusMetricHourly;
 import org.dromara.databus.domain.DatabusMetricNodeHourly;
+import org.dromara.databus.domain.vo.ChainHealthVo;
 import org.dromara.databus.domain.vo.MetricAggregateVo;
 import org.dromara.databus.domain.vo.MonitorErrorStreamVo;
 import org.dromara.databus.domain.vo.MonitorOverviewVo;
 import org.dromara.databus.domain.vo.MonitorRankingVo;
 import org.dromara.databus.domain.vo.MonitorTrendPointVo;
+import org.dromara.databus.enums.AlertStatusEnum;
 import org.dromara.databus.enums.ExecutionStatusEnum;
+import org.dromara.databus.mapper.DatabusAlertRecordMapper;
 import org.dromara.databus.mapper.DatabusExecutionMapper;
 import org.dromara.databus.mapper.DatabusMetricErrorHourlyMapper;
 import org.dromara.databus.mapper.DatabusMetricHourlyMapper;
@@ -41,6 +46,7 @@ import java.util.Objects;
  *   <li>小时桶以执行级 {@code databus_execution.start_time} 定界 [statHour, statHour+1h)；</li>
  *   <li>成功率 = 成功数 / 总数 × 100，保留两位；非成功状态（当前实现只有终态）一律计入失败；</li>
  *   <li>耗时分位用最近秩法（nearest-rank）：名次 = ceil(p × N)，样本不足自然落到最大值；</li>
+ *   <li>分位不可跨桶/跨链加权合并：窗口与趋势的分位一律取桶内最劣值（见各 VO 注释）；</li>
  *   <li>节点级靠 SQL group by（join 总账取 chain_code），链路级与错误级在 Java 侧分组，
  *       前者需精确算 P95/P99、后者需对错误信息做指纹归一化，都不适合纯 SQL。</li>
  * </ul>
@@ -48,6 +54,7 @@ import java.util.Objects;
  *
  * @author databus
  */
+@Slf4j
 @RequiredArgsConstructor
 @Service
 public class DatabusMetricServiceImpl implements IDatabusMetricService {
@@ -89,6 +96,8 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
     private final DatabusMetricNodeHourlyMapper metricNodeHourlyMapper;
 
     private final DatabusMetricErrorHourlyMapper metricErrorHourlyMapper;
+
+    private final DatabusAlertRecordMapper alertRecordMapper;
 
     private final DatabusMonitorProperties properties;
 
@@ -184,11 +193,18 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
         vo.setFailedCount(current.failed);
         vo.setSuccessRate(current.successRate);
         vo.setAvgDuration(current.avgDuration);
+        vo.setP95Duration(current.p95);
+        vo.setP99Duration(current.p99);
+        vo.setActiveChainCount(metricHourlyMapper.countDistinctChains(begin, end));
+        vo.setFiringAlertCount(firingAlertCount());
         vo.setPrevTotalCount(previous.total);
         vo.setPrevSuccessCount(previous.success);
         vo.setPrevFailedCount(previous.failed);
         vo.setPrevSuccessRate(previous.successRate);
         vo.setPrevAvgDuration(previous.avgDuration);
+        vo.setPrevP95Duration(previous.p95);
+        vo.setPrevP99Duration(previous.p99);
+        vo.setPrevActiveChainCount(metricHourlyMapper.countDistinctChains(begin.minusHours(span), begin));
         return vo;
     }
 
@@ -241,8 +257,32 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
         return rows;
     }
 
+    @Override
+    public List<ChainHealthVo> chainHealth(int hours) {
+        int span = clampHours(hours);
+        // 上界 +1h 纳入进行中的当前小时桶（口径同 overview/trend）
+        LocalDateTime end = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS).plusHours(1);
+        return metricHourlyMapper.selectChainHealth(end.minusHours(span), end);
+    }
+
     /**
-     * 把趋势点序列塌缩为一个窗口统计：计数求和，成功率按总量算，平均耗时按执行次数加权。
+     * 当前 FIRING 告警数（时点值）。告警模块异常不影响大盘：兜底返回 0。
+     */
+    private long firingAlertCount() {
+        try {
+            Long count = alertRecordMapper.selectCount(
+                Wrappers.<DatabusAlertRecord>lambdaQuery()
+                    .eq(DatabusAlertRecord::getStatus, AlertStatusEnum.FIRING.getCode()));
+            return count == null ? 0L : count;
+        } catch (Exception e) {
+            log.warn("统计 FIRING 告警数失败，按 0 展示: {}", e.getMessage());
+            return 0L;
+        }
+    }
+
+    /**
+     * 把趋势点序列塌缩为一个窗口统计：计数求和，成功率按总量算，平均耗时按执行次数加权，
+     * 分位取窗口内最劣值（跨桶不可加权）。
      */
     private WindowStat collapse(List<MonitorTrendPointVo> points) {
         long total = 0;
@@ -250,6 +290,8 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
         long failed = 0;
         BigDecimal weightedDuration = BigDecimal.ZERO;
         long durationWeight = 0;
+        Long worstP95 = null;
+        Long worstP99 = null;
         for (MonitorTrendPointVo point : points) {
             int pointTotal = point.getTotalCount() == null ? 0 : point.getTotalCount();
             total += pointTotal;
@@ -260,6 +302,12 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
                     BigDecimal.valueOf(point.getAvgDuration()).multiply(BigDecimal.valueOf(pointTotal)));
                 durationWeight += pointTotal;
             }
+            if (point.getP95Duration() != null && (worstP95 == null || point.getP95Duration() > worstP95)) {
+                worstP95 = point.getP95Duration();
+            }
+            if (point.getP99Duration() != null && (worstP99 == null || point.getP99Duration() > worstP99)) {
+                worstP99 = point.getP99Duration();
+            }
         }
         WindowStat stat = new WindowStat();
         stat.total = (int) total;
@@ -269,6 +317,8 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
         stat.avgDuration = durationWeight > 0
             ? weightedDuration.divide(BigDecimal.valueOf(durationWeight), 0, RoundingMode.HALF_UP).longValue()
             : null;
+        stat.p95 = worstP95;
+        stat.p99 = worstP99;
         return stat;
     }
 
@@ -316,6 +366,10 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
         private BigDecimal successRate;
 
         private Long avgDuration;
+
+        private Long p95;
+
+        private Long p99;
 
     }
 

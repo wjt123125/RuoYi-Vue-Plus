@@ -8,6 +8,7 @@ import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.web.core.BaseController;
+import org.dromara.databus.domain.vo.ChainHealthVo;
 import org.dromara.databus.domain.vo.MetricAggregateVo;
 import org.dromara.databus.domain.vo.MonitorErrorStreamVo;
 import org.dromara.databus.domain.vo.MonitorOverviewVo;
@@ -98,6 +99,17 @@ public class DatabusMonitorController extends BaseController {
     @GetMapping("/error-stream")
     public R<List<MonitorErrorStreamVo>> errorStream(@RequestParam(defaultValue = "20") Integer limit) {
         return R.ok(metricService.errorStream(limit));
+    }
+
+    /**
+     * 链路健康：窗口内每个有执行的链路一行的调用量/成功率/失败/平均/P95 全景。
+     *
+     * @param hours 窗口小时数，默认 24、上限 720
+     */
+    @SaCheckPermission("databus:monitor:query")
+    @GetMapping("/chain-health")
+    public R<List<ChainHealthVo>> chainHealth(@RequestParam(defaultValue = "24") Integer hours) {
+        return R.ok(metricService.chainHealth(hours));
     }
 
     /**

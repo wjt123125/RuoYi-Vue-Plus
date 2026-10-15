@@ -3,6 +3,7 @@ package org.dromara.databus.executor.trace;
 import lombok.Getter;
 import org.dromara.common.mybatis.utils.IdGeneratorUtil;
 import org.dromara.databus.enums.LogLevelEnum;
+import org.dromara.databus.enums.TriggerSourceEnum;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -62,6 +63,11 @@ public class ExecutionTrace {
     private final Date startTime;
 
     /**
+     * 触发来源（MANUAL/API/ALERT；ALERT 产生的执行不参与告警评估，防死循环）
+     */
+    private final String triggerSource;
+
+    /**
      * FULL 档节点行缓冲（WHEN 并发追加，afterFlow 单次排空）
      */
     private final Queue<NodeTraceRow> nodeRows = new ConcurrentLinkedQueue<>();
@@ -74,22 +80,32 @@ public class ExecutionTrace {
     private final ThreadLocal<String> inputSnapshot = new ThreadLocal<>();
 
     private ExecutionTrace(Long recordId, Long chainId, String chainCode, String logLevel,
-                           String requestData, Date startTime) {
+                           String requestData, Date startTime, String triggerSource) {
         this.recordId = recordId;
         this.chainId = chainId;
         this.chainCode = chainCode;
         this.logLevel = logLevel;
         this.requestData = requestData;
         this.startTime = startTime;
+        this.triggerSource = triggerSource;
     }
 
     /**
      * 开一块追踪牌（id 在挂牌时生成，保证总账主键与节点行外键执行前就已确定）。
+     * 触发来源缺省 MANUAL（页面手动/既有调用方）。
      */
     public static ExecutionTrace start(Long chainId, String chainCode, String logLevel,
                                        String requestData, Date startTime) {
+        return start(chainId, chainCode, logLevel, requestData, startTime, TriggerSourceEnum.MANUAL.getCode());
+    }
+
+    /**
+     * 开一块追踪牌并指定触发来源（ALERT 渠道通知链用，评估据此排除）。
+     */
+    public static ExecutionTrace start(Long chainId, String chainCode, String logLevel,
+                                       String requestData, Date startTime, String triggerSource) {
         return new ExecutionTrace(IdGeneratorUtil.nextLongId(), chainId, chainCode, logLevel,
-            requestData, startTime);
+            requestData, startTime, triggerSource);
     }
 
     /**

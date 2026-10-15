@@ -26,4 +26,15 @@ public class StepResultPayload {
      * 该步数据空间 {@code $.<tag>} 子树的当场 JSON 快照（钩子里即时序列化，循环各轮各保现场）。
      */
     private String detailJson;
+
+    /**
+     * 该步所属链的嵌套深度：主链＝0，一级子链＝1（前端执行明细按此缩进）。
+     * 由 {@link ChainDepthTracker} 的线程级链栈算出，WHEN 并行子链的 worker 线程记 0。
+     */
+    private Integer depth;
+
+    /**
+     * 该步所属链的 chainId（子链步骤用于标明归属，栈空时为 null）。
+     */
+    private String ownerChain;
 }

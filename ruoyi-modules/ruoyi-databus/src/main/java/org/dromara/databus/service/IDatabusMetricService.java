@@ -1,5 +1,6 @@
 package org.dromara.databus.service;
 
+import org.dromara.databus.domain.vo.ChainHealthVo;
 import org.dromara.databus.domain.vo.MetricAggregateVo;
 import org.dromara.databus.domain.vo.MonitorErrorStreamVo;
 import org.dromara.databus.domain.vo.MonitorOverviewVo;
@@ -68,5 +69,13 @@ public interface IDatabusMetricService {
      * @return 错误流条目（按开始时间倒序）
      */
     List<MonitorErrorStreamVo> errorStream(int limit);
+
+    /**
+     * 链路健康列表：窗口内每个有执行的链路一行的量质速度全景（调用量/成功率/失败/平均/P95）。
+     *
+     * @param hours 窗口小时数（≤0 或过大时内部按默认/上限处理）
+     * @return 按调用量倒序的链路健康行
+     */
+    List<ChainHealthVo> chainHealth(int hours);
 
 }

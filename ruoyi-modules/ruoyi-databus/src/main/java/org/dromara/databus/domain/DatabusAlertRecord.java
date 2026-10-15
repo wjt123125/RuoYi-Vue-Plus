@@ -59,14 +59,19 @@ public class DatabusAlertRecord extends BaseEntity {
     private String message;
 
     /**
-     * 通知对象（触发时快照，逗号/分号分隔的邮箱）
+     * 通知渠道（触发时快照，EMAIL/WEBHOOK/CHAIN 逗号分隔）
      */
-    private String notifyEmails;
+    private String notifyType;
 
     /**
-     * 通知结果（SUCCESS / FAILED / SKIPPED，见 AlertNotifyStatusEnum）
+     * 通知总结果（SUCCESS全成 / PARTIAL部分失败 / FAILED全失败 / SKIPPED未配渠道）
      */
     private String notifyStatus;
+
+    /**
+     * 各渠道结果 JSON（{"EMAIL":"SUCCESS","WEBHOOK":"FAILED: ..."}）
+     */
+    private String notifyDetail;
 
     /**
      * 触发时间

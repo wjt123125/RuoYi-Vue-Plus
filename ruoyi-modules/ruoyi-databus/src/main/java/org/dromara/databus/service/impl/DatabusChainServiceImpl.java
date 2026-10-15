@@ -26,8 +26,11 @@ import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.service.IDatabusChainService;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -87,6 +90,16 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
      * 编码结尾「_数字」：建议值先剥离源编码既有 _N 尾缀，避免 xxx_2_2
      */
     private static final Pattern CODE_TRAILING_SEQ = Pattern.compile("_\\d+$");
+
+    /**
+     * 子流程引用节点的组件类型（与 ExpressParserEnum.CHAIN、前端画布同值）
+     */
+    private static final String CHAIN_REF_TYPE = "CHAIN";
+
+    /**
+     * 循环引用报错里的路径分隔符
+     */
+    private static final String REF_PATH_SEPARATOR = " → ";
 
     private final DatabusChainMapper chainMapper;
 
@@ -287,6 +300,11 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
             && !ChainStatusEnum.OFFLINE.getCode().equals(status)) {
             throw new ServiceException("当前状态不允许发布（仅草稿/已下线可发布）");
         }
+        // 子流程引用把关（decisions.md 第七章）：草稿期不拦（编排自由），发布这道关一次性校验——
+        // ① 循环引用（A→B→A）成环则引擎会无限递归，只能靠运行时深度保险丝兜底，代价是一次失败执行；
+        // ② 被引子链必须已发布，否则主链能发布成功、执行时引擎在 chainMap 里查不到子链直接报错，
+        //    故障点离操作点太远，排查成本高
+        validateChainReferences(chain);
         // 先推 Rule-DB（脚本冲突/引擎异常时状态不变，重试即重推；推成功而后续状态更新失败
         // 会留孤儿规则，重发时被 UPSERT 覆盖，无害）
         rulePublishService.publishChain(chain.getChainCode(), elExpression, cmpProperty);
@@ -318,6 +336,93 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
             rulePublishService.removeChainQuietly(chain.getChainCode());
         }
         return flag;
+    }
+
+    /**
+     * 发布前校验子流程（CHAIN）引用：沿组件树递归下钻，检出循环引用与不可执行的子链。
+     * <p>
+     * 采用 DFS 三色标记：{@code path} 为灰色（当前递归路径上，命中即成环）、{@code checked} 为黑色
+     * （子图已完整校验通过，直接剪枝——菱形引用 A→B、A→C、B→D、C→D 时 D 只展开一次）。
+     *
+     * @param chain 待发布链路
+     */
+    private void validateChainReferences(DatabusChain chain) {
+        List<String> path = new ArrayList<>();
+        path.add(chain.getChainCode());
+        walkChainReferences(chain.getCmpProperty(), path, new HashSet<>());
+    }
+
+    /**
+     * 递归校验组件树里的全部 CHAIN 引用。
+     *
+     * @param root    组件树节点
+     * @param path    灰色集：当前递归路径（自待发布链路起的 chainCode 序列）
+     * @param checked 黑色集：已完整校验通过的子链 chainCode
+     */
+    private void walkChainReferences(CmpProperty root, List<String> path, Set<String> checked) {
+        for (String refCode : collectChainRefs(root)) {
+            int hit = path.indexOf(refCode);
+            if (hit >= 0) {
+                // 回显完整环路径（如 A → B → A），用户照着改一处引用即可，不必自己去猜哪层绕回来了
+                List<String> cycle = new ArrayList<>(path.subList(hit, path.size()));
+                cycle.add(refCode);
+                throw new ServiceException("子流程循环引用，不能发布：" + String.join(REF_PATH_SEPARATOR, cycle));
+            }
+            if (!checked.add(refCode)) {
+                continue;
+            }
+            DatabusChain sub = chainMapper.selectOne(Wrappers.<DatabusChain>lambdaQuery()
+                .eq(DatabusChain::getChainCode, refCode));
+            if (sub == null) {
+                throw new ServiceException("引用的子流程'" + refCode + "'已不存在，请检查引用或移除该节点");
+            }
+            // 模板红线与主链同口径：模板不进执行入口，运行时引擎查不到它的规则
+            if (TEMPLATE_FLAG_YES.equals(sub.getIsTemplate())) {
+                throw new ServiceException("子流程'" + refCode + "'是精选模板，运行时不可被引用，请复制副本后引用副本");
+            }
+            if (!ChainStatusEnum.PUBLISHED.getCode().equals(sub.getStatus())) {
+                throw new ServiceException("子流程'" + refCode + "'尚未发布，请先发布它再发布本链路");
+            }
+            if (sub.getCmpProperty() == null) {
+                throw new ServiceException("子流程'" + refCode + "'未编排组件，请先补全它的编排");
+            }
+            path.add(refCode);
+            walkChainReferences(sub.getCmpProperty(), path, checked);
+            path.remove(path.size() - 1);
+        }
+    }
+
+    /**
+     * 收集组件树（含 condition 分支与全部 children）中的 CHAIN 引用编码，按出现顺序去重。
+     *
+     * @param root 组件树节点
+     * @return 子链 chainCode 列表，无引用时为空列表
+     */
+    private List<String> collectChainRefs(CmpProperty root) {
+        List<String> refs = new ArrayList<>();
+        collectChainRefs(root, refs);
+        return refs;
+    }
+
+    private void collectChainRefs(CmpProperty node, List<String> refs) {
+        if (node == null) {
+            return;
+        }
+        if (CHAIN_REF_TYPE.equalsIgnoreCase(node.getType())) {
+            // CHAIN 节点的 chainCode 存在顶层 id（buildChildrenChain 的 .id(chainCode)），
+            // 历史数据兜底读 properties.id
+            String code = StringUtils.isNotBlank(node.getId()) ? node.getId()
+                : (node.getProperties() != null ? node.getProperties().getId() : null);
+            if (StringUtils.isNotBlank(code) && !refs.contains(code)) {
+                refs.add(code);
+            }
+        }
+        collectChainRefs(node.getCondition(), refs);
+        if (node.getChildren() != null) {
+            for (CmpProperty child : node.getChildren()) {
+                collectChainRefs(child, refs);
+            }
+        }
     }
 
     @Override

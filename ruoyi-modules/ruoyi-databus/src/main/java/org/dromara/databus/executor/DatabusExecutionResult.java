@@ -90,6 +90,17 @@ public class DatabusExecutionResult {
          */
         private String detailJson;
 
+        /**
+         * 嵌套深度：主链步骤＝0，子链步骤按层级递增（前端执行明细表的缩进依据）。
+         * 未采集到时为 null，前端按 0 处理。
+         */
+        private Integer depth;
+
+        /**
+         * 该步所属链的 chainId（子链步骤标明归属；主链步骤即执行链本身）。
+         */
+        private String ownerChain;
+
         /** 节点耗时（毫秒）。 */
         private Long timeSpent;
 

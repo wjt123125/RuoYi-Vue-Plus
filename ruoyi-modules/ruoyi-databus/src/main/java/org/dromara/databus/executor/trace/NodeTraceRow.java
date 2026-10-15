@@ -79,4 +79,14 @@ public class NodeTraceRow {
      */
     private String branchInfo;
 
+    /**
+     * 链路嵌套深度：主链步骤=0，子链步骤按层级递增（执行明细的缩进依据）
+     */
+    private Integer depth;
+
+    /**
+     * 该步所属链的 chainCode（子链步骤标明归属；主链步骤即执行链本身）
+     */
+    private String ownerChain;
+
 }

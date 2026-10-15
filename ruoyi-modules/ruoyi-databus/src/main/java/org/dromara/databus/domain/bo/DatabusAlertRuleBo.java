@@ -76,11 +76,17 @@ public class DatabusAlertRuleBo implements Serializable {
     private BigDecimal thresholdRate;
 
     /**
-     * 通知邮箱（多个用逗号或分号分隔）
+     * 通知渠道（EMAIL/WEBHOOK/CHAIN，多选逗号分隔）
      */
-    @NotBlank(message = "通知邮箱不能为空", groups = {AddGroup.class, EditGroup.class})
-    @Size(max = 500, message = "通知邮箱长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
-    private String notifyEmails;
+    @NotBlank(message = "通知渠道不能为空", groups = {AddGroup.class, EditGroup.class})
+    @Size(max = 50, message = "通知渠道长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
+    private String notifyType;
+
+    /**
+     * 各渠道参数 JSON（键为渠道类型；Service 层按勾选渠道校验参数完整性）
+     */
+    @Size(max = 2000, message = "渠道配置长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
+    private String notifyConfig;
 
     /**
      * 是否启用（Y启用 N停用）

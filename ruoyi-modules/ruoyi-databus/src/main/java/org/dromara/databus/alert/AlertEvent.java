@@ -1,0 +1,173 @@
+package org.dromara.databus.alert;
+
+import lombok.Data;
+import org.dromara.databus.domain.DatabusAlertRecord;
+import org.dromara.databus.domain.DatabusAlertRule;
+import org.dromara.databus.enums.AlertRuleTypeEnum;
+import org.dromara.databus.enums.AlertStatusEnum;
+
+import java.io.Serial;
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+/**
+ * 告警事件载荷：一次「触发」或「恢复」通知要说的全部事情。
+ * <p>
+ * 三种渠道共用同一份载荷——邮件拿它拼正文、Webhook 直接把它序列化成 JSON 推出去、
+ * 通知链把它作为入参数据树的根。字段一律用可读类型（时间已格式化成字符串），
+ * 接收方零转换即可用。
+ * <p>
+ * 恢复也发通知：{@link #status} 为 {@code RECOVERED} 时 {@link #message} 是恢复说明，
+ * 让值班人不必自己回去翻页面确认故障是否结束。
+ *
+ * @author databus
+ */
+@Data
+public class AlertEvent implements Serializable {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    /**
+     * 时间格式（载荷里的时间一律格式化成字符串，接收方零转换）
+     */
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /**
+     * 告警记录id（databus_alert_record 主键，通知链可据此回查/回写）
+     */
+    private Long recordId;
+
+    /**
+     * 规则id
+     */
+    private Long ruleId;
+
+    /**
+     * 规则名称
+     */
+    private String ruleName;
+
+    /**
+     * 目标链路编码
+     */
+    private String chainCode;
+
+    /**
+     * 规则类型编码（CONSECUTIVE_FAILURE / SUCCESS_RATE）
+     */
+    private String alertType;
+
+    /**
+     * 规则类型中文说明
+     */
+    private String alertTypeInfo;
+
+    /**
+     * 事件状态（FIRING 触发 / RECOVERED 恢复）
+     */
+    private String status;
+
+    /**
+     * 事件状态中文说明
+     */
+    private String statusInfo;
+
+    /**
+     * 事件说明（触发时为命中条件，恢复时为恢复说明）
+     */
+    private String message;
+
+    /**
+     * 评估窗口（分钟）
+     */
+    private Integer windowMinutes;
+
+    /**
+     * 连续失败次数阈值（CONSECUTIVE_FAILURE 有值）
+     */
+    private Integer thresholdCount;
+
+    /**
+     * 成功率下限百分比（SUCCESS_RATE 有值）
+     */
+    private BigDecimal thresholdRate;
+
+    /**
+     * 触发时间（yyyy-MM-dd HH:mm:ss）
+     */
+    private String triggerTime;
+
+    /**
+     * 恢复时间（yyyy-MM-dd HH:mm:ss；触发事件为空）
+     */
+    private String recoverTime;
+
+    /**
+     * 本次通知勾选的渠道（逗号分隔，接收方可据此判断还有哪些渠道同时在通知）
+     */
+    private String notifyType;
+
+    /**
+     * 按规则 + 事件状态组装载荷。
+     *
+     * @param rule        命中的规则
+     * @param record      告警记录（提供 recordId / triggerTime / recoverTime）
+     * @param status      事件状态（FIRING / RECOVERED）
+     * @param message     事件说明
+     * @return 告警事件载荷
+     */
+    public static AlertEvent of(DatabusAlertRule rule, DatabusAlertRecord record, String status, String message) {
+        AlertEvent event = new AlertEvent();
+        event.setRecordId(record.getId());
+        event.setRuleId(rule.getId());
+        event.setRuleName(rule.getRuleName());
+        event.setChainCode(rule.getChainCode());
+        event.setAlertType(rule.getRuleType());
+        event.setAlertTypeInfo(typeInfo(rule.getRuleType()));
+        event.setStatus(status);
+        event.setStatusInfo(statusInfo(status));
+        event.setMessage(message);
+        event.setWindowMinutes(rule.getWindowMinutes());
+        event.setThresholdCount(rule.getThresholdCount());
+        event.setThresholdRate(rule.getThresholdRate());
+        event.setTriggerTime(format(record.getTriggerTime()));
+        event.setRecoverTime(format(record.getRecoverTime()));
+        event.setNotifyType(rule.getNotifyType());
+        return event;
+    }
+
+    /**
+     * 是否恢复事件。
+     *
+     * @return true = RECOVERED
+     */
+    public boolean isRecovered() {
+        return AlertStatusEnum.RECOVERED.getCode().equals(status);
+    }
+
+    private static String format(LocalDateTime time) {
+        return time == null ? null : time.format(TIME_FORMATTER);
+    }
+
+    private static String typeInfo(String ruleType) {
+        for (AlertRuleTypeEnum type : AlertRuleTypeEnum.values()) {
+            if (type.getCode().equals(ruleType)) {
+                return type.getInfo();
+            }
+        }
+        return ruleType;
+    }
+
+    private static String statusInfo(String status) {
+        for (AlertStatusEnum value : AlertStatusEnum.values()) {
+            if (value.getCode().equals(status)) {
+                return value.getInfo();
+            }
+        }
+        return status;
+    }
+
+}

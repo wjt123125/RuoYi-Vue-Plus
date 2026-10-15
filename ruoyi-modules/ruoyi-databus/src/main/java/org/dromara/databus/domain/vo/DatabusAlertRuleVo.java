@@ -57,9 +57,14 @@ public class DatabusAlertRuleVo implements Serializable {
     private BigDecimal thresholdRate;
 
     /**
-     * 通知邮箱
+     * 通知渠道（EMAIL/WEBHOOK/CHAIN 逗号分隔）
      */
-    private String notifyEmails;
+    private String notifyType;
+
+    /**
+     * 各渠道参数 JSON
+     */
+    private String notifyConfig;
 
     /**
      * 是否启用（Y/N）

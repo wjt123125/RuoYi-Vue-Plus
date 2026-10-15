@@ -55,6 +55,11 @@ public class DatabusExecution extends BaseEntity {
     private String status;
 
     /**
+     * 触发来源（MANUAL手动/API接口/ALERT告警通知链；ALERT 不参与告警评估）
+     */
+    private String triggerSource;
+
+    /**
      * 失败时错误信息
      */
     private String errorMsg;

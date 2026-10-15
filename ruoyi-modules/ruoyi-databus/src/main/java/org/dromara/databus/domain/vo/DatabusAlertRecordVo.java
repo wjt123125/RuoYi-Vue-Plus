@@ -56,14 +56,19 @@ public class DatabusAlertRecordVo implements Serializable {
     private String message;
 
     /**
-     * 通知对象
+     * 通知渠道（触发时快照）
      */
-    private String notifyEmails;
+    private String notifyType;
 
     /**
-     * 通知结果（SUCCESS / FAILED / SKIPPED）
+     * 通知总结果（SUCCESS / PARTIAL / FAILED / SKIPPED）
      */
     private String notifyStatus;
+
+    /**
+     * 各渠道结果 JSON
+     */
+    private String notifyDetail;
 
     /**
      * 触发时间

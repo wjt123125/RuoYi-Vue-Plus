@@ -19,6 +19,7 @@ import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.Properties;
 import org.dromara.databus.enums.LogLevelEnum;
+import org.dromara.databus.enums.TriggerSourceEnum;
 import org.dromara.databus.executor.trace.ExecutionTrace;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.service.ISysDatabusConnectionService;
@@ -65,13 +66,29 @@ public class DatabusExecutor {
     private final DatabusChainMapper chainMapper;
 
     /**
-     * 同步执行链路。
+     * 同步执行链路（触发来源默认 MANUAL：页面手动执行/重跑）。
      *
      * @param chainId     链路编码
      * @param requestData 执行入参（任意对象，内部转为 DatabusContext 的初始 JSON 文档）
      * @return 执行结果
      */
     public DatabusExecutionResult execute(String chainId, Object requestData) {
+        return execute(chainId, requestData, TriggerSourceEnum.MANUAL);
+    }
+
+    /**
+     * 同步执行链路并登记触发来源。
+     * <p>
+     * trigger_source 会随追踪牌落进 databus_execution.total 账；告警评估查询统一排除
+     * {@link TriggerSourceEnum#ALERT}——告警通知链自己失败再被告警命中就会死循环，
+     * 从数据源头掐断。
+     *
+     * @param chainId       链路编码
+     * @param requestData   执行入参（任意对象，内部转为 DatabusContext 的初始 JSON 文档）
+     * @param triggerSource 触发来源（MANUAL/API/ALERT）
+     * @return 执行结果
+     */
+    public DatabusExecutionResult execute(String chainId, Object requestData, TriggerSourceEnum triggerSource) {
         String executionId = generateExecutionId();
         // 计时口径：起点放在 execute2Resp 之前，costTime 是数据总线端到端耗时
         // （含上下文初始化 + 连接查库注入），不是纯 LiteFlow 引擎耗时——
@@ -92,7 +109,7 @@ public class DatabusExecutor {
         // 挂执行追踪牌（执行记录落库的唯一入口信号，设计档 §4.3）：
         // 按链路 log_level 决定档位，OFF 不挂；链路查不到也挂 BASIC 牌留失败总账；
         // 试运行路径（executeByEl）不挂牌。下游钩子只认牌，不依赖链名约定。
-        attachExecutionTrace(chain, chainId, context, startTime);
+        attachExecutionTrace(chain, chainId, context, startTime, triggerSource);
 
         try {
             LiteflowResponse response = flowExecutor.execute2Resp(chainId, requestData, context);
@@ -108,6 +125,8 @@ public class DatabusExecutor {
         } finally {
             // 循环索引 ThreadLocal 是节点级临时状态，执行结束（含异常路径）即清，防工作线程复用串台
             context.clearLoopState();
+            // 链路嵌套深度探针同理：熔断/异常路径可能漏掉出栈，这里兜底清栈
+            ChainDepthTracker.clear();
         }
     }
 
@@ -167,6 +186,8 @@ public class DatabusExecutor {
         } finally {
             // 循环索引 ThreadLocal 是节点级临时状态，执行结束（含异常路径）即清，防工作线程复用串台
             context.clearLoopState();
+            // 链路嵌套深度探针同理：熔断/异常路径可能漏掉出栈，这里兜底清栈
+            ChainDepthTracker.clear();
         }
     }
 
@@ -404,6 +425,8 @@ public class DatabusExecutor {
         if (step.getStepData() instanceof StepResultPayload payload) {
             nodeStep.setSummary(payload.getSummary());
             nodeStep.setDetailJson(payload.getDetailJson());
+            nodeStep.setDepth(payload.getDepth());
+            nodeStep.setOwnerChain(payload.getOwnerChain());
         }
         return nodeStep;
     }
@@ -431,21 +454,23 @@ public class DatabusExecutor {
      *     <li>入参快照在注入连接后拍摄：连接注册表不在 jayway 数据树内，快照只含业务入参。</li>
      * </ul>
      *
-     * @param chain     按 chainCode 查到的链路，可能为 null
-     * @param chainCode 调用方传入的链路编码
-     * @param context   本次执行上下文
-     * @param startTime 执行起点（execute2Resp 之前，与端到端耗时口径一致）
+     * @param chain         按 chainCode 查到的链路，可能为 null
+     * @param chainCode     调用方传入的链路编码
+     * @param context       本次执行上下文
+     * @param startTime     执行起点（execute2Resp 之前，与端到端耗时口径一致）
+     * @param triggerSource 触发来源（MANUAL/API/ALERT）
      */
     private void attachExecutionTrace(DatabusChain chain, String chainCode,
-                                      DatabusContext context, Date startTime) {
+                                      DatabusContext context, Date startTime, TriggerSourceEnum triggerSource) {
         String level = resolveLogLevel(chain);
         if (LogLevelEnum.OFF.getCode().equals(level)) {
             log.info("[databus] 链路 log_level=OFF，本次执行不落执行记录 chainCode={}", chainCode);
             return;
         }
         Long chainId = chain == null ? null : chain.getId();
+        String source = triggerSource == null ? TriggerSourceEnum.MANUAL.getCode() : triggerSource.getCode();
         ExecutionTrace trace = ExecutionTrace.start(chainId, chainCode, level,
-            context.toJsonString(), startTime);
+            context.toJsonString(), startTime, source);
         context.attachTrace(trace);
     }
 

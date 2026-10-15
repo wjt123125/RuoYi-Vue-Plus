@@ -60,7 +60,7 @@ public class DatabusExecutionServiceImpl implements IDatabusExecutionService {
         // 列表白名单：排除 request_data / response_data 两个 longtext 大字段（列表零消费），
         // error_msg 保留（失败列表行内摘要展示）；详情接口取全量。
         lqw.select(DatabusExecution::getId, DatabusExecution::getChainId, DatabusExecution::getChainCode,
-            DatabusExecution::getStatus, DatabusExecution::getErrorMsg,
+            DatabusExecution::getStatus, DatabusExecution::getTriggerSource, DatabusExecution::getErrorMsg,
             DatabusExecution::getStartTime, DatabusExecution::getEndTime, DatabusExecution::getDuration,
             DatabusExecution::getCreateTime);
         lqw.like(StringUtils.isNotBlank(bo.getChainCode()), DatabusExecution::getChainCode, bo.getChainCode());

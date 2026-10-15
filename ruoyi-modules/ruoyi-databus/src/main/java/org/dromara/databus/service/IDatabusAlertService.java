@@ -82,4 +82,15 @@ public interface IDatabusAlertService {
      */
     AlertEvaluateVo evaluate();
 
+    /**
+     * 只评估指定链路的启用规则（事件驱动入口：链路执行落账后由
+     * {@code AlertEvaluateTrigger} 异步调用，做到失败秒级告警）。
+     * <p>判定逻辑、状态机去重与 {@link #evaluate()} 完全一致；与分钟级定时评估并发时
+     * 按规则串行，最坏重复评估不会重复通知。
+     *
+     * @param chainCode 链路编码（空白直接返回空汇总）
+     * @return 评估结果汇总
+     */
+    AlertEvaluateVo evaluateChain(String chainCode);
+
 }

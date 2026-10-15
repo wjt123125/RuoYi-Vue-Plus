@@ -11,9 +11,9 @@ import java.math.BigDecimal;
 /**
  * 数据总线告警规则对象 databus_alert_rule。
  * <p>
- * 一条规则 = 「目标链路 + 规则类型 + 时间窗口」的评估条件 + 收件人。评估由
+ * 一条规则 = 「目标链路 + 规则类型 + 时间窗口」的评估条件 + 通知渠道配置。评估由
  * {@code DatabusAlertEvaluateJob} 每分钟扫描启用规则执行；窗口内命中即触发一条
- * {@link DatabusAlertRecord}（FIRING）并发邮件，恢复时翻转该记录。
+ * {@link DatabusAlertRecord}（FIRING）并按 notifyType 分发通知，恢复时翻转该记录。
  *
  * @author databus
  */
@@ -59,9 +59,14 @@ public class DatabusAlertRule extends BaseEntity {
     private BigDecimal thresholdRate;
 
     /**
-     * 通知邮箱（多个用逗号或分号分隔）
+     * 通知渠道（EMAIL/WEBHOOK/CHAIN，多选逗号分隔，见 AlertNotifyTypeEnum）
      */
-    private String notifyEmails;
+    private String notifyType;
+
+    /**
+     * 各渠道参数 JSON（键为渠道类型，如 {"EMAIL":{"emails":"a@x.com"},"CHAIN":{"chainCode":"x"}}）
+     */
+    private String notifyConfig;
 
     /**
      * 是否启用（Y启用 N停用）

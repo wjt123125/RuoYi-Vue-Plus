@@ -51,6 +51,11 @@ public class DatabusExecutionVo implements Serializable {
     private String status;
 
     /**
+     * 触发来源（MANUAL手动/API接口/ALERT告警通知链）
+     */
+    private String triggerSource;
+
+    /**
      * 失败时错误信息
      */
     private String errorMsg;

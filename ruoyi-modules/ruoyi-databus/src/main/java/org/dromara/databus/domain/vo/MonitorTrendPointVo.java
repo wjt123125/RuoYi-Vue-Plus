@@ -46,4 +46,24 @@ public class MonitorTrendPointVo {
      */
     private Long avgDuration;
 
+    /**
+     * 该小时 P95 耗时（毫秒）。小时桶内多链路的 P95 不可跨链加权合并，取桶内各链路的最劣值。
+     */
+    private Long p95Duration;
+
+    /**
+     * 该小时 P99 耗时（毫秒，口径同 P95）。
+     */
+    private Long p99Duration;
+
+    /**
+     * 该小时最长单次执行耗时（毫秒）。
+     */
+    private Long maxDuration;
+
+    /**
+     * 该小时有执行的链路数（活跃链路）。
+     */
+    private Integer chainCount;
+
 }

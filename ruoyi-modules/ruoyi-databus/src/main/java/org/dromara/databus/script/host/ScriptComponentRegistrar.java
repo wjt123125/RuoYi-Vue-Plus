@@ -18,14 +18,21 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 脚本组件运行时注册器：把编译产物实例化（走完整 Spring Bean 生命周期，
- * 支持 @Autowired/构造注入/@PostConstruct）并挂入 LiteFlow FlowBus。
+ * 脚本组件的「上岗登记处」：编译车间交来成品（{@link ScriptArtifact}），
+ * 这里把人造出来、安排进 LiteFlow 的工位，顺带管一本运行台账。
  *
- * <p>注册路径刻意绕过 {@code LiteFlowNodeBuilder.setClazz(Class)}——它只存类名字符串，
- * build 时 {@code Class.forName} 走应用类加载器，看不到自定义 {@link ScriptClassLoader}
- * 内的类；这里直接 {@code createBean} 出实例后调 {@code FlowBus.addManagedNode}，
- * 其底层是裸 Map.put（不查重，后者覆盖前者），同 code 热更即时生效，
- * 旧 ClassLoader 在替换后无可达路径由 GC 卸载。
+ * <p>造人用 Spring 的 createBean——走完整 Bean 生命周期（构造注入、@Autowired、
+ * @PostConstruct、AOP 一个不少），但不把 bean 登记进容器：动态类名挤进单例池
+ * 没好处，还挡着旧 {@link ScriptClassLoader} 卸载。安排工位用
+ * {@code FlowBus.addManagedNode}——直接把造好的实例塞到 LiteFlow 手里。
+ *
+ * <p>为什么绕开 LiteFlow 自带的注册器（LiteflowNodeBuilder）：它的登记习惯是
+ * 只记一个「类名字符串」，等人要用了再拿应用类加载器 Class.forName 去找。
+ * 可我们的类只活在 ScriptClassLoader 的内存里，应用类加载器看不见这个名字。
+ * 所以不走「报名字、回头查」的路子，直接把人领到工位坐下。addManagedNode
+ * 底层是裸 Map.put：不查重，同 code 后来的盖掉先来的——热更、接管内置件
+ * （同 code 的脚本版盖掉内置 @LiteflowComponent）都靠这一下；旧加载器就此
+ * 失去可达引用，GC 找机会把整代旧类收走。
  *
  * @author databus
  */
@@ -37,27 +44,35 @@ public class ScriptComponentRegistrar {
     private final ApplicationContext applicationContext;
 
     /**
-     * code → 当前生效工件（持有当前 ClassLoader；替换即释放旧加载器引用）
+     * code → 当前生效工件。既是台账，也替当前 {@link ScriptClassLoader}
+     * 兜着引用：put 覆盖的瞬间，旧版本在这条账上就没名额了，旧加载器只剩
+     * FlowBus 里旧节点实例还短暂捏着——等它也被覆盖，整代旧类就能交给
+     * GC 回收。
      */
     private final Map<String, LoadedScript> active = new ConcurrentHashMap<>();
 
     /**
-     * 组件 id → 运行时健康（含启动期失败件，失败件不在 active 中）
+     * 组件 id → 运行时健康台账。比 active 收得宽：启动期失败的件
+     * 没注册上工（不进 active），但病志也得入账——不然「库里明明有件，
+     * 工位上怎么没人」没处对证。
      */
     private final Map<Long, ScriptRuntimeVo> health = new ConcurrentHashMap<>();
 
     /**
-     * 注册（或热替换）一个脚本组件。
-     * <p>实例化/注入失败与 FlowBus 注册失败均抛出异常，由保存管线回滚事务——
-     * 保证“能保存即可运行”，FlowBus 不会停留在半成品状态。
+     * 注册（或热替换）一个脚本组件：造实例 → 认节点类型 → 塞进 FlowBus →
+     * 记两本账（active + health）。
+     *
+     * <p>实例化/注入失败、FlowBus 注册失败都直接抛异常，由保存管线回滚事务——
+     * 这是「能保存的就能跑」的后半段：数据库不留编不过的版本，FlowBus 也不
+     * 停在半成品状态，现网永远跑最近一次注册成功的版本。
      */
     public void register(DatabusComponent row, ScriptArtifact artifact) {
         String code = row.getComponentCode();
         Class<?> primaryClass = artifact.primaryClass();
         NodeComponent instance;
         try {
-            // AUTOWIRE_CONSTRUCTOR：构造注入 + 字段注入 + initializeBean（@PostConstruct/AOP）全流程，
-            // 但不把 bean 注册进容器（避免动态类名污染单例池，也便于旧 ClassLoader 卸载）
+            // AUTOWIRE_CONSTRUCTOR：构造注入 + 字段注入 + initializeBean（@PostConstruct/AOP）全流程都走，
+            // 但不把 bean 登记进容器——动态类名挤进单例池没好处，还挡着旧 ClassLoader 卸载
             Object bean = applicationContext.getAutowireCapableBeanFactory()
                 .createBean(primaryClass, AutowireCapableBeanFactory.AUTOWIRE_CONSTRUCTOR, false);
             if (!(bean instanceof NodeComponent nodeComponent)) {
@@ -77,7 +92,8 @@ public class ScriptComponentRegistrar {
                 + primaryClass.getName());
         }
         try {
-            // addManagedNode：guessType + initComponent + put2NodeMap（裸 put，同 code 覆盖内置件/旧版本）
+            // addManagedNode：guessType + initComponent + put2NodeMap（裸 put，不查重），
+            // 同 code 后到者盖掉先到者——热更和接管内置件都靠这一下
             FlowBus.addManagedNode(code, instance);
         } catch (Exception e) {
             throw new ServiceException("FlowBus 注册失败（code=" + code + "）：" + rootMessage(e), e);
@@ -98,7 +114,9 @@ public class ScriptComponentRegistrar {
     }
 
     /**
-     * 记录启动期注册失败（容错路径专用，不影响其他组件注册）。
+     * 记一笔「上岗失败」：启动补课时有件编不过或造不出来，不炸整个启动，
+     * 只把病志写进台账（不健康 + 失败原因 + 时间）。台账接口上看得见，
+     * 其余组件照常上工——一个坏脚本不拖死整个应用。
      */
     public void markFailed(Long componentId, String code, Integer version, String error) {
         ScriptRuntimeVo vo = new ScriptRuntimeVo();
@@ -112,8 +130,10 @@ public class ScriptComponentRegistrar {
     }
 
     /**
-     * 组件删除时清理引用（不主动从 FlowBus 摘除：删除已被链路引用拦截，
-     * 未被引用的残留节点无执行入口，重启后自然消失）。
+     * 组件删除时清账（active 摘名额、health 撤病志）。刻意不主动从 FlowBus
+     * 摘节点：删除动作前面有「链路引用拦截」挡着（被编排引用的件删不掉），
+     * 真能删掉的件即使 FlowBus 里残留一个节点副本，也没有链路会走到它，
+     * 重启后自然消失。
      */
     public void forget(String code) {
         LoadedScript loaded = active.remove(code);
@@ -123,7 +143,9 @@ public class ScriptComponentRegistrar {
     }
 
     /**
-     * 运行时健康快照（按组件 id 升序）。
+     * 健康快照：把台账抄一份给人看（逐条拷贝 VO，内部对象不外递，
+     * 免得调用方改坏了账本）。失败件排前面、其余按组件 id 升序——
+     * 看快照的人多半是来查病的，病号优先。
      */
     public List<ScriptRuntimeVo> snapshot() {
         return health.values().stream()
@@ -138,6 +160,10 @@ public class ScriptComponentRegistrar {
             .toList();
     }
 
+    /**
+     * 单条拷贝：new 一个 VO 逐字段抄一遍，把台账原件和快照隔开，
+     * 调用方改的是抄本，坏不了账。
+     */
     private ScriptRuntimeVo copy(ScriptRuntimeVo source) {
         ScriptRuntimeVo vo = new ScriptRuntimeVo();
         vo.setComponentId(source.getComponentId());
@@ -150,6 +176,10 @@ public class ScriptComponentRegistrar {
         return vo;
     }
 
+    /**
+     * 把层层包装的异常剥到最根上：Spring/createBean 出的错裹好几层皮，
+     * 根因那一句才值得写进给用户看的报错。
+     */
     private String rootMessage(Throwable e) {
         Throwable cur = e;
         while (cur.getCause() != null && cur.getCause() != cur) {
@@ -158,6 +188,10 @@ public class ScriptComponentRegistrar {
         return cur.getMessage() != null ? cur.getMessage() : e.getClass().getSimpleName();
     }
 
+    /**
+     * 一个在工位上的脚本件：随身带着加载器（引用在手，GC 卸载就轮不到它）、
+     * 工件本体、台账 id 和版本号。
+     */
     private record LoadedScript(ScriptClassLoader classLoader,
                                 ScriptArtifact artifact,
                                 Long componentId,

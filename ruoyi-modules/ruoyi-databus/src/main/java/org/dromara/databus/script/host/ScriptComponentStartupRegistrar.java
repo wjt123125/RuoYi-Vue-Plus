@@ -13,15 +13,23 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 库存脚本件启动全量注册（容错）。
+ * 「补课老师」：保存时干的事，启动时原样再干一遍。
  *
- * <p>运行时机晚于内置 Bean 扫描（{@code ComponentSchemaScanner} @Order(100)，本类 @Order(200)）：
- * FlowBus 先收内置 @LiteflowComponent，库存件随后按同 code 裸 put 接管（如 httpRequest）。
- * 单件编译/实例化/注册失败只记录健康状态与 ERROR 日志，不阻断其他组件与应用启动；
- * 失败件在组件台账露出（运行时健康接口），其链路执行期才暴露缺失错误。
+ * <p>保存时编译出来的类只活在内存里，重启就全没了；好在源码存在数据库里，
+ * 什么都不丢。所以应用起来后，这个 Runner 把库里启用中的脚本件全捞出来，
+ * 逐个「编译 + 注册」，把工位一个个重新坐上——库里有什么，现网就有什么。
  *
- * <p>停用行（status=1）不注册；停用不主动摘除 FlowBus 节点（已编译链路持有节点副本），
- * 重启后停用件自然不进 FlowBus——紧急止血以重启为界。
+ * <p>排位 @Order(200)，刻意排在内置组件扫描（ComponentSchemaScanner，
+ * @Order(100)）之后：FlowBus 先收内置 @LiteflowComponent，库存脚本件随后
+ * 按同 code 裸 put 接管（比如脚本版的 httpRequest 盖掉内置版）。
+ *
+ * <p>容错是底线：一个坏脚本编不过，只记一笔失败台账（markFailed）加一条
+ * ERROR 日志，绝不拖死整个应用——别的件照常上工，坏件在运行时健康接口里
+ * 露脸，链路执行到它才报「节点缺失」，修好保存一次即上线。
+ *
+ * <p>停用件（status=1）不捞不注册；停用动作本身也不摘 FlowBus 节点
+ * （已编译链路手里还捏着节点副本），重启后停用件自然不进 FlowBus——
+ * 紧急止血以重启为界。
  *
  * @author databus
  */
@@ -31,6 +39,7 @@ import java.util.List;
 @Order(200)
 public class ScriptComponentStartupRegistrar implements ApplicationRunner {
 
+    /** 组件台账的状态位：0 启用（只有启用件才来补课）。 */
     private static final String STATUS_ENABLED = "0";
 
     private final DatabusComponentMapper componentMapper;
@@ -39,6 +48,11 @@ public class ScriptComponentStartupRegistrar implements ApplicationRunner {
 
     private final ScriptComponentRegistrar scriptRegistrar;
 
+    /**
+     * 启动补课主流程：捞库存（启用 + 有源码，按 id 升序保证日志顺序稳定）
+     * → 逐件「编译 + 注册」→ 末了数出成败各几个。单件失败走 markFailed
+     * 记台账、循环继续，不停课。
+     */
     @Override
     public void run(ApplicationArguments args) {
         List<DatabusComponent> rows = componentMapper.selectList(Wrappers.<DatabusComponent>lambdaQuery()

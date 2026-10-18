@@ -69,6 +69,11 @@ public class DatabusComponentBo implements Serializable {
     private String domain;
 
     /**
+     * 归属目录id（null=未归组；databus_directory 统一资源树）
+     */
+    private Long directoryId;
+
+    /**
      * 组件图标
      */
     @Size(max = 100, message = "图标长度不能超过{max}个字符", groups = {AddGroup.class, EditGroup.class})

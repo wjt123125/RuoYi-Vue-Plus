@@ -62,6 +62,11 @@ public class DatabusComponent extends BaseEntity {
     private String domain;
 
     /**
+     * 归属目录id（null=未归组；databus_directory 统一资源树，2026-10-17 增）【治理】
+     */
+    private Long directoryId;
+
+    /**
      * 组件图标（svg 名或 Iconify 名）【治理】
      */
     private String icon;

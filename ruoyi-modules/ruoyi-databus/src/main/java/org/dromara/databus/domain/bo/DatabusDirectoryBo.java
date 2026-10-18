@@ -7,19 +7,19 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 import org.dromara.common.core.validate.AddGroup;
 import org.dromara.common.core.validate.EditGroup;
-import org.dromara.databus.domain.DatabusChainDirectory;
+import org.dromara.databus.domain.DatabusDirectory;
 
 import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * 链路目录业务对象 databus_chain_directory
+ * 统一目录业务对象 databus_directory
  *
  * @author databus
  */
 @Data
-@AutoMapper(target = DatabusChainDirectory.class, reverseConvertGenerate = false)
-public class DatabusChainDirectoryBo implements Serializable {
+@AutoMapper(target = DatabusDirectory.class, reverseConvertGenerate = false)
+public class DatabusDirectoryBo implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -41,6 +41,11 @@ public class DatabusChainDirectoryBo implements Serializable {
      * 父目录id（空/0=根目录）；编辑时可改实现目录拖拽移动，后端做防环校验
      */
     private Long parentId;
+
+    /**
+     * 属主（null=团队共享树；PaaS 化后=用户id，每人一棵）
+     */
+    private Long ownerId;
 
     /**
      * 排序（升序，值小在前，默认 0）

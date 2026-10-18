@@ -57,6 +57,11 @@ public class DatabusComponentVo implements Serializable {
     private String domain;
 
     /**
+     * 归属目录id（null=未归组；databus_directory 统一资源树）
+     */
+    private Long directoryId;
+
+    /**
      * 组件图标
      */
     private String icon;

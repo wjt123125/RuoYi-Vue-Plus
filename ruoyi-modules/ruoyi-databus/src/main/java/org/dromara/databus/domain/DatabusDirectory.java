@@ -8,17 +8,19 @@ import lombok.EqualsAndHashCode;
 import org.dromara.common.mybatis.core.domain.BaseEntity;
 
 /**
- * 链路目录对象 databus_chain_directory
+ * 统一目录对象 databus_directory
  * <p>
- * 链路工作台资源树的组织层：parent_id 自引用支持多级目录；
- * 链表 directory_id 可空外键挂接（null/0 = 未归组链，由前端树虚拟节点兜底）。
+ * 工作区统一资源树的组织层：parent_id 自引用支持多级目录；
+ * 叶子混装链路（databus_chain.directory_id）与自建组件（databus_component.directory_id），
+ * null/0 = 未归组，由前端树虚拟节点兜底。
+ * 取代原 databus_chain_directory 表（2026-10-17 工作区融合，见 workbench-unification.md §3）。
  *
  * @author databus
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName(value = "databus_chain_directory")
-public class DatabusChainDirectory extends BaseEntity {
+@TableName(value = "databus_directory")
+public class DatabusDirectory extends BaseEntity {
 
     /**
      * 主键id
@@ -35,6 +37,11 @@ public class DatabusChainDirectory extends BaseEntity {
      * 目录名称（同级唯一）
      */
     private String directoryName;
+
+    /**
+     * 属主（null=团队共享树；PaaS 化后=用户id，每人一棵）
+     */
+    private Long ownerId;
 
     /**
      * 排序（升序，值小在前，默认 0）

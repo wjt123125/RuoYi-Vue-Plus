@@ -26,6 +26,7 @@ create table databus_component (
     category          varchar(32)     not null                  comment '台账五分类（PROTOCOL/DATA/FLOW_CONTROL/AI/PLATFORM）【治理】',
     group_name        varchar(32)     default null              comment '物料面板七组（flow/sequence/branch/loop/other/subflow/business）【治理】',
     domain            varchar(16)     default null              comment '业务叶子业务域（取值见 databus_component_domain 字典行；空＝未指派：普通叶子由前端按 databus_component_domain.is_default 行归入兜底域；node_type ≠ NODE 的件由后端派生为 slot，不走兜底）【治理】',
+    directory_id      bigint(20)      default null              comment '归属目录id（null=未归组；databus_directory 统一资源树，2026-10-17 增）【治理】',
     icon              varchar(100)    default null              comment '图标（Iconify Phosphor 集图标名 ph:*）【治理】',
     color             varchar(16)     default null              comment '面板色值（如 #409eff）【治理】',
     sort              int(11)         default 100               comment '面板排序（升序）【治理】',
@@ -54,26 +55,29 @@ create table databus_component (
     primary key (id),
     unique key uk_component_code (component_code),
     key idx_category (category),
-    key idx_group_name (group_name)
+    key idx_group_name (group_name),
+    key idx_component_directory (directory_id)
 ) engine=innodb comment='数据总线组件元信息表（原子物料的家：契约缓存+治理真身+脚本工件）';
 
 -- ----------------------------
--- 菜单：组件管理（2026-10-06 终局正本，menu_id 20009~014）
--- 挂父目录 1761400000000020000（数据总线，由 databus_chain.sql 播种）。
+-- 菜单：组件五 F 行（原 20009~014；C 行 20009 已移交 databus_workspace.sql，此处只保留 20010~014）
+-- 挂父节点 1761400000000020009（工作区，由 databus_workspace.sql 播种）。
 -- 旧 050~055（component/version 脚本历史种子，与本段同 path 同 perms）已废弃：
 --   连授权一并清除，防止两套「组件管理」菜单并存。
--- 幂等：sys_menu 先按 id 删后插，sys_role_menu 中 20009~014 的角色授权不动
+-- 幂等：sys_menu 先按 id 删后插，sys_role_menu 中 20010~014 的角色授权不动
 --   （删除的是菜单行、同 id 立即重建，授权行继续有效；两表无物理外键），可直接重复执行。
--- 台账页同时消费 /databus/component/options 与 /list，授权时组件管理与编辑器权限需一并授予。
+-- 【2026-10-17 工作区融合】C 行 20009「组件管理」insert 已删除、delete 段已收窄为只删 20010~014
+--   （20009 改为「工作区」C 行，同 id 重插统一由 databus_workspace.sql 处理；component 脚本不再动
+--   20009，否则 chain→component→workspace 顺序下会在 workspace 重插前造成菜单空窗）。
+-- 台账页同时消费 /databus/component/options 与 /list，授权时组件与编辑器权限需一并授予。
 -- ----------------------------
 delete from sys_role_menu where menu_id in (1762000000000000050, 1762000000000000051, 1762000000000000052, 1762000000000000053, 1762000000000000054, 1762000000000000055);
 delete from sys_menu where menu_id in (1762000000000000050, 1762000000000000051, 1762000000000000052, 1762000000000000053, 1762000000000000054, 1762000000000000055,
-                                      1761400000000020009, 1761400000000020010, 1761400000000020011, 1761400000000020012, 1761400000000020013, 1761400000000020014);
+                                      1761400000000020010, 1761400000000020011, 1761400000000020012, 1761400000000020013, 1761400000000020014);
 
-insert into sys_menu values
-  (1761400000000020009, '组件管理', 1761400000000020000, 2, 'component', 'databus/component/index', '', 'N', 'Y', 'C', '0', '0', 'databus:component:list', 'component', '', '', NULL, NULL, sysdate(), NULL, NULL, '组件元信息管理'),
-  (1761400000000020010, '组件查询', 1761400000000020009, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
-  (1761400000000020011, '组件新增', 1761400000000020009, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
-  (1761400000000020012, '组件修改', 1761400000000020009, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
-  (1761400000000020013, '组件删除', 1761400000000020009, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
-  (1761400000000020014, '脚本编辑', 1761400000000020009, 5, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:script:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '受信作者：保存即编译热更，等同服务端代码发布');
+-- 逐行单条 insert（与 databus_workspace.sql 同约定）：本机 mysql 客户端「多行批量 + 中文」稳定报 1264。
+insert into sys_menu values (1761400000000020010, '组件查询', 1761400000000020009, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
+insert into sys_menu values (1761400000000020011, '组件新增', 1761400000000020009, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
+insert into sys_menu values (1761400000000020012, '组件修改', 1761400000000020009, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
+insert into sys_menu values (1761400000000020013, '组件删除', 1761400000000020009, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
+insert into sys_menu values (1761400000000020014, '脚本编辑', 1761400000000020009, 5, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:script:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '受信作者：保存即编译热更，等同服务端代码发布');

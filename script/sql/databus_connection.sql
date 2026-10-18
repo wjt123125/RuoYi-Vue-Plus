@@ -41,8 +41,11 @@ create table sys_databus_connection (
 --   is_frame, is_cache, menu_type, visible, status, perms, icon, active_menu, ext,
 --   create_dept, create_by, create_time, update_by, update_time, remark
 
--- 已按旧占位父 ID（1762000000000000000）执行过、侧边栏看不到菜单的环境，先跑这句修复：
-update sys_menu set parent_id = 1761400000000020000 where menu_id = 1762000000000000010;
+-- 幂等：先按 id 删旧菜单行再重插（含早期按旧占位父 ID 1762000000000000000 建过的行），
+--   重插即为正确父节点，整批脚本可重复执行。
+delete from sys_menu where menu_id in
+  (1762000000000000010, 1762000000000000011, 1762000000000000012,
+   1762000000000000013, 1762000000000000014, 1762000000000000015);
 
 insert into sys_menu values
   (1762000000000000010, '连接管理', 1761400000000020000, 2, 'connection', 'databus/connection/index', '', 'N', 'N', 'C', '0', '0', 'databus:connection:list', 'link', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线连接管理菜单'),

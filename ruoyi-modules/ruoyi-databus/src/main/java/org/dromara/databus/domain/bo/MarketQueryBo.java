@@ -31,4 +31,9 @@ public class MarketQueryBo implements Serializable {
      */
     private String keyword;
 
+    /**
+     * 作者登录名（点卡片 @作者 / 详情页作者筛选其作品；空=全部）
+     */
+    private String ownerCode;
+
 }

@@ -169,6 +169,8 @@ public class DatabusMarketServiceImpl implements IDatabusMarketService {
             lqw.eq(StringUtils.isNotBlank(bo.getResourceType()),
                 DatabusMarketItem::getResourceType, bo.getResourceType());
             lqw.eq(bo.getCategoryId() != null, DatabusMarketItem::getCategoryId, bo.getCategoryId());
+            lqw.eq(StringUtils.isNotBlank(bo.getOwnerCode()),
+                DatabusMarketItem::getOwnerCode, bo.getOwnerCode());
             if (StringUtils.isNotBlank(bo.getKeyword())) {
                 String kw = bo.getKeyword().trim();
                 // tags 为 List<String>（JSON 列），lambda like 类型不匹配 → 用 apply 走字符串匹配

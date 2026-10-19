@@ -60,7 +60,10 @@ create table databus_component (
 ) engine=innodb comment='数据总线组件元信息表（原子物料的家：契约缓存+治理真身+脚本工件）';
 
 -- ----------------------------
--- 菜单：组件五 F 行（原 20009~014；C 行 20009 已移交 databus_workspace.sql，此处只保留 20010~014）
+-- 菜单：组件六 F 行（C 行 20009 已移交 databus_workspace.sql，此处只保留 20010~014 与 20028）
+--   · 20028「组件列表查看」databus:component:list —— 台账页 /list 与 /script/runtime 的权限位，
+--     2026-10-19 补：此前代码与前端 api 均已引用该权限串，但菜单缺行，「代码要了、菜单没给」，
+--     任何角色都授不到、非超管必 403（test 账号验收时暴露）。
 -- 挂父节点 1761400000000020009（工作区，由 databus_workspace.sql 播种）。
 -- 旧 050~055（component/version 脚本历史种子，与本段同 path 同 perms）已废弃：
 --   连授权一并清除，防止两套「组件管理」菜单并存。
@@ -73,7 +76,8 @@ create table databus_component (
 -- ----------------------------
 delete from sys_role_menu where menu_id in (1762000000000000050, 1762000000000000051, 1762000000000000052, 1762000000000000053, 1762000000000000054, 1762000000000000055);
 delete from sys_menu where menu_id in (1762000000000000050, 1762000000000000051, 1762000000000000052, 1762000000000000053, 1762000000000000054, 1762000000000000055,
-                                      1761400000000020010, 1761400000000020011, 1761400000000020012, 1761400000000020013, 1761400000000020014);
+                                      1761400000000020010, 1761400000000020011, 1761400000000020012, 1761400000000020013, 1761400000000020014,
+                                      1761400000000020028);
 
 -- 逐行单条 insert（与 databus_workspace.sql 同约定）：本机 mysql 客户端「多行批量 + 中文」稳定报 1264。
 insert into sys_menu values (1761400000000020010, '组件查询', 1761400000000020009, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
@@ -81,3 +85,4 @@ insert into sys_menu values (1761400000000020011, '组件新增', 17614000000000
 insert into sys_menu values (1761400000000020012, '组件修改', 1761400000000020009, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
 insert into sys_menu values (1761400000000020013, '组件删除', 1761400000000020009, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
 insert into sys_menu values (1761400000000020014, '脚本编辑', 1761400000000020009, 5, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:script:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '受信作者：保存即编译热更，等同服务端代码发布');
+insert into sys_menu values (1761400000000020028, '组件列表查看', 1761400000000020009, 6, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:list', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '台账页 /list 与 /script/runtime 权限位');

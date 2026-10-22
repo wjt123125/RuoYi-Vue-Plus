@@ -198,7 +198,8 @@ mail:
   # 用户名（QQ 邮箱填完整邮箱地址）
   user: 2642778806@qq.com
   # 密码（QQ 邮箱为后台开启 SMTP 服务后生成的授权码，非登录密码）
-  pass: ***REMOVED***
+  # 通过环境变量 MAIL_PASS 注入，避免明文提交泄露；本地在 IDEA 运行配置或系统环境变量中设置
+  pass: ${MAIL_PASS:}
   # 使用 STARTTLS安全连接；465 端口走隐式 SSL，故关闭 STARTTLS 避免重复升级
   starttlsEnable: false
   # 使用SSL安全连接

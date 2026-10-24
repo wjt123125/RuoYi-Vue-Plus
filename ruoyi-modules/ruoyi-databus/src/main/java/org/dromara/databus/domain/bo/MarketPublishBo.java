@@ -23,13 +23,13 @@ public class MarketPublishBo implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 物料类型（COMPONENT / CHAIN）
+     * 物料类型（COMPONENT / CHAIN / CONNECTOR——连接器 sourceId＝databus_connector_def 行 id，§15.7）
      */
     @NotBlank(message = "物料类型不能为空")
     private String resourceType;
 
     /**
-     * 源资源 id（链路主键 / 组件 DB 行 id）
+     * 源资源 id（链路主键 / 组件 DB 行 id / 连接器 def 行 id）
      */
     @NotNull(message = "源资源id不能为空")
     private Long sourceId;
@@ -49,5 +49,11 @@ public class MarketPublishBo implements Serializable {
      * 标签列表
      */
     private List<String> tags;
+
+    /**
+     * 修改说明（P1 驳回-重提闭环：被驳回后重提时填写，说明本次修改了什么；审核者复核用）
+     */
+    @Size(max = 500, message = "修改说明长度不能超过{max}个字符")
+    private String modifyNote;
 
 }

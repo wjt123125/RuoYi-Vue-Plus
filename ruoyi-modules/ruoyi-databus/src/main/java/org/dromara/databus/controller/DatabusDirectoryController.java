@@ -8,6 +8,7 @@ import org.dromara.common.core.domain.R;
 import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.redis.annotation.RepeatSubmit;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.ChainMoveBo;
 import org.dromara.databus.domain.bo.ComponentMoveBo;
@@ -43,7 +44,7 @@ public class DatabusDirectoryController extends BaseController {
     @SaCheckPermission("databus:directory:list")
     @GetMapping("/list")
     public R<List<DatabusDirectoryVo>> list() {
-        return R.ok(directoryService.queryList());
+        return R.ok(directoryService.queryList(LoginHelper.getUserId()));
     }
 
     /**
@@ -66,7 +67,7 @@ public class DatabusDirectoryController extends BaseController {
     @RepeatSubmit
     @PostMapping()
     public R<Void> add(@Validated @RequestBody DatabusDirectoryBo bo) {
-        return toAjax(directoryService.insertByBo(bo));
+        return toAjax(directoryService.insertByBo(bo, LoginHelper.getUserId()));
     }
 
     /**

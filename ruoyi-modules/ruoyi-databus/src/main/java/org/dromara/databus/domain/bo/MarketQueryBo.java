@@ -17,7 +17,7 @@ public class MarketQueryBo implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 物料类型（COMPONENT / CHAIN；空=全部）
+     * 物料类型（COMPONENT / CHAIN / CONNECTOR；空=全部）
      */
     private String resourceType;
 

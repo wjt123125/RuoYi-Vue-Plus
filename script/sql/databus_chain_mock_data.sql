@@ -1,4 +1,4 @@
-﻿-- ----------------------------
+﻿﻿﻿-- ----------------------------
 -- 数据总线示例链路种子数据（开发期手工维护：mock-presets.ts 与生成脚本已删除；零 ALTER 约束，整文件可直接重复执行）
 -- 执行顺序：先 databus_chain.sql（含 drop table 与建表/菜单）再跑本文件。带 is_template=1 的 10 条为精选模板库首批模板。
 -- 全部为草稿状态（status=0）；发布走前端/接口 publish，后端实时生成 EL 推 Rule-DB。
@@ -7,8 +7,11 @@
 -- 只清 databus_chain 草稿本体；已发布链路留在 lf_chain 的旧规则不动，重新发布会覆盖。
 -- ----------------------------
 -- 归属：种子资源统一挂到测试账号 test 名下（create_by/create_dept 直接写入 INSERT，不使用事后 UPDATE）。
+-- 例外：chain-ref / subChain_demo 两条级联测试料挂 admin（2026-10-24 施工：级联安装测试需「admin 卖家→test1 审核→test 买家」三方闭环，见 decisions §十四-2）。
 set @db_seed_test_uid := (select user_id from sys_user where user_name = 'test' and del_flag = '0' limit 1);
 set @db_seed_test_did := (select dept_id from sys_user where user_name = 'test' and del_flag = '0' limit 1);
+set @db_seed_admin_uid := (select user_id from sys_user where user_name = 'admin' and del_flag = '0' limit 1);
+set @db_seed_admin_did := (select dept_id from sys_user where user_name = 'admin' and del_flag = '0' limit 1);
 
 delete from databus_chain
 where chain_code = 'alert-test-always-fail'
@@ -19,6 +22,7 @@ where chain_code = 'alert-test-always-fail'
   1762000000000100016, 1762000000000100017, 1762000000000100018, 1762000000000100019, 1762000000000100020,
   1762000000000100021, 1762000000000100022, 1762000000000100023, 1762000000000100024, 1762000000000100025,
   1762000000000100026, 1762000000000100027, 1762000000000100028, 1762000000000100029,
+  1762000000000100030, 1762000000000100031,
   1762000000000100901, 1762000000000100902 );
 
 insert into databus_chain
@@ -144,7 +148,7 @@ values
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark, create_dept, create_by)
 values
-  (1762000000000100025, 'chain-ref', 'CHAIN 子流程引用', 1, '0', null, null, '{"type":"THEN","children":[{"id":"subChain_demo","type":"CHAIN"}]}', 'BASIC', sysdate(), '引用子链 subChain_demo（结构展示，生成 EL：THEN(subChain_demo);）', @db_seed_test_did, @db_seed_test_uid);
+  (1762000000000100025, 'chain-ref', 'CHAIN 子流程引用', 1, '0', null, null, '{"type":"THEN","children":[{"id":"subChain_demo","type":"CHAIN"}]}', 'BASIC', sysdate(), '引用子链 subChain_demo（结构展示，生成 EL：THEN(subChain_demo);）', @db_seed_admin_did, @db_seed_admin_uid);
 
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, create_dept, create_by)
@@ -156,11 +160,11 @@ insert into databus_chain
 values
   (1762000000000100027, 'nested-catch-in-then', 'THEN 内嵌 CATCH（正常路径）', 1, '0', null, null, '{"type":"THEN","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue1","data":"{\\"path\\":\\"$.setValue1.out\\",\\"value\\":\\"串行头\\"}"}},{"type":"CATCH","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue2","data":"{\\"path\\":\\"$.setValue2.out\\",\\"value\\":\\"try 主体\\"}"}},{"id":"response","type":"NodeComponent","properties":{"tag":"response1","data":"{\\"result\\":false,\\"msg\\":\\"进入异常处理\\"}"}}]},{"id":"response","type":"NodeComponent","properties":{"tag":"response2","data":"{\\"result\\":true,\\"msg\\":\\"主流程完成\\"}"}}]}', 'BASIC', sysdate(), 'THEN 内嵌 CATCH，异常槽不触发', @db_seed_test_did, @db_seed_test_uid);
 
--- chain-ref 引用的子链本体（非模板普通链，供 CHAIN 节点下拉选择；纯本地无入参）
+-- chain-ref 引用的子链本体（非模板普通链，供 CHAIN 节点下拉选择；纯本地无入参；属主 admin 见头部例外注释）
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark, create_dept, create_by)
 values
-  (1762000000000100028, 'subChain_demo', '子链示例（被 chain-ref 引用）', 1, '0', null, null, '{"type":"THEN","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue1","data":"{\\"path\\":\\"$.sub.out\\",\\"value\\":\\"子链执行\\"}"}},{"id":"response","type":"NodeComponent","properties":{"tag":"response1","data":"{\\"result\\":true,\\"msg\\":\\"subChain_demo 已执行\\"}"}}]}', 'BASIC', sysdate(), '被 chain-ref 的 CHAIN 节点引用，验证子流程下拉与运行时 chainMap 解析', @db_seed_test_did, @db_seed_test_uid);
+  (1762000000000100028, 'subChain_demo', '子链示例（被 chain-ref 引用）', 1, '0', null, null, '{"type":"THEN","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue1","data":"{\\"path\\":\\"$.sub.out\\",\\"value\\":\\"子链执行\\"}"}},{"id":"response","type":"NodeComponent","properties":{"tag":"response1","data":"{\\"result\\":true,\\"msg\\":\\"subChain_demo 已执行\\"}"}}]}', 'BASIC', sysdate(), '被 chain-ref 的 CHAIN 节点引用，验证子流程下拉与运行时 chainMap 解析', @db_seed_admin_did, @db_seed_admin_uid);
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, create_dept, create_by)
 values
@@ -186,6 +190,23 @@ values
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, create_dept, create_by)
 values
-  (1762000000000100902, 'alert-test-random-fail', '告警测试·随机失败（randomFail）', 1, '0', null, null, '{\"type\":\"THEN\",\"children\":[{\"id\":\"randomFail\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"randomFail1\",\"data\":\"{\\"failRate\\":0.8}\"}}]}', 'BASIC', null, sysdate(), '告警引擎自测：发布后连续手动执行，八成随机失败、两成成功；连错 3 次触发 FIRING 告警，偶发成功后自动恢复，可无限循环复测（规则见 databus_alert_seed.sql）。', @db_seed_test_did, @db_seed_test_uid);
+  (1762000000000100902, 'alert-test-random-fail', '告警测试·随机失败（randomFail）', 1, '0', null, null, '{\"type\":\"THEN\",\"children\":[{\"id\":\"randomFail\",\"type\":\"NodeComponent\",\"properties\":{\"tag\":\"randomFail1\",\"data\":\"{\\\"failRate\\\":0.8}\"}}]}', 'BASIC', null, sysdate(), '告警引擎自测：发布后连续手动执行，八成随机失败、两成成功；连错 3 次触发 FIRING 告警，偶发成功后自动恢复，可无限循环复测（规则见 databus_alert_seed.sql）。', @db_seed_test_did, @db_seed_test_uid);
+
+-- ----------------------------
+-- 闭包联审测试链组（2026-10-24 闭包联审）：主链 review-main-demo --chain-ref--> 子链 review-sub-demo
+-- --NodeComponent--> 组件 reviewEcho（组件行由 databus_component_seed.sql ③ 灌入，需先跑该文件）。
+-- 三者都不随市场种子上架，验证「上架主链连带依赖补 PENDING 单 → 审核详情页就地逐个通过 → 主链通过」。
+-- 归属 admin（同 chain-ref/subChain_demo 三方闭环口径：admin 上架 → test1 审核）。
+-- 前置：databus_component_seed.sql 已执行（reviewEcho 组件行存在，否则终审 gate 报「依赖组件已不存在」）。
+-- ----------------------------
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark, create_dept, create_by)
+values
+  (1762000000000100030, 'review-sub-demo', '联审测试·子链', 1, '0', null, null, '{"type":"THEN","children":[{"id":"reviewEcho","type":"NodeComponent","properties":{"tag":"reviewEcho1","data":"{\\"path\\":\\"$.reviewEcho1.out\\",\\"value\\":\\"联审子链执行\\"}"}}]}', 'BASIC', sysdate(), '被 review-main-demo 的 CHAIN 节点引用，验证连带上架与就地联审', @db_seed_admin_did, @db_seed_admin_uid);
+
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark, create_dept, create_by)
+values
+  (1762000000000100031, 'review-main-demo', '联审测试·主链', 1, '0', null, null, '{"type":"THEN","children":[{"id":"review-sub-demo","type":"CHAIN"}]}', 'BASIC', sysdate(), 'chain-ref 引用 review-sub-demo：上架本链应连带子链与 reviewEcho 组件各补一张 PENDING 审核单', @db_seed_admin_did, @db_seed_admin_uid);
 
 -- ----------------------------

@@ -14,9 +14,14 @@ import java.util.List;
 public interface IDatabusDirectoryService {
 
     /**
-     * 查询全部目录（平表返回，前端组树；按 sort 升序 id 升序）
+     * 查询全部目录（平表返回，前端组树；按 sort 升序 id 升序）。
+     * <p>
+     * 资源树按人隔离：非管理员只返回 owner_id 归属自己的目录（历史共享目录
+     * owner_id 为空，仅管理员可见；管理员全量）。
+     *
+     * @param userId 当前登录用户（null 视为内部调用不过滤）
      */
-    List<DatabusDirectoryVo> queryList();
+    List<DatabusDirectoryVo> queryList(Long userId);
 
     /**
      * 按主键查询目录
@@ -24,9 +29,12 @@ public interface IDatabusDirectoryService {
     DatabusDirectoryVo queryById(Long id);
 
     /**
-     * 新增目录（校验父目录存在 + 同级名称唯一）
+     * 新增目录（校验父目录存在 + 同级名称唯一；owner_id 落当前用户）
+     *
+     * @param bo     目录业务对象
+     * @param userId 当前登录用户（目录归属人）
      */
-    Boolean insertByBo(DatabusDirectoryBo bo);
+    Boolean insertByBo(DatabusDirectoryBo bo, Long userId);
 
     /**
      * 修改目录（重命名/排序/拖拽换父，换父做自指与环校验）

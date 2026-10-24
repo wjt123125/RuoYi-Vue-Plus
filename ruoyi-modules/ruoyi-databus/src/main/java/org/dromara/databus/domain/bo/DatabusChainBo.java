@@ -101,4 +101,10 @@ public class DatabusChainBo implements Serializable {
      */
     private String isTemplate;
 
+    /**
+     * 只看自己创建的链路（仅列表查询过滤用：资源树按人隔离时传 true，
+     * 服务端叠加 create_by = 当前用户；超级管理员豁免，市场模板等内部调用不传）。
+     */
+    private Boolean onlyMine;
+
 }

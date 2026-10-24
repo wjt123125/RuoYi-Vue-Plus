@@ -37,7 +37,7 @@ public class DatabusMarketItemVo implements Serializable {
     private String ownerCode;
 
     /**
-     * 物料类型（COMPONENT / CHAIN）
+     * 物料类型（COMPONENT / CHAIN / CONNECTOR；连接器 localResourceId＝def 行 id）
      */
     private String resourceType;
 
@@ -130,6 +130,11 @@ public class DatabusMarketItemVo implements Serializable {
      * 备注（审核驳回理由等）
      */
     private String remark;
+
+    /**
+     * 修改说明（P1 驳回-重提闭环：作者被驳回后重提时填写，审核者复核时展示）
+     */
+    private String modifyNote;
 
     /**
      * 审核人 id（治理者）

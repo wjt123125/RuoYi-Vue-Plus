@@ -161,4 +161,9 @@ public class DatabusComponentVo implements Serializable {
      */
     private LocalDateTime createTime;
 
+    /**
+     * 创建人（BaseEntity create_by 自动映射；资源树按人隔离前端过滤自建件用）
+     */
+    private Long createBy;
+
 }

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.MapstructUtils;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.DatabusComponent;
 import org.dromara.databus.domain.DatabusDirectory;
@@ -55,8 +56,12 @@ public class DatabusDirectoryServiceImpl implements IDatabusDirectoryService {
     private final DatabusComponentMapper componentMapper;
 
     @Override
-    public List<DatabusDirectoryVo> queryList() {
+    public List<DatabusDirectoryVo> queryList(Long userId) {
         LambdaQueryWrapper<DatabusDirectory> lqw = Wrappers.lambdaQuery();
+        // 资源树按人隔离：非管理员只看自己的目录（owner_id 空的历史共享目录仅管理员可见）
+        if (userId != null && !LoginHelper.isSuperAdmin(userId)) {
+            lqw.eq(DatabusDirectory::getOwnerId, userId);
+        }
         lqw.orderByAsc(DatabusDirectory::getSort)
             .orderByAsc(DatabusDirectory::getId);
         return directoryMapper.selectVoList(lqw);
@@ -68,7 +73,7 @@ public class DatabusDirectoryServiceImpl implements IDatabusDirectoryService {
     }
 
     @Override
-    public Boolean insertByBo(DatabusDirectoryBo bo) {
+    public Boolean insertByBo(DatabusDirectoryBo bo, Long userId) {
         validateNameNotBlank(bo);
         Long parentId = normalizeParent(bo.getParentId());
         if (!ROOT_PARENT.equals(parentId)) {
@@ -79,6 +84,8 @@ public class DatabusDirectoryServiceImpl implements IDatabusDirectoryService {
         add.setId(null);
         // parentId 规范化：null → 0（根），保证不为 null 落库
         add.setParentId(parentId);
+        // 目录归属当前用户（资源树按人隔离；内部调用无 userId 时留空=管理员视角可见）
+        add.setOwnerId(userId);
         if (add.getSort() == null) {
             add.setSort(0);
         }
@@ -106,6 +113,8 @@ public class DatabusDirectoryServiceImpl implements IDatabusDirectoryService {
         DatabusDirectory update = MapstructUtils.convert(bo, DatabusDirectory.class);
         // parentId/sort 显式规范化写入：编辑接口的 null 语义是"移到根/排序 0"而非"不更新"
         update.setParentId(parentId);
+        // 归属人不可经编辑接口变更（资源树按人隔离的身份列，管理员后台治理）
+        update.setOwnerId(null);
         if (update.getSort() == null) {
             update.setSort(0);
         }

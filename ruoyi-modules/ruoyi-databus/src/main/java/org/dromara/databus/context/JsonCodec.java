@@ -1,20 +1,22 @@
 package org.dromara.databus.context;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 数据总线 JSON 编解码工具，基于 Jackson（RuoYi-Vue-Plus 默认 JSON 库）。
+ * 数据总线 JSON 编解码工具，基于 Jackson 3（tools.jackson，RuoYi-Vue-Plus 默认 JSON 库）。
  * <p>
  * 仅作为内部辅助，避免在 context 层直接耦合 hutool / fastjson。
+ * 自建 JsonMapper 而非取 Spring 容器 bean：冒烟测试上下文仅装配 LiteFlow 自动配置、
+ * 无任何 Jackson bean，此处必须保持零 Spring 依赖（JsonMapper 内置 java.time 支持）。
  *
  * @author databus
  */
 @Slf4j
 public final class JsonCodec {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
     private JsonCodec() {
     }
@@ -28,7 +30,7 @@ public final class JsonCodec {
         }
         try {
             return MAPPER.writeValueAsString(value);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("JSON 序列化失败: {}", e.getMessage());
             return "null";
         }
@@ -43,7 +45,7 @@ public final class JsonCodec {
         }
         try {
             return MAPPER.readValue(json, Object.class);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("JSON 解析失败: {}", e.getMessage());
             return null;
         }
@@ -61,7 +63,7 @@ public final class JsonCodec {
         }
         try {
             return MAPPER.readValue(json, Object.class);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalArgumentException("JSON 解析失败: " + e.getOriginalMessage(), e);
         }
     }
@@ -75,7 +77,7 @@ public final class JsonCodec {
         }
         try {
             return MAPPER.readValue(json, clazz);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("JSON 解析失败 clazz={} err={}", clazz.getName(), e.getMessage());
             return null;
         }

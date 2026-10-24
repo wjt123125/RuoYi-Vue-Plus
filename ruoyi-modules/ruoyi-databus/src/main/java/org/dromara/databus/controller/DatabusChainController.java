@@ -10,10 +10,12 @@ import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.ChainCopyBo;
 import org.dromara.databus.domain.bo.DatabusChainBo;
 import org.dromara.databus.domain.bo.TemplateMarkBo;
+import org.dromara.databus.domain.vo.ChainPublishResultVo;
 import org.dromara.databus.domain.vo.ChainStatsVo;
 import org.dromara.databus.domain.vo.CopySuggestionVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
@@ -42,7 +44,7 @@ public class DatabusChainController extends BaseController {
     @SaCheckPermission("databus:editor:list")
     @GetMapping("/list")
     public R<PageResult<DatabusChainVo>> list(DatabusChainBo bo, PageQuery pageQuery) {
-        return R.ok(chainService.queryPageList(bo, pageQuery));
+        return R.ok(chainService.queryPageList(bo, pageQuery, LoginHelper.getUserId()));
     }
 
     /**
@@ -91,7 +93,7 @@ public class DatabusChainController extends BaseController {
     @RepeatSubmit
     @PutMapping()
     public R<Void> edit(@Validated @RequestBody DatabusChainBo bo) {
-        return toAjax(chainService.updateByBo(bo));
+        return toAjax(chainService.updateByBo(bo, LoginHelper.getUserId()));
     }
 
     /**
@@ -112,6 +114,10 @@ public class DatabusChainController extends BaseController {
      * <p>
      * 草稿与发布共用一份 el_expression + canvas_data，发布即固化当前编排为运行版本；
      * 已下线链路可重新发布，version 继续递增。
+     * <p>
+     * 发布侧引导（decisions §十四-6）：响应携带闭包内自己的未上架物料（子链＋组件）
+     * 引导清单，前端弹窗「上架会将子链和组件一并上架」→ 确认 → 调
+     * POST /databus/market/publish/batch 批量提审；他人未上架链在后端直接拒绝。
      *
      * @param id 链路主键
      */
@@ -119,9 +125,10 @@ public class DatabusChainController extends BaseController {
     @Log(title = "数据总线链路", businessType = BusinessType.UPDATE)
     @RepeatSubmit
     @PostMapping("/publish/{id}")
-    public R<Void> publish(@NotNull(message = "主键不能为空")
-                           @PathVariable("id") Long id) {
-        return toAjax(chainService.publish(id));
+    public R<ChainPublishResultVo> publish(@NotNull(message = "主键不能为空")
+                                           @PathVariable("id") Long id) {
+        ChainPublishResultVo result = chainService.publish(id, LoginHelper.getUserId());
+        return result == null ? R.fail() : R.ok(result);
     }
 
     /**

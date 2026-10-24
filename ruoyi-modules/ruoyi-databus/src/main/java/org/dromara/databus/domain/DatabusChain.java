@@ -92,6 +92,15 @@ public class DatabusChain extends BaseEntity {
     private Long directoryId;
 
     /**
+     * 市场安装 fork 品溯源：源链 id（NULL=原生链）。
+     * <p>
+     * 链路安装全 fork（decisions §十四-1/2）：主链与级联子链副本均记源链 id；
+     * 撞名时按「code 命中且 sourceChainId 同源」判定显式复用（幂等重装不重复复制），
+     * 存量 fork 品无此值，撞名判同源失败走后缀唯一化兜底（行为安全）。
+     */
+    private Long sourceChainId;
+
+    /**
      * 是否精选模板（0否 1是）
      * <p>
      * 模板恒为草稿（status='0'）：不可发布、不推 Rule-DB、不进手动执行入口；

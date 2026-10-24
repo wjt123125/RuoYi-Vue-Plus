@@ -5,6 +5,7 @@ import lombok.Data;
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 安装/血缘视图对象（管理页「我的已装」行列表用）
@@ -41,9 +42,14 @@ public class DatabusMarketInstallVo implements Serializable {
     private Long localResourceId;
 
     /**
-     * 安装模式（FORK / FAVORITE）
+     * 安装模式（FORK / SHARED / FAVORITE）
      */
     private String mode;
+
+    /**
+     * 目录归属（组件 SHARED 引用挂树；null=未归组）
+     */
+    private Long directoryId;
 
     /**
      * 落快照时的逻辑源码指纹
@@ -84,5 +90,48 @@ public class DatabusMarketInstallVo implements Serializable {
      * 本地副本启停态（组件停用=true；链路无开关，取已发布=true）
      */
     private Boolean enabled;
+
+    /**
+     * 组件编码（SHARED 组件引用叶子的 open 通道：前端按 code 反查台账行打开详情）
+     */
+    private String componentCode;
+
+    /**
+     * 链路闭包级联清单（decisions §十四-1/2：全 fork，每条独立成行；仅 CHAIN 安装返回）。
+     * <p>
+     * 含主链与全部级联子链（post-order 序，主链居末）：NEW＝本次新复制；REUSED＝命中既有同源
+     * fork 品（decisions §十四-2 撞名显式复用），安装结果提示「使用你现有副本」。
+     */
+    private List<CascadeItemVo> cascade;
+
+    /**
+     * 级联清单条目（decisions §十四-2）：一条闭包链路的复制结果。
+     */
+    @Data
+    public static class CascadeItemVo implements Serializable {
+
+        @Serial
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * 源链编码（引用重定向前）
+         */
+        private String sourceCode;
+
+        /**
+         * 副本编码（REUSED 时即既有副本编码）
+         */
+        private String newCode;
+
+        /**
+         * 源链名称
+         */
+        private String sourceName;
+
+        /**
+         * 复制状态（NEW＝新复制 / REUSED＝复用既有同源副本）
+         */
+        private String status;
+    }
 
 }

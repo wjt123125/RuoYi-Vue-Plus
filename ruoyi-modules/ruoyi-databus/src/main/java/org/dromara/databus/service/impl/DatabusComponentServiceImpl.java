@@ -73,6 +73,17 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
     private static final String DEPRECATED_NO = "0";
 
     /**
+     * 已废弃（软退役，§十二-5）：删除被链路引用的组件时不物理删，置 1 停止物料面板投放，
+     * 存量链路按 code 引用照常运行
+     */
+    private static final String DEPRECATED_YES = "1";
+
+    /**
+     * 软退役默认备注（原作者删除被引用组件时写入）
+     */
+    private static final String DEPRECATE_NOTE_RETIRED = "原作者已删除该组件，存量链路仍可运行，请尽快替换";
+
+    /**
      * 一期脚本语言固定 java（javax.tools 完整类源码）
      */
     private static final String SCRIPT_LANG_JAVA = "java";
@@ -122,6 +133,8 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
 
         List<DatabusComponent> rows = componentMapper.selectList(Wrappers.<DatabusComponent>lambdaQuery()
             .eq(DatabusComponent::getStatus, STATUS_ENABLED)
+            // 软退役件（deprecated=1）停止投放：存量链路照常运行，新画布拖不进，树侧据此红标缺依赖
+            .eq(DatabusComponent::getDeprecated, DEPRECATED_NO)
             .orderByAsc(DatabusComponent::getSort)
             .orderByAsc(DatabusComponent::getId));
 
@@ -257,55 +270,62 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean deleteByIds(Collection<Long> ids) {
-        validateNotReferenced(ids);
-        List<String> codes = componentMapper.selectByIds(ids).stream()
-            .map(DatabusComponent::getComponentCode)
-            .filter(StringUtils::isNotBlank)
-            .toList();
-        boolean flag = componentMapper.deleteByIds(ids) > 0;
-        if (flag) {
-            // 清理脚本宿主引用（FlowBus 节点不主动摘除：删除已被引用拦截，残留节点无执行入口，重启消失）
-            codes.forEach(scriptRegistrar::forget);
+        if (ids == null || ids.isEmpty()) {
+            return false;
         }
-        return flag;
+        List<DatabusComponent> rows = componentMapper.selectByIds(ids);
+        // 引用分流（§十二-5）：被链路引用的转软退役（deprecated=1 不物理删——市场安装者共享同一份
+        // 组件，存量链路按 code 引用须继续可运行）；未引用的才硬删 + 清理脚本宿主
+        Set<Long> retireIds = findReferencedIds(rows);
+        List<Long> removeIds = rows.stream()
+            .map(DatabusComponent::getId)
+            .filter(id -> !retireIds.contains(id))
+            .toList();
+        boolean removed = false;
+        if (!removeIds.isEmpty()) {
+            List<String> codes = rows.stream()
+                .filter(row -> removeIds.contains(row.getId()))
+                .map(DatabusComponent::getComponentCode)
+                .filter(StringUtils::isNotBlank)
+                .toList();
+            removed = componentMapper.deleteByIds(removeIds) > 0;
+            if (removed) {
+                // 清理脚本宿主引用（FlowBus 节点不主动摘除：硬删件残留节点无执行入口，重启消失；
+                // 软退役件保留宿主，存量链路继续运行）
+                codes.forEach(scriptRegistrar::forget);
+            }
+        }
+        if (!retireIds.isEmpty()) {
+            componentMapper.update(null, Wrappers.<DatabusComponent>lambdaUpdate()
+                .set(DatabusComponent::getDeprecated, DEPRECATED_YES)
+                .set(DatabusComponent::getDeprecateNote, DEPRECATE_NOTE_RETIRED)
+                .in(DatabusComponent::getId, retireIds));
+        }
+        return removed || !retireIds.isEmpty();
     }
 
     /**
-     * 删除前校验：所选自定义组件未被任何未删除链路引用。
+     * 引用检测（§十二-5 软退役判据，沿用原删除校验口径）：返回仍被未删除链路引用的组件 id 集合。
      * <p>链路 cmp_property 中节点形态为 {@code {"id":"<componentCode>","type":"NodeComponent",...}}，
-     * 在 JSON 文本中匹配完整片段 {@code "id":"<编码>"}（引号闭合避免短编码子串误匹配），
-     * 命中即拦截并列出引用链路，口径与连接删除校验一致。
+     * 在 JSON 文本中匹配完整片段 {@code "id":"<编码>"}（引号闭合避免短编码子串误匹配）；
+     * 逐码 selectCount 以定位具体被引用的组件。
      */
-    private void validateNotReferenced(Collection<Long> ids) {
-        if (ids == null || ids.isEmpty()) {
-            return;
+    private Set<Long> findReferencedIds(List<DatabusComponent> rows) {
+        Set<Long> referencedIds = new HashSet<>();
+        for (DatabusComponent row : rows) {
+            String code = row.getComponentCode();
+            if (StringUtils.isBlank(code)) {
+                continue;
+            }
+            Long count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
+                .like(DatabusChain::getCmpProperty, referenceLikePattern(code)));
+            if (count != null && count > 0) {
+                referencedIds.add(row.getId());
+            }
         }
-        List<String> codes = componentMapper.selectByIds(ids).stream()
-            .map(DatabusComponent::getComponentCode)
-            .filter(StringUtils::isNotBlank)
-            .toList();
-        if (codes.isEmpty()) {
-            return;
-        }
-        LambdaQueryWrapper<DatabusChain> wrapper = Wrappers.<DatabusChain>lambdaQuery()
-            .select(DatabusChain::getId, DatabusChain::getChainName, DatabusChain::getChainCode)
-            .and(orGroup -> {
-                for (int i = 0; i < codes.size(); i++) {
-                    if (i > 0) {
-                        orGroup.or();
-                    }
-                    orGroup.like(DatabusChain::getCmpProperty, referenceLikePattern(codes.get(i)));
-                }
-            });
-        List<DatabusChain> referenced = chainMapper.selectList(wrapper);
-        if (!referenced.isEmpty()) {
-            String names = referenced.stream()
-                .map(chain -> chain.getChainName() + "(" + chain.getChainCode() + ")")
-                .collect(Collectors.joining("、"));
-            throw new ServiceException("所选组件仍被链路引用，无法删除：" + names
-                + "；请先在对应链路中移除该组件节点");
-        }
+        return referencedIds;
     }
 
     /** cmp_property 中的精确引用片段（已转义 LIKE 通配符），外层由 MP 包裹 % 匹配 */

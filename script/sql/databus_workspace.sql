@@ -1,18 +1,14 @@
 -- ----------------------------
 -- 数据总线工作区脚本 databus_workspace.sql（2026-10-17 工作区融合，workbench-unification.md §3/§5）
--- 本脚本取代已删除的 databus_chain_directory.sql，承接三件事：
+-- 本脚本取代已删除的 databus_chain_directory.sql，承接两件事：
 --   ① 统一目录表 databus_directory（原 databus_chain_directory 退役；链路 + 自建组件混装叶子）
 --   ② 用户收藏表 databus_user_favorite（个人化组织维度，fork 引用记录同构基座）
---   ③ 菜单收敛：组件管理 C 行 20009 同 id 重插为「工作区」；目录四 F 行改 parent/perms 重插；
---      新增收藏三 F 行；删除链路工作台 C 行 040（含 sys_role_menu）。
--- 执行顺序：databus_chain.sql → databus_component.sql → 本脚本。
---   （chain/component 脚本内 F 行的 parent 指向 20009，本脚本建 20009 后归位。）
+-- 菜单与授权正本已收敛至 script/sql/databus_menu.sql（2026-10-23 tabs 收敛终态，全量重建型），
+--   本脚本不再播任何 sys_menu / sys_role_menu 行，只管两张工作台表的 DDL 与目录属主回填。
+-- 执行顺序：本脚本（DDL+回填）与 databus_menu.sql（菜单全量重建）相互独立，任意先后。
 --
 -- DDL 一律 drop + 全量重建（本库惯例，不写 alter）。旧目录表数据为开发期运行时数据，不迁移；
 --   链表/组件表悬空的 directory_id 落「未归组」虚拟节点兜底。
--- sys_menu 22 列顺序：menu_id, menu_name, parent_id, order_num, path, component, query_param,
---   is_frame, is_cache, menu_type, visible, status, perms, icon, active_menu, ext,
---   create_dept, create_by, create_time, update_by, update_time, remark
 -- ----------------------------
 
 -- ----------------------------
@@ -57,44 +53,14 @@ create table databus_user_favorite (
 ) engine=innodb comment='用户收藏（owner→source 引用，fork 同构基座）';
 
 -- ----------------------------
--- 菜单收敛
--- 先删后插幂等：20009（工作区 C 行）、041~44（目录 F 行）、20015~017（收藏 F 行）均按 id 删除后重插，
---   不动 sys_role_menu（同 id 立即重建，授权继续有效；两表无物理外键）。
--- 20009 同 id 重插：原「组件管理」C 行 → 「工作区」，授权关系自动保留。
--- 041~44：改 parent→20009、perms 前缀 databus:chain:directory→databus:directory。
--- 20015~017：新增收藏三 F 行（parent=20009，order 接组件五 F 行之后）。
--- 040（链路工作台 C 行）：删除并连 sys_role_menu，ID 段红线延续不再分配。
--- 单条 insert（不复用多行 values 批量）：本机 mysql 客户端「多行批量 + 中文」稳定报 1264。
+-- 菜单与权限：正本已收敛至 script/sql/databus_menu.sql
+--   （2026-10-23 tabs 收敛终态，全量重建型：开头按三段 id 范围清旧、再全量 insert，
+--   1 条 M 目录 20000 + 54 条 F 行直接挂靠，含 5 条 list 载体行；本脚本只管 DDL 与目录属主回填）
 -- ----------------------------
-delete from sys_menu where menu_id in
-  (1761400000000020009,
-   1762000000000020041, 1762000000000020042, 1762000000000020043, 1762000000000020044,
-   1761400000000020015, 1761400000000020016, 1761400000000020017);
-
-insert into sys_menu values (1761400000000020009, '工作区', 1761400000000020000, 2, 'workspace', 'databus/workspace/index', '', 'N', 'N', 'C', '0', '0', 'databus:directory:list', 'tree-table', '', '', NULL, NULL, sysdate(), NULL, NULL, '工作区（单壳：AI 助手 + 多 tab 工作面板 + 统一资源树）');
-
--- 目录四 F 行（原 041~44：改 parent→20009、perms→databus:directory:*；id 不变保留授权）
-insert into sys_menu values (1762000000000020041, '目录查询', 1761400000000020009, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:directory:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
-insert into sys_menu values (1762000000000020042, '目录新增', 1761400000000020009, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:directory:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '工作区统一资源树右键新建目录');
-insert into sys_menu values (1762000000000020043, '目录修改', 1761400000000020009, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:directory:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '重命名/排序/拖拽换父（后端防环）/链路与组件归属移动');
-insert into sys_menu values (1762000000000020044, '目录删除', 1761400000000020009, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:directory:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '子目录非空/挂链路/挂组件均拦截，不做级联删除');
-
--- 收藏三 F 行（新增 20015~017，parent=20009，order 顺延组件五 F 行 1~5 之后）
-insert into sys_menu values (1761400000000020015, '收藏查询', 1761400000000020009, 6, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:favorite:list', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '工作区统一资源树「我的收藏」列表');
-insert into sys_menu values (1761400000000020016, '收藏新增', 1761400000000020009, 7, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:favorite:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '叶子一键收藏');
-insert into sys_menu values (1761400000000020017, '收藏取消', 1761400000000020009, 8, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:favorite:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '叶子/收藏条目取消收藏');
 
 -- ----------------------------
--- 授权迁移补丁（上线安全关键，必须在 delete 040 的 sys_role_menu 行之前执行）
--- 原链路工作台(040)授权角色补授工作区(20009)，幂等可重放；否则仅授权过 040 的角色失明。
+-- 目录属主回填（2026-10-22 实测纠偏，decisions §十二-2 启用 owner_id）
+-- 资源树改按人隔离：存量「团队共享树」（owner_id null）行回填属主，否则创建者自己也看不见。
+-- 全新环境刚建表为空行集，此段为无操作；幂等（owner_id is null 只补一次）。
 -- ----------------------------
-insert into sys_role_menu (role_id, menu_id)
-select distinct rm.role_id, 1761400000000020009 from sys_role_menu rm
-where rm.menu_id = 1762000000000000040
-  and not exists (select 1 from sys_role_menu x where x.role_id = rm.role_id and x.menu_id = 1761400000000020009);
-
--- ----------------------------
--- 删除链路工作台 C 行 040（先清 sys_role_menu 再删 sys_menu）
--- ----------------------------
-delete from sys_role_menu where menu_id = 1762000000000000040;
-delete from sys_menu     where menu_id = 1762000000000000040;
+update databus_directory set owner_id = create_by where owner_id is null;

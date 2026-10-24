@@ -29,6 +29,11 @@ public class DatabusChainVo implements Serializable {
     private Long id;
 
     /**
+     * 创建人 id（P1 看得见：前端据此对非本人链路置画布只读态；系统行 create_by 为空）
+     */
+    private Long createBy;
+
+    /**
      * 链路编码
      */
     private String chainCode;

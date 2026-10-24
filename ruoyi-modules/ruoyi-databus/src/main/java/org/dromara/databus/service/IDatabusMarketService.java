@@ -2,12 +2,16 @@ package org.dromara.databus.service;
 
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.dromara.databus.domain.bo.MarketInstallMoveBo;
+import org.dromara.databus.domain.bo.MarketPublishBatchBo;
 import org.dromara.databus.domain.bo.MarketPublishBo;
 import org.dromara.databus.domain.bo.MarketQueryBo;
 import org.dromara.databus.domain.bo.MarketReviewBo;
 import org.dromara.databus.domain.vo.DatabusMarketCategoryVo;
 import org.dromara.databus.domain.vo.DatabusMarketInstallVo;
 import org.dromara.databus.domain.vo.DatabusMarketItemVo;
+import org.dromara.databus.domain.vo.DatabusMarketPreviewVo;
+import org.dromara.databus.domain.vo.DatabusMarketReviewDetailVo;
 
 import java.util.List;
 
@@ -57,9 +61,27 @@ public interface IDatabusMarketService {
     List<DatabusMarketInstallVo> queryInstalled(Long userId);
 
     /**
+     * 引用叶子目录归属移动（引用挂树，§十二-7）：只更新 install 行 directory_id，不动源组件
+     *
+     * @param bo     安装记录id + 目标目录（null=未归组）
+     * @param userId 当前用户 id（owner 校验）
+     */
+    Boolean moveInstall(MarketInstallMoveBo bo, Long userId);
+
+    /**
      * 提交上架（进待审；同源重复提交则更新并回到待审）
      */
     Boolean publish(MarketPublishBo bo, Long userId, String ownerCode);
+
+    /**
+     * 批量提审（POST /databus/market/publish/batch，decisions §十四-6 发布引导弹窗确认后的
+     * 落库动作）：循环复用单条 publish 的归属校验/同源更新逻辑，整批 all-or-nothing。
+     *
+     * @param bo        上架清单（主链发布响应 guideItems 原样回传）
+     * @param userId    当前用户 id
+     * @param ownerCode 当前用户账号
+     */
+    Boolean publishBatch(MarketPublishBatchBo bo, Long userId, String ownerCode);
 
     /**
      * 下架（在线 → 下线；仅本人）
@@ -86,8 +108,30 @@ public interface IDatabusMarketService {
     List<DatabusMarketItemVo> queryMine(Long userId);
 
     /**
-     * 待审核列表（治理者视角，仅 PENDING）
+     * 待审核列表（治理者视角，仅 PENDING；全量返回含自己上架的项，自己上架的项由前端
+     * 按 owner 隐藏操作按钮——禁自审 decisions §七-7.1，2026-10-24 用户拍板「列表要有，
+     * 只是不给自审项操作权限」）。
+     *
+     * @param userId 当前治理者（前端判断自审项用，列表本身不过滤）
      */
-    List<DatabusMarketItemVo> queryPending();
+    List<DatabusMarketItemVo> queryPending(Long userId);
+
+    /**
+     * 审核详情（GET /databus/market/items/{id}/review-detail，decisions §十四-7 嵌套审核）：
+     * 主体 item＋闭包依赖状态树（链＋组件），终审前供审核者查看依赖全貌。
+     * 仅 CHAIN 物料有依赖树，组件/连接器为空列表。
+     *
+     * @param id 市场物料 id
+     */
+    DatabusMarketReviewDetailVo reviewDetail(Long id);
+
+    /**
+     * 实现预览（GET /databus/market/items/{id}/preview，2026-10-24 装前可看）：
+     * 组件给脚本与契约、链路给节点清单；仅 {@code ONLINE} 物料开放，
+     * 非在线一律拒绝，防止审核中/已下架的草稿实现外泄。
+     *
+     * @param id 市场物料 id
+     */
+    DatabusMarketPreviewVo preview(Long id);
 
 }

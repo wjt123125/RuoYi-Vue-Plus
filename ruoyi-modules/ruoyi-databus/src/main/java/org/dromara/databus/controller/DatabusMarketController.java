@@ -12,12 +12,16 @@ import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.MarketInstallBo;
+import org.dromara.databus.domain.bo.MarketInstallMoveBo;
+import org.dromara.databus.domain.bo.MarketPublishBatchBo;
 import org.dromara.databus.domain.bo.MarketPublishBo;
 import org.dromara.databus.domain.bo.MarketQueryBo;
 import org.dromara.databus.domain.bo.MarketReviewBo;
 import org.dromara.databus.domain.vo.DatabusMarketCategoryVo;
 import org.dromara.databus.domain.vo.DatabusMarketInstallVo;
 import org.dromara.databus.domain.vo.DatabusMarketItemVo;
+import org.dromara.databus.domain.vo.DatabusMarketPreviewVo;
+import org.dromara.databus.domain.vo.DatabusMarketReviewDetailVo;
 import org.dromara.databus.service.IDatabusMarketService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -113,6 +117,21 @@ public class DatabusMarketController extends BaseController {
     }
 
     /**
+     * 引用叶子目录归属移动（引用挂树）：只更新 install 行 directory_id，不动源组件。
+     */
+    @SaCheckPermission("databus:market:install")
+    @Log(title = "物料市场引用归属移动", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @PutMapping("/install/{id}/directory")
+    public R<Void> moveInstall(@NotNull(message = "安装记录id不能为空")
+                               @PathVariable("id") Long id,
+                               @RequestBody(required = false) MarketInstallMoveBo bo) {
+        MarketInstallMoveBo move = bo == null ? new MarketInstallMoveBo() : bo;
+        move.setInstallId(id);
+        return toAjax(marketService.moveInstall(move, LoginHelper.getUserId()));
+    }
+
+    /**
      * 我的上架列表（作者视角治理视图，含各状态）。
      */
     @SaCheckPermission("databus:market:publish")
@@ -122,12 +141,13 @@ public class DatabusMarketController extends BaseController {
     }
 
     /**
-     * 待审核列表（治理者视角，仅 PENDING）。
+     * 待审核列表（治理者视角，仅 PENDING；全量返回含自己上架的项，前端按 owner 隐藏自审项
+     * 操作按钮——禁自审 decisions §七-7.1，2026-10-24 用户拍板「列表要有，只是不给自审项操作权限」）。
      */
     @SaCheckPermission("databus:market:review")
     @GetMapping("/pending")
     public R<List<DatabusMarketItemVo>> pending() {
-        return R.ok(marketService.queryPending());
+        return R.ok(marketService.queryPending(LoginHelper.getUserId()));
     }
 
     /* ---------------- 供给（上架侧） ---------------- */
@@ -141,6 +161,19 @@ public class DatabusMarketController extends BaseController {
     @PostMapping("/publish")
     public R<Void> publish(@Validated @RequestBody MarketPublishBo bo) {
         return toAjax(marketService.publish(bo, LoginHelper.getUserId(), LoginHelper.getUsername()));
+    }
+
+    /**
+     * 批量提审（decisions §十四-6 发布引导）：链路发布响应带回闭包内未上架自有物料的引导
+     * 清单，前端弹窗确认后整批回传本端点。整批 all-or-nothing——中途任何一项被拒（如他人
+     * 资源/保留分隔符）整批回滚，弹窗重选后整批重提。
+     */
+    @SaCheckPermission("databus:market:publish")
+    @Log(title = "物料市场批量提审", businessType = BusinessType.INSERT)
+    @RepeatSubmit
+    @PostMapping("/publish/batch")
+    public R<Void> publishBatch(@Validated @RequestBody MarketPublishBatchBo bo) {
+        return toAjax(marketService.publishBatch(bo, LoginHelper.getUserId(), LoginHelper.getUsername()));
     }
 
     /**
@@ -166,6 +199,29 @@ public class DatabusMarketController extends BaseController {
                           @PathVariable("id") Long id,
                           @Validated @RequestBody MarketReviewBo bo) {
         return toAjax(marketService.review(id, bo, LoginHelper.getUserId()));
+    }
+
+    /**
+     * 审核详情（decisions §十四-7 嵌套审核）：主体物料＋闭包依赖状态树（链＋组件），
+     * 终审前供审核者查看依赖全貌——审核者看到的状态树，就是 approve 时终审 gate
+     * 会核对的清单。仅 CHAIN 物料有依赖树。
+     */
+    @SaCheckPermission("databus:market:review")
+    @GetMapping("/items/{id}/review-detail")
+    public R<DatabusMarketReviewDetailVo> reviewDetail(@NotNull(message = "主键不能为空")
+                                                       @PathVariable("id") Long id) {
+        return R.ok(marketService.reviewDetail(id));
+    }
+
+    /**
+     * 实现预览（2026-10-24 装前可看）：组件＝脚本与契约，链路＝节点清单；
+     * 仅已上架物料开放（非在线一律拒，草稿实现不外泄）。
+     */
+    @SaCheckPermission("databus:market:list")
+    @GetMapping("/items/{id}/preview")
+    public R<DatabusMarketPreviewVo> preview(@NotNull(message = "主键不能为空")
+                                             @PathVariable("id") Long id) {
+        return R.ok(marketService.preview(id));
     }
 
     /**

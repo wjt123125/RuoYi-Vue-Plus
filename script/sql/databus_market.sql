@@ -1,16 +1,12 @@
 -- ----------------------------
 -- 物料市场脚本 databus_market.sql（2026-10-18 物料市场，databus-material-market.md §十/§十一/§十三）
--- 承载工作台内「市场」tab 的唯一后端三表 + 六个 F 权限行：
+-- 承载工作台内「市场」tab 的唯一后端三表（市场菜单 F 行正本见 script/sql/databus_menu.sql）：
 --   ① databus_market_item      集市货架（一行＝一个已上架的组件/链路 + 展示信息 + 状态机 + 三计数缓存）
 --   ② databus_market_category  分类目录（多级平表，parent_id 自引用，前端组树）
 --   ③ databus_install  owner→source 引用记录（安装＝fork 血缘；同构承载收藏星标）
--- 执行顺序：databus_chain.sql → databus_component.sql → databus_workspace.sql → 本脚本。
---   （本脚本 F 行父指工作区 C 行 1761400000000020009，由 databus_workspace.sql 播种。）
+-- 执行顺序：本脚本（DDL+种子）与 databus_menu.sql（菜单全量重建）相互独立，任意先后。
 --
 -- DDL 一律 drop + 全量重建（本库惯例，不写 alter）。市场三表为新建表，无历史数据迁移。
--- sys_menu 22 列顺序：menu_id, menu_name, parent_id, order_num, path, component, query_param,
---   is_frame, is_cache, menu_type, visible, status, perms, icon, active_menu, ext,
---   create_dept, create_by, create_time, update_by, update_time, remark
 --
 -- 【对设计正本 §十 的落地细化，已在此声明】
 --   ① databus_market_item 增 remark varchar(500)：承接审核驳回理由（正本 §七 驳回需带理由，
@@ -50,6 +46,7 @@ create table databus_market_item (
     create_time         datetime     default null              comment '创建时间',
     update_time         datetime     default null              comment '更新时间',
     remark              varchar(500) default null              comment '备注（审核驳回理由等）',
+    modify_note         varchar(500) default null              comment '修改说明（P1 驳回-重提闭环：作者被驳回后重提时填写，审核者复核用）',
     review_by           bigint(20)   default null              comment '审核人id（治理者；通过/驳回均记）',
     review_time         datetime     default null              comment '审核时间',
     primary key (id),
@@ -74,9 +71,11 @@ create table databus_market_category (
 
 -- ----------------------------
 -- 安装记录表 databus_install（owner→source 引用记录，与收藏同构）
--- 一行＝某用户 fork 了某市场物料一次。market_item_id 允许 null 以承载后期 FAVORITE（星标）语义。
+-- 一行＝某用户安装某市场物料一次。market_item_id 允许 null 以承载后期 FAVORITE（星标）语义。
 -- content_hash 记落快照时的逻辑源码指纹：未改快照与原件同 hash → 复用源 bean（0 内存，§六）。
 -- 唯一键 uk_install 兜底幂等：同用户同物料至多一条安装记录（install 前置校验的护栏）。
+-- directory_id 承载组件 SHARED 安装的目录归属（引用挂树，§十二-7）：仅组织视角，与副本所有权解耦；
+--   null=未归组（落 ungrouped）；挪动引用叶子＝更新本列，绝不动源组件行的 directory_id。
 -- ----------------------------
 drop table if exists databus_install;
 create table databus_install (
@@ -84,7 +83,8 @@ create table databus_install (
     owner_id            bigint(20)   not null                  comment '安装者id（owner）',
     market_item_id      bigint(20)   default null              comment '市场物料id（source；FAVORITE 语义可空）',
     local_resource_id   bigint(20)   not null                  comment '本地副本id（链路主键 / 组件DB行id）',
-    mode                varchar(16)  not null                  comment '安装模式（FORK / FAVORITE）',
+    mode                varchar(16)  not null                  comment '安装模式（FORK / SHARED / FAVORITE）',
+    directory_id        bigint(20)   default null              comment '目录归属（组件SHARED引用挂树的组织视角，null=未归组）',
     content_hash        varchar(64)  default null              comment '落快照时的逻辑源码指纹（md5）',
     create_time         datetime     default current_timestamp comment '安装时间',
     primary key (id),
@@ -92,25 +92,13 @@ create table databus_install (
     key idx_install_owner (owner_id),
     key idx_install_market (market_item_id),
     key idx_install_local (local_resource_id)
-) engine=innodb comment='物料市场安装记录（owner→source 血缘，fork 引用）';
+) engine=innodb comment='物料市场安装记录（owner→source 血缘，fork/shared 引用）';
 
 -- ----------------------------
--- 菜单：市场六 F 行（menu_id 1761400000000020018~023，挂工作区 20009，order 接组件五 F 行 1~5 与收藏三 F 行 6~8 之后）
--- 权限串规范 databus:market:<动作>；list 覆盖浏览组（列表/分类/详情/我的已装）四端点。
--- 幂等：先按 id 删后插，同 id 立即重建，sys_role_menu 授权行继续有效（两表无物理外键），可直接重复执行。
--- 逐行单条 insert（与 databus_workspace.sql 同约定）：本机 mysql 客户端「多行批量 + 中文」稳定报 1264。
--- 角色授权：与收藏 F 行同口径，不在此脚本内批量授权（由角色管理界面按需勾选；超管 role_id=1 免检）。
+-- 菜单与权限：正本已收敛至 script/sql/databus_menu.sql
+--   （2026-10-23 tabs 收敛终态，全量重建型：开头按三段 id 范围清旧、再全量 insert，
+--   1 条 M 目录 20000 + 54 条 F 行直接挂靠，含 5 条 list 载体行；本脚本只管 DDL 与种子数据）
 -- ----------------------------
-delete from sys_menu where menu_id in
-  (1761400000000020018, 1761400000000020019, 1761400000000020020,
-   1761400000000020021, 1761400000000020022, 1761400000000020023);
-
-insert into sys_menu values (1761400000000020018, '市场查询', 1761400000000020009, 9, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:list', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '市场列表/分类/详情/我的已装（浏览组四端点）');
-insert into sys_menu values (1761400000000020019, '市场安装', 1761400000000020009, 10, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:install', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '安装＝fork（复制快照进我的目录 + 记血缘）');
-insert into sys_menu values (1761400000000020020, '市场卸载', 1761400000000020009, 11, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:uninstall', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '卸载（删我的副本 + 删血缘；不硬拦引用）');
-insert into sys_menu values (1761400000000020021, '市场上架', 1761400000000020009, 12, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:publish', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '提交上架（进待审）+ 下架');
-insert into sys_menu values (1761400000000020022, '市场审核', 1761400000000020009, 13, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:review', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '审核（通过→上线 / 驳回→驳回态）');
-insert into sys_menu values (1761400000000020023, '市场删除', 1761400000000020009, 14, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '删市场原件（作者主权；与卸载分离）');
 
 -- ----------------------------
 -- 种子数据：把代表性系统资源上架为 ONLINE，冷启动即有货（§十四；幂等，可重复执行）

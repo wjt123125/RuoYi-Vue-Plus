@@ -76,26 +76,7 @@ create table databus_execution_node (
 ) engine=innodb comment='数据总线执行节点记录（节点级明细，FULL 档采集）';
 
 -- ----------------------------
--- 菜单与权限（执行记录页：列表/查询/手动执行与重跑/保留期清理）
--- 前端动态路由：component 填 databus/execution/index 自动映射 views/databus/execution/index.vue。
--- 复用父菜单"数据总线"目录 menu_id=1761400000000020000（连接管理 010~015、链路管理 020~026/030 同父）。
--- 链路卡片上的「执行」按钮与记录页/详情抽屉的「手动执行/重跑」共用 databus:execution:execute。
--- 注意：parent_id 必须指向真实存在的父菜单；非 admin 账号还需在【角色管理】勾选这 4 项（sys_role_menu）。
--- sys_menu 22 列顺序：menu_id, menu_name, parent_id, order_num, path, component, query_param,
---   is_frame, is_cache, menu_type, visible, status, perms, icon, active_menu, ext,
---   create_dept, create_by, create_time, update_by, update_time, remark
--- icon 必须用 plus-ui/src/assets/icons/svg 下真实存在的图标名（侧边栏 svg-icon 渲染），
--- 执行记录取 log.svg（与操作日志同义）；早期误写的 'tickets' 不存在会渲染空白。
--- 幂等：先按 menu_id 删旧（含 sys_role_menu 关联）再插，本片段可直接重复执行。
--- ID 段红线：本菜单曾占用 040~043，2026-10-08 起该段被链路目录脚本的
---   「链路工作台」（040~044）先删后插顶替；2026-10-17 起 040 段由 databus_workspace.sql 接管
---   （040 链路工作台删除、工作区改挂 20009）。执行记录已迁 060~063，各脚本都不得再改回 040 段。
+-- 菜单与权限：正本已收敛至 script/sql/databus_menu.sql
+--   （2026-10-23 tabs 收敛终态，全量重建型：开头按三段 id 范围清旧、再全量 insert，
+--   1 条 M 目录 20000 + 54 条 F 行直接挂靠，含 5 条 list 载体行；本脚本只管 DDL）
 -- ----------------------------
-delete from sys_role_menu where menu_id in (1762000000000000060, 1762000000000000061, 1762000000000000062, 1762000000000000063);
-delete from sys_menu where menu_id in (1762000000000000060, 1762000000000000061, 1762000000000000062, 1762000000000000063);
-
-insert into sys_menu values
-  (1762000000000000060, '执行记录', 1761400000000020000, 3, 'execution', 'databus/execution/index', '', 'N', 'N', 'C', '0', '0', 'databus:execution:list', 'log', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线执行记录台账菜单'),
-  (1762000000000000061, '记录查询', 1762000000000000060, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:execution:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '查询执行记录详情（总账+节点明细）'),
-  (1762000000000000062, '手动执行/重跑', 1762000000000000060, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:execution:execute', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '手动执行已发布链路/以历史入参重跑，均产生新记录'),
-  (1762000000000000063, '保留期清理', 1762000000000000060, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:execution:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '手动物理清理过期执行记录（定时任务每天凌晨按保留期自动执行）');

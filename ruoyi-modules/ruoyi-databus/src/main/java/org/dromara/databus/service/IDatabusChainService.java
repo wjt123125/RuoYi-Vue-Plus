@@ -2,14 +2,20 @@ package org.dromara.databus.service;
 
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.bo.ChainCopyBo;
 import org.dromara.databus.domain.bo.DatabusChainBo;
 import org.dromara.databus.domain.bo.TemplateMarkBo;
+import org.dromara.databus.domain.vo.ChainPublishResultVo;
 import org.dromara.databus.domain.vo.ChainStatsVo;
 import org.dromara.databus.domain.vo.CopySuggestionVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+
+import org.dromara.databus.el.bean.CmpProperty;
 
 /**
  * 链路定义 Service 接口
@@ -29,11 +35,12 @@ public interface IDatabusChainService {
     /**
      * 分页查询链路列表
      *
-     * @param bo        查询条件
+     * @param bo        查询条件（onlyMine=true 时叠加 create_by 过滤）
      * @param pageQuery 分页参数
+     * @param userId    当前登录用户（onlyMine 过滤用，超级管理员豁免）
      * @return 分页结果
      */
-    PageResult<DatabusChainVo> queryPageList(DatabusChainBo bo, PageQuery pageQuery);
+    PageResult<DatabusChainVo> queryPageList(DatabusChainBo bo, PageQuery pageQuery, Long userId);
 
     /**
      * 按 status 分组计数（链路管理页顶部统计块用）。
@@ -55,10 +62,11 @@ public interface IDatabusChainService {
     /**
      * 修改链路草稿（EL 由后端从组件树重新生成）
      *
-     * @param bo 链路业务对象
+     * @param bo     链路业务对象
+     * @param userId 当前用户 id（编辑归属校验：非作者拒改）
      * @return 是否修改成功
      */
-    Boolean updateByBo(DatabusChainBo bo);
+    Boolean updateByBo(DatabusChainBo bo, Long userId);
 
     /**
      * 批量删除链路
@@ -73,11 +81,16 @@ public interface IDatabusChainService {
      * <p>
      * 草稿与发布共用一份 el_expression + canvas_data，发布即固化当前编排为运行版本。
      * 重新发布（已下线 → 已发布）也走本方法，version 继续递增。
+     * <p>
+     * 发布侧引导（decisions §十四-6）：闭包内他人的未上架链直接拒绝（无权代提）；
+     * 自己的未上架物料（子链＋组件）随发布结果返回引导清单，供前端弹窗确认后
+     * 批量提审（POST /databus/market/publish/batch）。改版冻结钩子见 decisions §十四-8。
      *
-     * @param id 链路主键
-     * @return 是否发布成功
+     * @param id     链路主键
+     * @param userId 发布操作者（判闭包依赖「自己的/他人的」）
+     * @return 引导清单＋他人未上架组件提示；发布失败（理论不可达）返回 null
      */
-    Boolean publish(Long id);
+    ChainPublishResultVo publish(Long id, Long userId);
 
     /**
      * 下线链路：status 1已发布 → 2已下线
@@ -131,5 +144,27 @@ public interface IDatabusChainService {
      * @return 是否取消成功
      */
     Boolean unmarkTemplate(Long id);
+
+    /**
+     * 收集链路安装闭包（decisions §十四-1 链路安装全 fork）：以 rootChainCode 为根沿组件树
+     * CHAIN 引用递归下钻，返回「主链＋全部传递子链」（纯读不落库）。
+     * <p>
+     * entry 顺序为 post-order（被引用者先于引用者），即安装复制的施工顺序——子链先就位，
+     * 主链引用重定向时新编码已存在。环引用与四类非法子链（不存在/模板/未发布/未编排）的
+     * 拒绝口径与发布侧校验一致（decisions §十四-4：安装闭包与发布校验双口径一致降险）。
+     *
+     * @param rootChainCode 主链编码
+     * @return 闭包（key=chainCode，含主链自身，entry 顺序即复制顺序）
+     */
+    LinkedHashMap<String, DatabusChain> collectChainClosure(String rootChainCode);
+
+    /**
+     * 收集单条链路 cmp_property 树里的直接 CHAIN 引用编码（不递归下钻，去重保序）。
+     * 审核详情依赖树按引用层级先序展开时用来取每层的孩子（2026-10-24 闭包联审）。
+     *
+     * @param root 链路结构树根
+     * @return 直接引用的 chainCode 清单
+     */
+    List<String> collectChainRefs(CmpProperty root);
 
 }

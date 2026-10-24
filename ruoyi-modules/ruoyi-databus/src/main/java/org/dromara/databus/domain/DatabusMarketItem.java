@@ -42,12 +42,12 @@ public class DatabusMarketItem {
     private String ownerCode;
 
     /**
-     * 物料类型（COMPONENT / CHAIN）
+     * 物料类型（COMPONENT / CHAIN / CONNECTOR——连接器安装语义＝enable，不写 databus_install）
      */
     private String resourceType;
 
     /**
-     * 源资源 id（链路主键 / 组件 DB 行 id）
+     * 源资源 id（链路主键 / 组件 DB 行 id / 连接器 def 行 id）
      */
     private Long sourceId;
 
@@ -121,6 +121,11 @@ public class DatabusMarketItem {
      * 备注（驳回理由等；BaseEntity 不含 remark，表列自持）
      */
     private String remark;
+
+    /**
+     * 修改说明（P1 驳回-重提闭环：作者被驳回后重提时填写，审核者复核用）
+     */
+    private String modifyNote;
 
     /**
      * 审核人 id（治理者；驳回 / 通过均记）

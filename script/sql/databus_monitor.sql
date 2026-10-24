@@ -83,17 +83,7 @@ create table databus_metric_error_hourly (
 ) engine=innodb comment='数据总线错误指标小时聚合表';
 
 -- ----------------------------
--- 菜单与权限（监控大盘；告警管理菜单见 databus_alert.sql）
--- 复用父菜单"数据总线"目录 menu_id=1761400000000020000；本段占 070~074。
--- ID 段红线：1762 段 010~015 连接管理、020~030 链路管理、040~044 链路工作台、050~055 组件管理、
---   060~063 执行记录；070 起为监控体系（070~074 大盘，075+ 告警），两侧脚本不得回改。
--- icon 必须用 plus-ui/src/assets/icons/svg 下真实存在的文件名：dashboard/message 均存在。
--- 幂等：先按 menu_id 删旧（含 sys_role_menu 关联）再逐行插，本片段可重复执行。
+-- 菜单与权限：正本已收敛至 script/sql/databus_menu.sql
+--   （2026-10-23 tabs 收敛终态，全量重建型：开头按三段 id 范围清旧、再全量 insert，
+--   1 条 M 目录 20000 + 54 条 F 行直接挂靠，含 5 条 list 载体行；本脚本只管 DDL）
 -- ----------------------------
-delete from sys_role_menu where menu_id in (1762000000000000070, 1762000000000000071, 1762000000000000072);
-delete from sys_menu where menu_id in (1762000000000000070, 1762000000000000071, 1762000000000000072);
-
-insert into sys_menu values
-  (1762000000000000070, '监控大盘', 1761400000000020000, 4, 'monitor', 'databus/monitor/index', '', 'N', 'N', 'C', '0', '0', 'databus:monitor:list', 'dashboard', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线监控大盘（指标卡片/趋势/排行榜/错误流）'),
-  (1762000000000000071, '指标查询', 1762000000000000070, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:monitor:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '查询大盘卡片/趋势/排行榜/错误流数据'),
-  (1762000000000000072, '指标聚合', 1762000000000000070, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:monitor:aggregate', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '手动触发指定小时指标聚合（定时任务每小时自动执行）');

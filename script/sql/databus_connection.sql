@@ -29,31 +29,10 @@ create table sys_databus_connection (
 ) engine=innodb comment='数据总线连接管理表';
 
 -- ----------------------------
--- 菜单与权限（连接管理页：列表/查询/新增/修改/删除/测试连接）
--- 前端走动态路由：菜单 component 填 databus/connection/index 即自动映射 views/databus/connection/index.vue
+-- 菜单与权限：正本已收敛至 script/sql/databus_menu.sql
+--   （2026-10-23 tabs 收敛终态，全量重建型：开头按三段 id 范围清旧、再全量 insert，
+--   1 条 M 目录 20000 + 54 条 F 行直接挂靠，含 5 条 list 载体行；本脚本只管 DDL 与连接种子数据）
 -- ----------------------------
--- 推荐在【系统管理 → 菜单管理】UI 中新增（父菜单选已有的"数据总线"目录），字段对照如下。
--- 父菜单"数据总线"目录 menu_id=1761400000000020000（parent_id=0, menu_type=M）；
--- 若环境里该目录 ID 不同，请替换下面的父 ID，并确认 1762000000000000010~015 不与既有菜单冲突。
--- 注意：parent_id 必须指向真实存在的父菜单，否则菜单在菜单管理可见但挂不上侧边栏树（孤儿菜单不显示）。
--- 非 admin 账号还需在【系统管理 → 角色管理】勾选这 6 项菜单/按钮权限（sys_role_menu）。
--- sys_menu 22 列顺序：menu_id, menu_name, parent_id, order_num, path, component, query_param,
---   is_frame, is_cache, menu_type, visible, status, perms, icon, active_menu, ext,
---   create_dept, create_by, create_time, update_by, update_time, remark
-
--- 幂等：先按 id 删旧菜单行再重插（含早期按旧占位父 ID 1762000000000000000 建过的行），
---   重插即为正确父节点，整批脚本可重复执行。
-delete from sys_menu where menu_id in
-  (1762000000000000010, 1762000000000000011, 1762000000000000012,
-   1762000000000000013, 1762000000000000014, 1762000000000000015);
-
-insert into sys_menu values
-  (1762000000000000010, '连接管理', 1761400000000020000, 2, 'connection', 'databus/connection/index', '', 'N', 'N', 'C', '0', '0', 'databus:connection:list', 'link', '', '', NULL, NULL, sysdate(), NULL, NULL, '数据总线连接管理菜单'),
-  (1762000000000000011, '连接查询', 1762000000000000010, 1, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connection:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
-  (1762000000000000012, '连接新增', 1762000000000000010, 2, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connection:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
-  (1762000000000000013, '连接修改', 1762000000000000010, 3, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connection:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
-  (1762000000000000014, '连接删除', 1762000000000000010, 4, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connection:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, ''),
-  (1762000000000000015, '连接测试', 1762000000000000010, 5, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connection:test', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '测试连接是否可用');
 
 -- ----------------------------
 -- BPM HTTP 连接实例种子数据（三层物料第二层：Connection 实例）

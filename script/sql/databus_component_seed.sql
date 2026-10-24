@@ -74,3 +74,23 @@ values
     (1762000000001100020, 1762000000001000020, 1, 'java', 'package org.dromara.databus.script;\n\nimport java.util.concurrent.ThreadLocalRandom;\nimport lombok.Data;\nimport lombok.extern.slf4j.Slf4j;\nimport org.dromara.common.core.exception.ServiceException;\nimport org.dromara.databus.component.DatabusNodeComponent;\nimport org.dromara.databus.component.schema.annotation.DatabusCmp;\nimport org.dromara.databus.component.schema.annotation.DatabusProp;\nimport org.dromara.databus.component.schema.enums.WidgetKind;\n\n/**\n * 随机失败组件（注册名 randomFail）——告警验收专用故障制造机，生产链路勿用。\n * 每次执行取 [0,1) 随机数，小于 failRate 就抛 ServiceException，否则正常通过；\n * 自然形成成功/失败混合序列，可反复验证告警的触发、防抖与自动恢复。\n *\n * @author databus\n */\n@Slf4j\n@DatabusCmp(\n    code = "randomFail",\n    name = "随机失败",\n    icon = "ph:dice-five",\n    color = "#f56c6c",\n    group = "other",\n    sort = 60,\n    description = "测试专用：每次执行按 failRate 概率随机抛异常，自然产生成功/失败混合序列，用于反复验证监控告警触发与恢复；生产链路勿用",\n    dataExample = """\n        {"failRate":0.5}\n        """\n)\npublic class RandomFailComponent extends DatabusNodeComponent {\n\n    @Override\n    public void process() {\n        RandomFailCfg cfg = this.getCmpData(RandomFailCfg.class);\n        double rate = (cfg == null || cfg.getFailRate() == null) ? 0.5d : cfg.getFailRate();\n        rate = Math.max(0d, Math.min(1d, rate));\n        double roll = ThreadLocalRandom.current().nextDouble();\n        if (roll < rate) {\n            log.info("[databus] randomFail 命中失败 roll={} rate={}", roll, rate);\n            throw new ServiceException("告警测试：随机失败（随机数 " + String.format("%.2f", roll) + " 小于失败概率 " + rate + "）");\n        }\n        resultSummary("随机通过（随机数 " + String.format("%.2f", roll) + "，失败概率 " + rate + "）");\n        log.info("[databus] randomFail 通过 roll={} rate={}", roll, rate);\n    }\n\n    @Data\n    public static class RandomFailCfg {\n\n        @DatabusProp(\n            label = "失败概率",\n            widget = WidgetKind.NUMBER,\n            order = 1,\n            placeholder = "0.5",\n            description = "0到1之间，每次执行按该概率抛异常；不填默认0.5。取0.5时自然形成成败交替，连错3次触发告警后出现成功即自动恢复"\n        )\n        private Double failRate;\n    }\n}\n', '阶段5告警验收夹具：随机失败故障制造机', sysdate());
 
 -- ----------------------------
+-- ③ 闭包联审测试件（2026-10-24 闭包联审）：整行复制 setValue、独立编码 reviewEcho。
+--    不随市场种子上架（databus_market.sql 组件种子按 sort,id 升序取前 8，本件 sort=999 天然避开），
+--    供「主链上架连带依赖补 PENDING 单 → 审核详情页就地联审」全流程验证。
+--    归属 admin（与 chain-ref/subChain_demo 级联测试料同口径：admin 卖家→test1 审核→test 买家）。
+--    幂等：insert ignore；依赖 setValue 行已灌（本文件 ①）。
+-- ----------------------------
+insert ignore into databus_component
+    (id, component_code, component_name, short_name, category, group_name, domain,
+     icon, color, sort, description, node_type, editor, param_schema,
+     data_example, script_lang, script_body, version, status, deprecated, create_time, create_dept, create_by)
+select
+    1762000000001000021, 'reviewEcho', '联审测试·回声', short_name, category, group_name, domain,
+    icon, color, 999, '闭包联审测试件：逻辑同 setValue，独立编码供审核流程验证', node_type, editor, param_schema,
+    data_example, script_lang, script_body, version, status, deprecated, sysdate(),
+    (select dept_id from sys_user where user_name = 'admin' and del_flag = '0' limit 1),
+    (select user_id from sys_user where user_name = 'admin' and del_flag = '0' limit 1)
+from databus_component
+where component_code = 'setValue';
+
+-- ----------------------------

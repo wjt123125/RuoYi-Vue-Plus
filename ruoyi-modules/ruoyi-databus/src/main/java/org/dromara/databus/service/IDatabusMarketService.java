@@ -41,7 +41,7 @@ public interface IDatabusMarketService {
     DatabusMarketItemVo queryById(Long id, Long userId);
 
     /**
-     * 安装＝fork（落快照 + 进我目录 + 记血缘）
+     * 安装：链路＝复制依赖清单快照进我目录并写安装记录；组件＝共享注册；连接器＝启用
      *
      * @param itemId     市场物料 id
      * @param directoryId 目标目录（null=未归组）
@@ -51,7 +51,7 @@ public interface IDatabusMarketService {
     DatabusMarketInstallVo install(Long itemId, Long directoryId, Long userId);
 
     /**
-     * 卸载（删我的本地副本 + 删血缘记录；不硬拦引用）
+     * 卸载（删我的本地副本 + 删安装记录；链路被其他链引用时拒删）
      */
     Boolean uninstall(Long resourceId, Long userId);
 
@@ -118,7 +118,7 @@ public interface IDatabusMarketService {
 
     /**
      * 审核详情（GET /databus/market/items/{id}/review-detail，decisions §十四-7 嵌套审核）：
-     * 主体 item＋闭包依赖状态树（链＋组件），终审前供审核者查看依赖全貌。
+     * 主体 item＋依赖清单状态树（链＋组件），终审前供审核者查看依赖全貌。
      * 仅 CHAIN 物料有依赖树，组件/连接器为空列表。
      *
      * @param id 市场物料 id

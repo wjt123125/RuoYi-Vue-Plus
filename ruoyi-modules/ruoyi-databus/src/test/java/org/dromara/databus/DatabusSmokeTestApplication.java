@@ -54,12 +54,17 @@ import static org.mockito.Mockito.when;
  *     补一个 Mockito 桩（返回空连接列表）；后者是 MyBatis Mapper，本上下文不装配
  *     mybatis，同样补桩——未打桩的 {@code selectOne} 默认返回 null，而
  *     {@code execute} 对链路查不到不拦执行，本地 EL 链路照常跑；</li>
- *     <li>{@code alert} / {@code job} 两包按正则整体排除（2026-10-23）：告警评估触发器、
- *     通知器与三个定时 Job 的构造参数依赖 {@code @Service} 层（Alert/Metric/Execution
- *     Service，均已按注解过滤），冒烟上下文无数据库装配不了，且引擎冒烟链路不触发告警
- *     评估与定时聚合，排除即对齐「冒烟只测引擎」的本意。但引擎侧
- *     {@link FlowExecutionTraceLifeCycle} 构造依赖 {@link AlertEvaluateTrigger}，
- *     手工补一个 Mockito 桩（触发告警评估为 no-op）；</li>
+ *     <li>{@code alert} / {@code job} / {@code market} 三包按正则整体排除（2026-10-23）：
+ *     告警评估触发器、通知器与三个定时 Job 的构造参数依赖 {@code @Service} 层
+ *     （Alert/Metric/Execution Service，均已按注解过滤），冒烟上下文无数据库装配不了，
+ *     且引擎冒烟链路不触发告警评估与定时聚合，排除即对齐「冒烟只测引擎」的本意。
+ *     但引擎侧 {@link FlowExecutionTraceLifeCycle} 构造依赖 {@link AlertEvaluateTrigger}，
+ *     手工补一个 Mockito 桩（触发告警评估为 no-op）。
+ *     {@code market} 包同理：包里的 bean（浏览 {@code MarketQueryService}、安装
+ *     {@code MarketInstallService}、上架 {@code MarketPublishService} 三个协作者类，
+ *     加上 {@code MarketClosureLoader}、{@code MarketVoAssembler}）构造都要
+ *     {@code IDatabusChainService} 或 Mapper（前者已按注解过滤，后者本上下文不装配），
+ *     而冒烟链路不做市场上架/安装，排除即可，无需补桩；</li>
  *     <li>执行追踪 / 脚本补课链路的 MyBatis Mapper（{@link DatabusChainMapper}、
  *     {@link DatabusExecutionMapper}、{@link DatabusExecutionNodeMapper}、
  *     {@link DatabusComponentMapper}）逐个补桩：本上下文刻意不装配 mybatis。
@@ -84,7 +89,7 @@ import static org.mockito.Mockito.when;
         @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE,
             classes = RulePublishService.class),
         @ComponentScan.Filter(type = FilterType.REGEX,
-            pattern = "org\\.dromara\\.databus\\.(alert|job)\\..*")
+            pattern = "org\\.dromara\\.databus\\.(alert|job|market)\\..*")
     })
 @ImportAutoConfiguration({
     LiteflowPropertyAutoConfiguration.class,

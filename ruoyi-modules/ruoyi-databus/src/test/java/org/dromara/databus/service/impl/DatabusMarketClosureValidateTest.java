@@ -10,19 +10,16 @@ import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
-import org.dromara.databus.mapper.DatabusMarketCategoryMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
+import org.dromara.databus.market.MarketInstallService;
+import org.dromara.databus.market.support.MarketClosureLoader;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.service.IDatabusChainService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.List;
 
@@ -34,11 +31,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * validateClosureOnMarket 闭包市场校验单元测试（decisions §十四-4：闭包全链必须 ONLINE）。
+ * validateClosureOnMarket 依赖清单市场校验单元测试（decisions §十四-4：清单内全链必须 ONLINE）。
  * <p>
- * 纯 JUnit5＋Mockito 直构 Service（冒烟上下文不含 Service 层）；被测方法为 install 内部
- * 闸门（private），经反射调用验证拒绝口径——缺项报「未上架」、非 ONLINE 报具体状态、
+ * 纯 JUnit5＋Mockito 直构安装服务（冒烟上下文不含 Service 层）。清单由真实的
+ * {@link MarketClosureLoader} 装配（链服务与两个 Mapper 打桩），再交给被测方法直接调用——
+ * 方法是 public，跨包可直调，无需反射。验证拒绝口径：缺项报「未上架」、非 ONLINE 报具体状态、
  * 全 ONLINE 放行。安装主链路事务级覆盖在块3 install 测试补齐。
+ * <p>
+ * 桩链均无组件引用，故 loader 只打一次市场行查询，marketItemMapper 的返回值即链的市场行。
  *
  * @author databus
  */
@@ -47,7 +47,11 @@ class DatabusMarketClosureValidateTest {
 
     private DatabusMarketItemMapper marketItemMapper;
 
-    private DatabusMarketServiceImpl service;
+    private IDatabusChainService chainService;
+
+    private MarketClosureLoader closureLoader;
+
+    private MarketInstallService service;
 
     /**
      * 纯 Mockito 环境无 Spring/MyBatis 装配：手动注册实体元数据，LambdaQueryWrapper 的
@@ -61,20 +65,21 @@ class DatabusMarketClosureValidateTest {
     @BeforeEach
     void setUp() {
         marketItemMapper = mock(DatabusMarketItemMapper.class);
-        service = new DatabusMarketServiceImpl(
+        chainService = mock(IDatabusChainService.class);
+        closureLoader = new MarketClosureLoader(chainService, marketItemMapper, mock(DatabusComponentMapper.class));
+        service = new MarketInstallService(
             marketItemMapper,
-            mock(DatabusMarketCategoryMapper.class),
             mock(DatabusInstallMapper.class),
             mock(DatabusChainMapper.class),
             mock(DatabusComponentMapper.class),
             mock(DatabusConnectorDefMapper.class),
-            jsonMapper(),
-            mock(IDatabusChainService.class),
-            new ExpressGenerator());
+            chainService,
+            new ExpressGenerator(),
+            closureLoader);
     }
 
     /**
-     * 闭包全链 ONLINE：放行（主链即被装 item 本身，入口已校验 ONLINE，此处复检不误伤）。
+     * 清单内全链 ONLINE：放行（主链即被装 item 本身，入口已校验 ONLINE，此处复检不误伤）。
      */
     @Test
     void validateClosureOnMarket_allOnline_passes() {
@@ -88,7 +93,7 @@ class DatabusMarketClosureValidateTest {
     }
 
     /**
-     * 闭包子链无市场行（未上架）：拒装并报具体链名。
+     * 清单内子链无市场行（未上架）：拒装并报具体链名。
      */
     @Test
     void validateClosureOnMarket_subNotListed_rejectsWithChainName() {
@@ -102,7 +107,7 @@ class DatabusMarketClosureValidateTest {
     }
 
     /**
-     * 闭包子链市场状态非 ONLINE（改版冻结 PENDING）：拒装并报具体状态（decisions §十四-8）。
+     * 清单内子链市场状态非 ONLINE（改版冻结 PENDING）：拒装并报具体状态（decisions §十四-8）。
      */
     @Test
     void validateClosureOnMarket_subPending_rejectsWithStatus() {
@@ -134,16 +139,12 @@ class DatabusMarketClosureValidateTest {
     // ---------------------------- 桩构造 ----------------------------
 
     /**
-     * 反射调用私有闸门（块1 未接 install，块3 接线后由 install 测试直接覆盖主链路）。
+     * 装配清单并调用被测闸门：桩链先交给 collectChainClosure，再走真实 loader 查市场行。
      */
-    private void invoke(LinkedHashMap<String, DatabusChain> closure) throws Throwable {
-        Method method = DatabusMarketServiceImpl.class.getDeclaredMethod("validateClosureOnMarket", LinkedHashMap.class);
-        method.setAccessible(true);
-        try {
-            method.invoke(service, closure);
-        } catch (InvocationTargetException e) {
-            throw e.getCause();
-        }
+    private void invoke(LinkedHashMap<String, DatabusChain> closure) {
+        String rootCode = closure.keySet().iterator().next();
+        when(chainService.collectChainClosure(rootCode)).thenReturn(closure);
+        service.validateClosureOnMarket(closureLoader.load(rootCode));
     }
 
     private LinkedHashMap<String, DatabusChain> closure(DatabusChain... chains) {
@@ -169,9 +170,5 @@ class DatabusMarketClosureValidateTest {
         item.setSourceId(sourceId);
         item.setStatus(status);
         return item;
-    }
-
-    private ObjectMapper jsonMapper() {
-        return JsonMapper.builder().build();
     }
 }

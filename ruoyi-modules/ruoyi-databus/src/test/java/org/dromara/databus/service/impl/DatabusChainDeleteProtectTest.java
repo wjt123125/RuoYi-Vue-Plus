@@ -5,10 +5,12 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.domain.DatabusChain;
+import org.dromara.databus.domain.DatabusInstall;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
+import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,18 +53,24 @@ class DatabusChainDeleteProtectTest {
     @Mock
     private DatabusComponentMapper componentMapper;
 
+    @Mock
+    private DatabusInstallMapper installMapper;
+
     private DatabusChainServiceImpl chainService;
 
     @BeforeAll
     static void initTableInfo() {
         // 纯 Mockito 环境下 LambdaQueryWrapper 解析列名依赖实体 TableInfo 缓存
-        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), DatabusChain.class);
+        // （DatabusInstall：删链后级联清安装记录的 in / eq 查询）
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, DatabusChain.class);
+        TableInfoHelper.initTableInfo(assistant, DatabusInstall.class);
     }
 
     @BeforeEach
     void setUp() {
         chainService = new DatabusChainServiceImpl(chainMapper, expressGenerator, rulePublishService,
-            marketItemMapper, componentMapper);
+            marketItemMapper, componentMapper, installMapper);
     }
 
     /**

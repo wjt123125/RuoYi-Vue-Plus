@@ -15,6 +15,7 @@ import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.enums.ChainStatusEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
+import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +41,8 @@ import static org.mockito.Mockito.when;
  * 块5.1 发布引导单测（decisions §十四-6）：publish 闭包内未上架物料收集——
  * 自己的子链/组件进引导清单（随发布响应返回供前端弹窗批量提审）、他人的链无市场行
  * 拒发布（无权代提，拒绝先于任何变更）、他人的组件未上架不阻塞只列名提示、
- * 主链排除引导桶（受审主体即主链自身）、已有市场行＝已上架（PENDING 在审不算未上架，
+ * 主链自己无市场行时进清单第一项（2026-10-24 闭包联审：用户心智是「提交审核主链」）、
+ * 已有市场行＝已上架（PENDING 在审不算未上架，
  * 改版冻结态不误拒）、悬空组件引用跳过（终审 gate 拒，两级口径）。
  * <p>
  * 纯 JUnit5＋Mockito 直构 Service：chainMapper.selectOne 按 wrapper 里的 chainCode 回查
@@ -67,6 +69,9 @@ class DatabusChainPublishGuideTest {
     @Mock
     private DatabusComponentMapper componentMapper;
 
+    @Mock
+    private DatabusInstallMapper installMapper;
+
     private DatabusChainServiceImpl chainService;
 
     @BeforeAll
@@ -80,7 +85,7 @@ class DatabusChainPublishGuideTest {
     @BeforeEach
     void setUp() {
         chainService = new DatabusChainServiceImpl(chainMapper, expressGenerator, rulePublishService,
-            marketItemMapper, componentMapper);
+            marketItemMapper, componentMapper, installMapper);
     }
 
     /**
@@ -104,9 +109,9 @@ class DatabusChainPublishGuideTest {
     }
 
     /**
-     * 场景2：自己的未上架子链（chainB）＋组件（compX）进引导清单；他人组件（compY）未上架
-     * 不阻塞只列名提示；他人子链（chainC）已有 PENDING 市场行＝已上架不算未上架；
-     * 主链自身（无市场行）排除引导桶——发布照常成功，清单随响应返回
+     * 场景2：主链自己（chainA，无市场行）进清单第一项，自己的未上架子链（chainB）＋组件（compX）
+     * 随后进清单；他人组件（compY）未上架不阻塞只列名提示；他人子链（chainC）已有 PENDING
+     * 市场行＝已上架不算未上架——发布照常成功，清单随响应返回
      */
     @Test
     void publish_ownUnlistedIntoGuide() {
@@ -129,25 +134,27 @@ class DatabusChainPublishGuideTest {
         ChainPublishResultVo result = chainService.publish(1L, 1L);
 
         assertNotNull(result);
-        // 引导顺序：链维度先收（chainB）、组件维度后收（compX）
-        assertEquals(2, result.getGuideItems().size());
+        // 清单顺序：主链自己排第一，其后链维度（chainB）、组件维度（compX）
+        assertEquals(3, result.getGuideItems().size());
         assertEquals("CHAIN", result.getGuideItems().get(0).getResourceType());
-        assertEquals(2L, result.getGuideItems().get(0).getSourceId());
-        assertEquals("链B", result.getGuideItems().get(0).getName());
-        assertEquals("COMPONENT", result.getGuideItems().get(1).getResourceType());
-        assertEquals(10L, result.getGuideItems().get(1).getSourceId());
-        assertEquals("组件X", result.getGuideItems().get(1).getName());
-        // 主链（sourceId 1，无市场行）与已上架 chainC（sourceId 3，PENDING）都不进引导桶
-        assertTrue(result.getGuideItems().stream()
-            .noneMatch(g -> Objects.equals(1L, g.getSourceId()) || Objects.equals(3L, g.getSourceId())));
+        assertEquals(1L, result.getGuideItems().get(0).getSourceId());
+        assertEquals("链A", result.getGuideItems().get(0).getName());
+        assertEquals("CHAIN", result.getGuideItems().get(1).getResourceType());
+        assertEquals(2L, result.getGuideItems().get(1).getSourceId());
+        assertEquals("链B", result.getGuideItems().get(1).getName());
+        assertEquals("COMPONENT", result.getGuideItems().get(2).getResourceType());
+        assertEquals(10L, result.getGuideItems().get(2).getSourceId());
+        assertEquals("组件X", result.getGuideItems().get(2).getName());
+        // 已上架的 chainC（sourceId 3，PENDING 在审）不进清单
+        assertTrue(result.getGuideItems().stream().noneMatch(g -> Objects.equals(3L, g.getSourceId())));
         // 他人组件未上架：不阻塞只提示
         assertEquals(List.of("组件Y"), result.getOtherUnlistedComponents());
         verify(rulePublishService).publishChain(any(), any(), any());
     }
 
     /**
-     * 场景3：闭包组件引用悬空（componentMapper 查无行）→ 引导只建议不拦（两级口径：
-     * 终审 gate 拒「组件已不存在」），发布照常成功、清单为空
+     * 场景3：组件引用悬空（componentMapper 查无行）→ 引导只建议不拦（两级口径：
+     * 终审 gate 拒「组件已不存在」），发布照常成功、清单里只有主链自己
      */
     @Test
     void publish_danglingComponentSkipped() {
@@ -163,7 +170,8 @@ class DatabusChainPublishGuideTest {
         ChainPublishResultVo result = chainService.publish(1L, 1L);
 
         assertNotNull(result);
-        assertTrue(result.getGuideItems().isEmpty());
+        assertEquals(1, result.getGuideItems().size(), "悬空组件不进清单，只剩主链自己");
+        assertEquals(1L, result.getGuideItems().get(0).getSourceId());
         assertTrue(result.getOtherUnlistedComponents().isEmpty());
         verify(rulePublishService).publishChain(any(), any(), any());
     }

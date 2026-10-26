@@ -13,13 +13,13 @@ import org.dromara.databus.domain.bo.MarketPublishBatchBo;
 import org.dromara.databus.domain.bo.MarketReviewBo;
 import org.dromara.databus.domain.vo.DatabusMarketReviewDetailVo;
 import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
-import org.dromara.databus.mapper.DatabusInstallMapper;
-import org.dromara.databus.mapper.DatabusMarketCategoryMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
+import org.dromara.databus.market.MarketPublishService;
+import org.dromara.databus.market.support.MarketClosureLoader;
+import org.dromara.databus.market.support.MarketVoAssembler;
 import org.dromara.databus.service.IDatabusChainService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,7 +54,7 @@ import static org.mockito.Mockito.when;
  * 依赖状态树（悬空组件 sourceId 退化为 null、name 退化为编码）；publishBatch 整批
  * all-or-nothing（中途被拒异常传播，已处理项随事务回滚）。
  * <p>
- * 纯 JUnit5＋Mockito 直构 Service：chainService 以接口 mock 直接喂闭包结果
+ * 纯 JUnit5＋Mockito 直构上架服务：chainService 以接口 mock 直接喂闭包结果
  * （collectChainClosure 已由 DatabusChainClosureTest 覆盖），marketItemMapper.selectList
  * 按 wrapper 内 resourceType 参数值分流 CHAIN/COMPONENT 两次查询。
  *
@@ -66,12 +66,6 @@ class DatabusMarketReviewGateTest {
 
     @Mock
     private DatabusMarketItemMapper marketItemMapper;
-
-    @Mock
-    private DatabusMarketCategoryMapper marketCategoryMapper;
-
-    @Mock
-    private DatabusInstallMapper installMapper;
 
     @Mock
     private DatabusChainMapper chainMapper;
@@ -88,10 +82,7 @@ class DatabusMarketReviewGateTest {
     @Mock
     private IDatabusChainService chainService;
 
-    @Mock
-    private ExpressGenerator expressGenerator;
-
-    private DatabusMarketServiceImpl marketService;
+    private MarketPublishService marketService;
 
     @BeforeAll
     static void initTableInfo() {
@@ -102,8 +93,12 @@ class DatabusMarketReviewGateTest {
 
     @BeforeEach
     void setUp() {
-        marketService = new DatabusMarketServiceImpl(marketItemMapper, marketCategoryMapper, installMapper,
-            chainMapper, componentMapper, connectorDefMapper, objectMapper, chainService, expressGenerator);
+        marketService = new MarketPublishService(marketItemMapper, chainMapper, componentMapper,
+            connectorDefMapper, objectMapper, chainService,
+            // 依赖清单装配用真实实现：它调的 collectChainClosure / 两个 selectList 由各场景自行打桩
+            new MarketClosureLoader(chainService, marketItemMapper, componentMapper),
+            // 视图装配也用真实实现：reviewDetail 断言 vo.getItem() 的字段值
+            new MarketVoAssembler(componentMapper));
     }
 
     /**
@@ -263,17 +258,26 @@ class DatabusMarketReviewGateTest {
     }
 
     /**
-     * 场景9：reviewDetail 组装依赖状态树——链维度先（ONLINE）、组件维度后（闭包遍历
-     * chainB 先于主链：compY ONLINE 在前、compX PENDING 带驳回理由 remark 在后）；
+     * 场景9：reviewDetail 组装依赖状态树——引用树先序展开（2026-10-24 闭包联审）：
+     * 主链自己的组件叶子先紧贴列出（compX PENDING 带驳回理由 remark），再下钻子链
+     * （chainB ONLINE），子链的组件叶子最后（compY ONLINE）；
      * 主链（sourceId 1）即受审主体不列入依赖
      */
     @Test
     void reviewDetail_assemblesDependencies() {
         DatabusMarketItem item = pendingChainItem();
         item.setId(60L);
+        // 主链与子链用同一批实例喂进去：collectChainRefs 的桩按 cmpProperty 实例匹配
+        DatabusChain root = rootWithSubChain();
+        DatabusChain sub = chain(2L, "chainB", "链B", then(node("compY")));
+        LinkedHashMap<String, DatabusChain> closure = new LinkedHashMap<>();
+        closure.put("chainB", sub);
+        closure.put("chainA", root);
         when(marketItemMapper.selectById(60L)).thenReturn(item);
-        when(chainMapper.selectById(1L)).thenReturn(rootWithSubChain());
-        when(chainService.collectChainClosure("chainA")).thenReturn(closureWithSubChain());
+        when(chainMapper.selectById(1L)).thenReturn(root);
+        when(chainService.collectChainClosure("chainA")).thenReturn(closure);
+        when(chainService.collectChainRefs(root.getCmpProperty())).thenReturn(List.of("chainB"));
+        when(chainService.collectChainRefs(sub.getCmpProperty())).thenReturn(List.of());
         when(marketItemMapper.selectList(any())).thenAnswer(inv -> {
             LambdaQueryWrapper<DatabusMarketItem> wrapper = inv.getArgument(0);
             wrapper.getSqlSegment();
@@ -290,26 +294,28 @@ class DatabusMarketReviewGateTest {
         assertNotNull(vo.getItem());
         assertEquals(60L, vo.getItem().getId());
         assertEquals(3, vo.getDependencies().size());
-        DatabusMarketReviewDetailVo.DependencyVo chainDep = vo.getDependencies().get(0);
-        assertEquals("CHAIN", chainDep.getResourceType());
-        assertEquals(2L, chainDep.getSourceId());
-        assertEquals("链B", chainDep.getName());
-        assertEquals(31L, chainDep.getMarketItemId());
-        assertEquals("ONLINE", chainDep.getMarketStatus());
-        // 组件维度顺序＝闭包遍历顺序（chainB 先收 compY、主链后收 compX）
-        DatabusMarketReviewDetailVo.DependencyVo compYDep = vo.getDependencies().get(1);
-        assertEquals("COMPONENT", compYDep.getResourceType());
-        assertEquals(11L, compYDep.getSourceId());
-        assertEquals("组件Y", compYDep.getName());
-        assertEquals(41L, compYDep.getMarketItemId());
-        assertEquals("ONLINE", compYDep.getMarketStatus());
-        DatabusMarketReviewDetailVo.DependencyVo compDep = vo.getDependencies().get(2);
+        // 先序：主链的组件叶子 compX 排第一
+        DatabusMarketReviewDetailVo.DependencyVo compDep = vo.getDependencies().get(0);
         assertEquals("COMPONENT", compDep.getResourceType());
         assertEquals(10L, compDep.getSourceId());
         assertEquals("组件X", compDep.getName());
         assertEquals(40L, compDep.getMarketItemId());
         assertEquals("PENDING", compDep.getMarketStatus());
         assertEquals("脚本待改", compDep.getRemark());
+        // 再下钻子链 chainB
+        DatabusMarketReviewDetailVo.DependencyVo chainDep = vo.getDependencies().get(1);
+        assertEquals("CHAIN", chainDep.getResourceType());
+        assertEquals(2L, chainDep.getSourceId());
+        assertEquals("链B", chainDep.getName());
+        assertEquals(31L, chainDep.getMarketItemId());
+        assertEquals("ONLINE", chainDep.getMarketStatus());
+        // 子链的组件叶子 compY 排最后
+        DatabusMarketReviewDetailVo.DependencyVo compYDep = vo.getDependencies().get(2);
+        assertEquals("COMPONENT", compYDep.getResourceType());
+        assertEquals(11L, compYDep.getSourceId());
+        assertEquals("组件Y", compYDep.getName());
+        assertEquals(41L, compYDep.getMarketItemId());
+        assertEquals("ONLINE", compYDep.getMarketStatus());
         // 主链自身即受审 item，不列入依赖（否则 PENDING 自相矛盾）
         assertTrue(vo.getDependencies().stream().noneMatch(d -> Long.valueOf(1L).equals(d.getSourceId())));
     }

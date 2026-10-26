@@ -247,7 +247,7 @@ class ChainForkRedirectorTest {
     }
 
     /**
-     * 非法画布 JSON：抛 ServiceException（对齐 DatabusMarketServiceImpl#readManifest 口径）。
+     * 非法画布 JSON：抛 ServiceException（对齐 MarketPublishService#readManifest 口径）。
      */
     @Test
     void redirectCanvasData_invalidJson_throwsServiceException() {

@@ -17,8 +17,9 @@ import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
-import org.dromara.databus.mapper.DatabusMarketCategoryMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
+import org.dromara.databus.market.MarketInstallService;
+import org.dromara.databus.market.support.MarketClosureLoader;
 import org.dromara.databus.service.IDatabusChainService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,7 +60,7 @@ import static org.mockito.Mockito.when;
  * 后缀唯一化兜底；④ 闭包市场校验拒装先于任何写入；⑤ install 事务注解与复制中途异常
  * 传播（异常出方法边界即回滚，纯 Mockito 无事务代理，以注解＋异常传播＋零台账断言覆盖）。
  * <p>
- * 纯 JUnit5＋Mockito 直构 Service：闭包收集 mock chainService、EL 生成直构
+ * 纯 JUnit5＋Mockito 直构安装服务：依赖清单收集 mock chainService、EL 生成直构
  * {@link ExpressGenerator}（无 QLExpress/FlowBus 依赖）。
  *
  * @author databus
@@ -75,7 +76,7 @@ class DatabusMarketInstallForkTest {
     private DatabusInstallMapper installMapper;
     private DatabusChainMapper chainMapper;
     private IDatabusChainService chainService;
-    private DatabusMarketServiceImpl service;
+    private MarketInstallService service;
 
     /** insert 发号器（替代 MyBatis-Plus 主键回填）。 */
     private final AtomicLong idSeq = new AtomicLong(100);
@@ -110,16 +111,17 @@ class DatabusMarketInstallForkTest {
         installMapper = mock(DatabusInstallMapper.class);
         chainMapper = mock(DatabusChainMapper.class);
         chainService = mock(IDatabusChainService.class);
-        service = new DatabusMarketServiceImpl(
+        DatabusComponentMapper componentMapper = mock(DatabusComponentMapper.class);
+        service = new MarketInstallService(
             marketItemMapper,
-            mock(DatabusMarketCategoryMapper.class),
             installMapper,
             chainMapper,
-            mock(DatabusComponentMapper.class),
+            componentMapper,
             mock(DatabusConnectorDefMapper.class),
-            JsonMapper.builder().build(),
             chainService,
-            new ExpressGenerator());
+            new ExpressGenerator(),
+            // 依赖清单装配用真实实现：它调的 collectChainClosure / selectList 已在下面打桩
+            new MarketClosureLoader(chainService, marketItemMapper, componentMapper));
 
         chainA = chain(1L, "chainA", "链A",
             then(node("a"), chainRef("chainB")), canvas("a", "chainB"));
@@ -241,20 +243,24 @@ class DatabusMarketInstallForkTest {
     }
 
     /**
-     * 撞名同源显式复用（decisions §十四-2）：装 B 时候选码 u1__chainB 已存在且
-     * source_chain_id 同源 → 复用该行不复制（REUSED「使用你现有副本」），仅 C' 新复制；
+     * 同源干净副本复用（decisions §十四-2、§十五-6）：装 B 时候选按「我名下＋指向同一源链＋
+     * 装完没碰过」查得既有副本 → 复用该行不复制（REUSED），仅 C' 新复制；
      * 台账 localResourceId 指向复用的既有行。
      */
     @Test
     void install_sameSourceCopy_reused() {
         when(marketItemMapper.selectById(ITEM_ID)).thenReturn(item(ITEM_ID, 2L));
 
-        chainCodeCounts.put("u1__chainB", 1L);
         DatabusChain existing = new DatabusChain();
         existing.setId(99L);
         existing.setChainCode("u1__chainB");
         existing.setSourceChainId(2L);
-        when(chainMapper.selectOne(any())).thenReturn(existing);
+        // 复用探测按 source_chain_id 查：源链 2（B）命中既有副本，源链 3（C）无副本
+        when(chainMapper.selectList(any())).thenAnswer(inv -> {
+            AbstractWrapper<?, ?, ?> wrapper = inv.getArgument(0);
+            wrapper.getSqlSegment();
+            return wrapper.getParamNameValuePairs().containsValue(2L) ? List.of(existing) : List.of();
+        });
 
         DatabusMarketInstallVo vo = service.install(ITEM_ID, DIRECTORY_ID, USER_ID);
 
@@ -320,7 +326,7 @@ class DatabusMarketInstallForkTest {
      */
     @Test
     void install_copyFailurePropagatesAndNoLedgerRow() throws Exception {
-        Method install = DatabusMarketServiceImpl.class.getMethod("install", Long.class, Long.class, Long.class);
+        Method install = MarketInstallService.class.getMethod("install", Long.class, Long.class, Long.class);
         Transactional tx = install.getAnnotation(Transactional.class);
         assertNotNull(tx, "install 必须声明事务");
         assertArrayEquals(new Class<?>[]{Exception.class}, tx.rollbackFor());

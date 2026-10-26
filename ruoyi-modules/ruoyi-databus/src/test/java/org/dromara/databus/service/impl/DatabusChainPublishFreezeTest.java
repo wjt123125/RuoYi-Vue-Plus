@@ -15,6 +15,7 @@ import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.enums.ChainStatusEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
+import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,6 +61,9 @@ class DatabusChainPublishFreezeTest {
     @Mock
     private DatabusComponentMapper componentMapper;
 
+    @Mock
+    private DatabusInstallMapper installMapper;
+
     private DatabusChainServiceImpl chainService;
 
     @BeforeAll
@@ -74,7 +78,7 @@ class DatabusChainPublishFreezeTest {
     @BeforeEach
     void setUp() {
         chainService = new DatabusChainServiceImpl(chainMapper, expressGenerator, rulePublishService,
-            marketItemMapper, componentMapper);
+            marketItemMapper, componentMapper, installMapper);
     }
 
     /**

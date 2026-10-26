@@ -12,6 +12,7 @@ import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.enums.ChainStatusEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
+import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,7 +74,8 @@ class DatabusChainClosureTest {
             return chainsByCode.get(code);
         });
         service = new DatabusChainServiceImpl(chainMapper, mock(ExpressGenerator.class),
-            mock(RulePublishService.class), mock(DatabusMarketItemMapper.class), mock(DatabusComponentMapper.class));
+            mock(RulePublishService.class), mock(DatabusMarketItemMapper.class), mock(DatabusComponentMapper.class),
+            mock(DatabusInstallMapper.class));
     }
 
     /**

@@ -117,7 +117,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     private static final String REF_PATH_SEPARATOR = " → ";
 
     /**
-     * 市场物料类型/状态（与 DatabusMarketServiceImpl 同值常量，改版冻结钩子使用）
+     * 市场物料类型/状态（与 MarketResourceTypes / MarketStates 同值常量，改版冻结钩子使用）
      */
     private static final String MARKET_TYPE_CHAIN = "CHAIN";
     private static final String MARKET_TYPE_COMPONENT = "COMPONENT";
@@ -339,7 +339,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
             return;
         }
         installMapper.deleteByIds(installs.stream().map(DatabusInstall::getId).toList());
-        // 受影响市场物料重算安装计数（与 DatabusMarketServiceImpl.refreshCounts 同口径）
+        // 受影响市场物料重算安装计数（与 MarketInstallService.refreshCounts 同口径）
         List<Long> itemIds = installs.stream()
             .map(DatabusInstall::getMarketItemId).filter(Objects::nonNull).distinct().toList();
         for (Long itemId : itemIds) {
@@ -410,7 +410,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     /**
      * 改版冻结钩子（decisions §十四-8 版本级审核状态＋改版冻结安装）：
      * 链改版发布后，把指向本链的 ONLINE 市场项置回 PENDING 并清审核痕迹
-     * （lambdaUpdate().set(xxx, null) 清痕模式照抄 DatabusMarketServiceImpl#publish）。
+     * （lambdaUpdate().set(xxx, null) 清痕模式照抄 MarketPublishService#publish）。
      * <p>
      * 效果链：改版 → PENDING → install 闭包校验拒装（validateClosureOnMarket 只认 ONLINE＝冻结）
      * → 重审通过 → ONLINE（解冻）。未上架/非 ONLINE（已在审/已驳回/已下架）不动——
@@ -438,7 +438,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
      * 会被误拒，冻结语义（内容已换待重审）不该传导成「从未上架」。
      * <ul>
      *   <li>链维度：闭包子链有市场行跳过；自己的未上架子链进引导清单；他人的（含 create_by
-     *       为空的系统链，归属校验同 DatabusMarketServiceImpl#publish 口径——系统资源
+     *       为空的系统链，归属校验同 MarketPublishService#publish 口径——系统资源
      *       非作者无权代提）直接拒绝发布。主链自身无市场行且归属发布者时进清单第一项
      *       （2026-10-24 闭包联审：「提交审核主链」心智，避免依赖在审而主链无单的半截状态）。</li>
      *   <li>组件维度：闭包全部链（含主链）的业务组件叶子（ChainForkRedirector 共用口径）

@@ -54,3 +54,54 @@ values
    '{"endpoint":"http://localhost:8088","accessKey":"databus","timeoutMs":30000,"retryCount":0}',
    '{"apiSecret":"databus"}',
    'Y', sysdate(), '0', 'BPM 端总线 app 种子连接（OpenAPI 签名网关）；endpoint/密钥按实际环境修改');
+
+-- ----------------------------
+-- JDBC 示例连接种子（阶段 B 第 9 步，正本 docs/databus-jdbc-connector-plan.md §10.2）
+-- connection_id = jdbc-default，与 databus_component_seed.sql 里 dbQuery/dbExecute/dbBatch
+--   三件的 data_example 引用对齐（同 bpm-default 与 mock-presets 对齐的口径）。
+-- connector_type 存**具体 type**（jdbc-postgresql），不是能力族 jdbc——族在连接器包的
+--   ConnectorDescriptor.family 里，连接行只认 type，运行时由 type 找实例（正本 §8.3）。
+-- config 键名与 AbstractJdbcConnector.configSchema() 对齐；urlMode 必须显式写 basic：
+--   host/port/database 的 showWhen 是 ne override，键缺失时 String(null) != "override" 仍成立，
+--   但显式写出可让「连接串来源」下拉在编辑态直接落到正确选项。
+-- enabled = 'N'：默认停用。JDBC 连接一旦启用就会真建池出网，示例值指向 localhost:5432
+--   多半连不上；改成实际库地址、并在连接管理页重存一次（转 AES）后再手工启用。
+-- 安全提醒：password 属敏感字段（describe 标 sensitive），落 credentials 列；
+--   同 bpm-default，手写 INSERT 不经 @EncryptField 拦截器，此处为明文 JSON，
+--   在页面重存一次即转 AES 密文。建议账号只读——连接的 readOnly 只是弱防线，账号权限才是主防线。
+-- 幂等：先按主键删旧种子再插入（同 bpm-default 段口径）。
+-- ----------------------------
+delete from sys_databus_connection where id = 1762000000000020002;
+insert into sys_databus_connection
+  (id, connection_id, connection_name, connector_type, config, credentials, enabled, create_time, del_flag, remark)
+values
+  (1762000000000020002, 'jdbc-default', 'PostgreSQL 示例库', 'jdbc-postgresql',
+   '{"urlMode":"basic","host":"localhost","port":5432,"database":"databus","username":"databus"}',
+   '{"password":"databus"}',
+   'N', sysdate(), '0', 'JDBC 示例连接（默认停用）；依赖已上传并启用的 jdbc-postgresql 连接器包，库地址/账号按实际环境修改后在页面重存一次');
+
+-- ----------------------------
+-- JDBC 实测靶连接：MySQL（本地免安装即可跑通全机制）
+-- connection_id = jdbc-mysql-demo，与 databus_chain_mock_data.sql 里 jdbc-* 测试链的
+--   connectionId 引用对齐；靶库建表料见同目录 databus_jdbc_demo_mysql.sql（先跑它再跑本行）。
+-- connector_type = 'jdbc-mysql'：具体 type，不是能力族 jdbc（同 jdbc-default 段口径）。
+-- enabled = 'Y'：与 jdbc-default 相反，本行指向的本地 MySQL 靶库是真能连上的，
+--   直接启用省一次页面操作；连接池按需惰性创建，靶库脚本没跑时也只是执行链路时报连接失败，
+--   不会拖启动。不想让它出现在链路的连接下拉里就改回 'N'。
+-- driverProps 两个键是必需的，不是可选装饰：
+--   characterEncoding=UTF-8 —— JdbcUrlBuilder 不注入任何默认参数（只注超时与凭证），
+--     字符集全靠这里给，否则中文列值可能按平台默认字符集解码成乱码；
+--   connectionTimeZone=Asia/Shanghai —— 本机 MySQL 的 time_zone 多为 SYSTEM，
+--     驱动解析不出会报 "The server time zone value 'CST' is unrecognized"。
+--   两个键都不在 MYSQL 黑名单内，也不含通用高危字样，能正常通过 filter。
+-- 密码为什么明文：手写 INSERT 不经 MyBatis @EncryptField 拦截器，无密文头值读取时原样返回；
+--   在连接管理页重存一次即转 AES。账号 databus_demo 只授权 databus_jdbc_demo 一个库。
+-- ----------------------------
+delete from sys_databus_connection where id = 1762000000000020003;
+insert into sys_databus_connection
+  (id, connection_id, connection_name, connector_type, config, credentials, enabled, create_time, del_flag, remark)
+values
+  (1762000000000020003, 'jdbc-mysql-demo', 'MySQL 实测靶库', 'jdbc-mysql',
+   '{"urlMode":"basic","host":"localhost","port":3306,"database":"databus_jdbc_demo","username":"databus_demo","driverProps":{"characterEncoding":"UTF-8","connectionTimeZone":"Asia/Shanghai"},"maxRows":500,"decimalAsString":true,"logSql":true}',
+   '{"password":"Databus@Demo1"}',
+   'Y', sysdate(), '0', 'JDBC 实测靶连接：先执行 script/sql/databus_jdbc_demo_mysql.sql 建库建账号，再跑本行；依赖 jdbc-mysql 连接器包（dev 走 dev-plugin-dir，生产走市场上传）');

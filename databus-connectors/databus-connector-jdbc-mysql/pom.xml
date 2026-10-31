@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>org.dromara</groupId>
+        <artifactId>databus-connectors</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>databus-connector-jdbc-mysql</artifactId>
+    <!-- 连接器包版本：与 manifest.json 的 version 一致，独立于平台 revision -->
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <description>
+        MySQL JDBC 连接器（type=jdbc-mysql）：一库一包（方案 §2.4），产物 connector-package.zip。
+        lib/ 三样：本体 jar + databus-connector-jdbc-common jar + mysql-connector-j 驱动 jar。
+        驱动不进 maven 依赖树（红线二）：由 maven-dependency-plugin 的 copy goal 拉到 target/lib/，
+        这样 Spring Boot 依赖管理碰不到驱动版本，包里那份才是生效的（child-first，§4.2）。
+        注：平台自己（ruoyi-admin）也带一份 mysql-connector-j，正因如此本包是 child-first
+        装载策略最好的验证靶子——两个版本同时在 classpath 上，生效的必须是包里这份。
+    </description>
+
+    <properties>
+        <!-- 驱动版本单点声明：assembly / dependency-plugin / manifest.json 三处都对齐它 -->
+        <mysql.driver.version>9.7.0</mysql.driver.version>
+    </properties>
+
+    <dependencies>
+        <!-- JDBC 公共实现：compile 供 javac 用；进包不走依赖解析，由下面 copy goal 显式拉进 target/lib/ -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>databus-connector-jdbc-common</artifactId>
+            <version>1.0.0</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- 连接器契约 api：provided 编译用，打包不带（父加载器只有一份，红线 §2.2） -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>databus-connector-api</artifactId>
+            <version>${revision}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- HikariCP：本模块不直接用，但父类签名解析需要；provided 且已在 PARENT_FIRST 名单（§2.2） -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 把 lib/ 里「非本体」的两样拉到 target/lib/（红线二 §2.4：驱动不进 maven 依赖树）。
+                 放同一处的另一个理由是 dev 通道：DevConnectorLoader 从 target/classes + target/lib/*.jar
+                 装载（§5.2），common 不进 target/lib 的话 dev 模式找不到 AbstractJdbcConnector。
+                 于是 target/lib/ 的内容 == zip 的 lib/ 内容（除本体 jar），dev 与生产看到同一套布局。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.7.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-libs</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>true</overWriteSnapshots>
+                            <artifactItems>
+                                <!-- JDBC 公共实现（§2.4：common 不作为独立包发布，随各库包一起走） -->
+                                <artifactItem>
+                                    <groupId>org.dromara</groupId>
+                                    <artifactId>databus-connector-jdbc-common</artifactId>
+                                    <version>1.0.0</version>
+                                    <type>jar</type>
+                                </artifactItem>
+                                <!-- 本库驱动：只带这一个，不声明为 dependency -->
+                                <artifactItem>
+                                    <groupId>com.mysql</groupId>
+                                    <artifactId>mysql-connector-j</artifactId>
+                                    <version>${mysql.driver.version}</version>
+                                    <type>jar</type>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 打 zip：根含 manifest.json，lib/ = 本体 jar + target/lib/*.jar（白名单，红线 §2.2） -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
+                <configuration>
+                    <finalName>connector-package</finalName>
+                    <appendAssemblyId>false</appendAssemblyId>
+                    <descriptors>
+                        <descriptor>src/assembly/connector-zip.xml</descriptor>
+                    </descriptors>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>make-zip</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

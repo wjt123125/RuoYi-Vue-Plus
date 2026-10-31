@@ -73,12 +73,23 @@ public interface IDatabusComponentService {
     Boolean insertByBo(DatabusComponentBo bo);
 
     /**
-     * 修改组件元信息
+     * 修改组件元信息（不含启停状态：status 由 {@link #updateStatus} 独立权限点写）
      *
      * @param bo 组件元信息业务对象
      * @return 是否修改成功
      */
     Boolean updateByBo(DatabusComponentBo bo);
+
+    /**
+     * 启停组件（治理专属，独立权限点 {@code databus:component:toggle}）。
+     * <p>与「修改组件」拆权限：持有 {@code databus:component:edit} 的操作员能改元信息，
+     * 但不能顺手停用/启用物料（停用会让编辑器面板不再投放该件）。
+     *
+     * @param id     组件主键
+     * @param status 目标状态（0启用 1停用）
+     * @return 是否修改成功
+     */
+    Boolean updateStatus(Long id, String status);
 
     /**
      * 批量删除组件元信息

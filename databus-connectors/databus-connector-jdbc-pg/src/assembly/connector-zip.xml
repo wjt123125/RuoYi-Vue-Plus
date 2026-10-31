@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.2.0 http://maven.apache.org/xsd/assembly-2.2.0.xsd">
+
+    <!-- 连接器包（方案 §2.2 / §2.4）：根级 manifest.json + lib/ 三样。
+         lib/ 用 fileSet 白名单显式列，不用 dependencySets / useTransitiveDependencies 全量收：
+           1. 本体 jar（PostgresJdbcConnector）
+           2. databus-connector-jdbc-common jar  ┐ 二者由 maven-dependency-plugin 的 copy goal
+           3. postgresql 驱动 jar                ┘ 精确按 GAV 拉到 target/lib/（pom 里是白名单）
+         api / slf4j / HikariCP / lombok 全 provided，一个都不进包。 -->
+    <id>package</id>
+    <formats>
+        <format>zip</format>
+    </formats>
+    <includeBaseDirectory>false</includeBaseDirectory>
+
+    <files>
+        <file>
+            <source>src/main/resources/manifest.json</source>
+            <outputDirectory>/</outputDirectory>
+            <filtered>false</filtered>
+        </file>
+    </files>
+
+    <fileSets>
+        <!-- 本体 jar -->
+        <fileSet>
+            <directory>${project.build.directory}</directory>
+            <outputDirectory>lib</outputDirectory>
+            <includes>
+                <include>${project.build.finalName}.jar</include>
+            </includes>
+        </fileSet>
+        <!-- JDBC 公共实现 + 本库驱动 -->
+        <fileSet>
+            <directory>${project.build.directory}/lib</directory>
+            <outputDirectory>lib</outputDirectory>
+            <includes>
+                <include>*.jar</include>
+            </includes>
+        </fileSet>
+    </fileSets>
+
+</assembly>

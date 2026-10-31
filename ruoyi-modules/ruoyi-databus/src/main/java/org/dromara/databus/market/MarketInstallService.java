@@ -611,6 +611,8 @@ public class MarketInstallService {
                 if (StringUtils.isBlank(summary)) {
                     summary = item.getSummary();
                 }
+                // 上架者登录名：管理页行上渲染 @作者（宁缺勿滥，物料行没了就不显示）
+                vo.setOwnerCode(item.getOwnerCode());
             }
             vo.setName(name);
             vo.setIcon(icon);

@@ -159,7 +159,7 @@ public class DatabusExecutor {
         log.info("[databus] 开始试运行(EL 直执) executionId={}", executionId);
 
         // 注意：脚本节点（script/booleanScript）的预注册由调用方 DatabusEditorController.previewRun
-        // 在 generateEL 之前调 registerScriptNodes 完成——确保 verifyELExpression 校验时 FlowBus
+        // 在 generateEL 之前调 registerScriptNodes 完成——确保 validateEL 校验时 FlowBus
         // 已含脚本 nodeId（validate 会查 FlowBus.getNodeMap，未注册的 nodeId 会校验失败）。
 
         DatabusContext context = DatabusContext.fromObject(requestData);

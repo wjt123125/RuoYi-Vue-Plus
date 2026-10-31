@@ -4,7 +4,7 @@
 --   八个脚本里的菜单段，以及补丁脚本 databus_admin_menu_cleanup.sql（均已退役删除）。
 --
 -- 结构：①按三段 id 范围全量清旧（sys_role_menu 连坐 + 悬空兜底 + sys_menu 全删）
---       → ②全量 insert：1 条 M 目录 + 58 条 F 权限行，全部直接挂 M 20000。
+--       → ②全量 insert：1 条 M 目录 + 59 条 F 权限行，全部直接挂 M 20000。
 -- 幂等：开头即 wipe，重跑等于整体重建；不写增量补丁、不写 not exists 条件插入。
 --
 -- 【tabs 收敛终态（docs/databus-workspace-tabs.md §13.2）】
@@ -20,7 +20,7 @@
 --   20024 / 1762000000000000016 / 064 / 073 / 081。
 --
 -- 配套执行：本脚本先行（重建菜单），databus_role.sql 后行（动态子树重授
---   = 20000 + 58 条 F = 59 行；gov 全量、ops 剔除 databus:market:review）。
+--   = 20000 + 59 条 F = 60 行；gov 全量、ops 剔除治理专属权限串，清单见 databus_role.sql §2.2）。
 --
 -- id 段划分（databus 专属，wipe 即按此三段，已与全库菜单清单核验：系统菜单
 --   最高 1761400000000001623，与三段无交集，误伤为零）：
@@ -95,7 +95,7 @@ insert into sys_menu values (1761400000000020007, '编排器导入', 17614000000
 insert into sys_menu values (1761400000000020008, '编排器试运行', 1761400000000020000, 27, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:run', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '画布预览试运行（1A 仅 EL 生成与语法校验）');
 
 -- ----------------------------
--- ⑥ 组件（order 30~35）
+-- ⑥ 组件（order 30~36）
 -- ----------------------------
 insert into sys_menu values (1761400000000020009, '组件列表查看', 1761400000000020000, 30, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:list', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '台账页 /list 与 /script/runtime 权限位');
 insert into sys_menu values (1761400000000020010, '组件查询', 1761400000000020000, 31, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:query', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
@@ -103,6 +103,7 @@ insert into sys_menu values (1761400000000020011, '组件新增', 17614000000000
 insert into sys_menu values (1761400000000020012, '组件修改', 1761400000000020000, 33, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
 insert into sys_menu values (1761400000000020013, '组件删除', 1761400000000020000, 34, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
 insert into sys_menu values (1761400000000020014, '脚本编辑', 1761400000000020000, 35, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:script:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '受信作者：保存即编译热更，等同服务端代码发布');
+insert into sys_menu values (1761400000000020030, '组件启停', 1761400000000020000, 36, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:toggle', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'PUT /databus/component/{id}/status（status 0/1）；与「组件修改」拆开——治理专属，操作员有 edit 也停不了物料投放');
 
 -- ----------------------------
 -- ⑦ 市场（order 40~45）
@@ -119,7 +120,7 @@ insert into sys_menu values (1761400000000020023, '市场删除', 17614000000000
 -- ----------------------------
 insert into sys_menu values (1761400000000020025, '连接器列表查看', 1761400000000020000, 46, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:list', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'GET /databus/connector/defs（内置∪def 合并视图；连接管理页 CONNECTOR_OPTIONS 动态化）');
 insert into sys_menu values (1761400000000020026, '连接器包上传', 1761400000000020000, 47, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:upload', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'POST /databus/connector/packages（市场 tab 内上传 zip，校验+落盘+入库；同 type 升版本＝热更新）');
-insert into sys_menu values (1761400000000020027, '连接器启停', 1761400000000020000, 48, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'POST defs/{type}/enable|disable（运行层 ENABLED/SUSPENDED；暂停挡新建连接不拦存量）');
+insert into sys_menu values (1761400000000020027, '连接器启停与废弃', 1761400000000020000, 48, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'POST defs/{type}/enable|disable|deprecate（运行层 INACTIVE/ENABLED/DISABLED/DEPRECATED；未启用/禁用挡新建连接不拦存量；废弃＝停机退役的终态，不可逆，之后只能卸载）');
 insert into sys_menu values (1761400000000020028, '连接器卸载', 1761400000000020000, 49, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'DELETE defs/{type}（默认拒绝在用连接；?force=true 管理员强制，存量连接悬空自然衰减）；menu_id 20029（2026-10-24 施工纠偏：原 20028 与组件列表查看撞 id，decisions 菜单收敛终态未覆盖此撞号）');
 
 -- ----------------------------

@@ -17,9 +17,7 @@ import org.dromara.databus.connector.bpm.dto.ProcessTerminateRequest;
 import org.dromara.databus.connector.bpm.dto.RdsExecuteRequest;
 import org.dromara.databus.connector.bpm.dto.SessionCreateRequest;
 import org.dromara.databus.connector.bpm.dto.TaskCompleteRequest;
-import org.dromara.databus.context.JsonCodec;
 import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
@@ -28,7 +26,7 @@ import java.util.Map;
 /**
  * BPM HTTP 连接器：通过 HTTP 调用 BPM 端总线 app 的 12 个 @Mapping 端点。
  *
- * <p>三层物料模型（决策 2.2）的第一层实现：物料市场注册（{@code @Component} 自动注册到 {@link org.dromara.databus.connector.ConnectorRegistry}），
+ * <p>三层物料模型（决策 2.2）的第一层实现：由 {@code PluginManager} 反射实例化并注册到 {@link org.dromara.databus.connector.ConnectorRegistry}，
  * 描述能力清单（{@link #describe()}）驱动前端 cmp-defs 物料与连接管理表单。
  *
  * <p>URL 拼接：{@code cfg.getEndpoint() + "/portal/openapi"}（固定入口，cmd 为签名表单参数），
@@ -62,7 +60,6 @@ import java.util.Map;
  * @author databus
  */
 @Slf4j
-@Component
 public class BpmHttpConnector implements Connector {
 
     /** Connector 类型标识，全局唯一 */
@@ -92,6 +89,10 @@ public class BpmHttpConnector implements Connector {
         desc.setType(TYPE);
         desc.setLabel("BPM HTTP 连接器");
         desc.setIcon("ph:plugs");
+        // 能力族＝type 本身：BPM 一族当前只有 bpmHttp 一个成员，故 family 直接取 TYPE。
+        // 组件侧 @DatabusProp(connectorFamily = "bpmHttp")（方案 §8.3）与本值逐字相等，
+        // 编辑器 CONNECTION_SELECT 才过滤得出 bpm-default 连接；留空则该族组件下拉永远为空。
+        desc.setFamily(TYPE);
 
         // 连接配置 schema（驱动连接管理页表单动态渲染）
         desc.getConfigSchema().put("endpoint",
@@ -152,9 +153,34 @@ public class BpmHttpConnector implements Connector {
      * <p>若密钥错误或网关不可达，BPM 端返回错误码/HTTP 异常，经 callBpm 解析后抛 ConnectorException。
      */
     @Override
-    public String testConnection(Connection connection) {
+    public Object testConnection(Connection connection) {
         callBpm(connection, BpmConst.CMD_PING, null);
         return "BPM OpenAPI 网关连接成功";
+    }
+
+    /**
+     * 通用调用（逃生舱，§1.4.2）：按 operation 分发到 12 个业务方法，
+     * params（Map，可能为 null→空 Map）经 {@link Json#convertValue} 转成对应 DTO。
+     */
+    @Override
+    public Object invoke(Connection connection, String operation, Map<String, Object> params) {
+        Map<String, Object> p = params == null ? Map.of() : params;
+        return switch (operation) {
+            case "createSession" -> createSession(connection, Json.convertValue(p, SessionCreateRequest.class));
+            case "boCreate" -> boCreate(connection, Json.convertValue(p, BoCreateRequest.class));
+            case "boUpdate" -> boUpdate(connection, Json.convertValue(p, BoUpdateRequest.class));
+            case "boDelete" -> boDelete(connection, Json.convertValue(p, BoDeleteRequest.class));
+            case "boQuery" -> boQuery(connection, Json.convertValue(p, BoQueryRequest.class));
+            case "processStart" -> processStart(connection, Json.convertValue(p, ProcessStartRequest.class));
+            case "processTerminate" -> processTerminate(connection, Json.convertValue(p, ProcessTerminateRequest.class));
+            case "taskComplete" -> taskComplete(connection, Json.convertValue(p, TaskCompleteRequest.class));
+            case "rdsExecute" -> rdsExecute(connection, Json.convertValue(p, RdsExecuteRequest.class));
+            case "idCardToUserId" -> idCardToUserId(connection, Json.convertValue(p, IdCardToUserIdRequest.class));
+            case "fileUpload" -> fileUpload(connection, Json.convertValue(p, FileUploadRequest.class));
+            case "fileDownload" -> fileDownload(connection, Json.convertValue(p, FileDownloadRequest.class));
+            default -> throw new ConnectorException("OPERATION_NOT_SUPPORTED",
+                    "连接器 " + TYPE + " 不支持 operation=" + operation);
+        };
     }
 
     /**
@@ -287,7 +313,7 @@ public class BpmHttpConnector implements Connector {
                     "BPM 连接 accessKey/apiSecret 未配置（connectionId=" + connection.getId() + "）");
         }
         String url = cfg.getEndpoint().replaceAll("/+$", "") + "/portal/openapi";
-        String bodyJson = requestDto == null ? null : JsonCodec.toJson(requestDto);
+        String bodyJson = requestDto == null ? null : Json.toJson(requestDto);
         Map<String, String> form = BpmOpenApiSigner.buildSignedForm(
                 cmd, bodyJson, cfg.getAccessKey(), cfg.getApiSecret());
         log.info("[bpmHttp] 调用 {} 入参={}", cmd, bodyJson);
@@ -315,7 +341,7 @@ public class BpmHttpConnector implements Connector {
      */
     @SuppressWarnings("unchecked")
     private Object parseBpmResponse(String cmd, String responseText) {
-        Object parsed = JsonCodec.parse(responseText);
+        Object parsed = Json.parse(responseText);
         if (!(parsed instanceof Map<?, ?> respMap)) {
             log.error("[bpmHttp] BPM 端响应非 JSON 对象 cmd={} raw={}", cmd, responseText);
             throw new ConnectorException("BPM_RESPONSE_INVALID",
@@ -332,7 +358,7 @@ public class BpmHttpConnector implements Connector {
                     msg.isEmpty() ? "BPM 端调用失败: " + result : msg);
         }
         Object data = ((Map<String, Object>) respMap).get(RESP_DATA);
-        log.info("[bpmHttp] 调用成功 cmd={} data={}", cmd, JsonCodec.toJson(data));
+        log.info("[bpmHttp] 调用成功 cmd={} data={}", cmd, Json.toJson(data));
         return data;
     }
 
@@ -346,7 +372,7 @@ public class BpmHttpConnector implements Connector {
                     "BPM 连接 config 为空（connectionId=" + connection.getId() + "）");
         }
         // 用 Jackson 把 Map 反序列化为 POJO（与 ruoyi-databus 全栈一致）
-        return JsonCodec.convertValue(config, BpmHttpConnectionCfg.class);
+        return Json.convertValue(config, BpmHttpConnectionCfg.class);
     }
 
     private static String stringOf(Object value) {

@@ -60,9 +60,9 @@ class ExpressGeneratorTest {
     }
 
     @Test
-    void verifyELExpression_then_shouldReturnTrue() {
+    void validateEL_then_shouldPass() {
         CmpProperty jsonEl = buildThenHelloDelay();
-        assertTrue(expressGenerator.verifyELExpression(jsonEl));
+        assertNull(expressGenerator.validateEL(jsonEl));
     }
 
     /**
@@ -111,8 +111,8 @@ class ExpressGeneratorTest {
     }
 
     @Test
-    void verifyELExpression_iterator_shouldReturnTrue() {
-        assertTrue(expressGenerator.verifyELExpression(buildIteratorDoThen()));
+    void validateEL_iterator_shouldPass() {
+        assertNull(expressGenerator.validateEL(buildIteratorDoThen()));
     }
 
     @Test

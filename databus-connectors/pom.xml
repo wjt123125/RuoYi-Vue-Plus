@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>org.dromara</groupId>
+        <artifactId>ruoyi-vue-plus</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>databus-connectors</artifactId>
+    <packaging>pom</packaging>
+
+    <description>
+        数据总线连接器车间：每个连接器一个独立 maven 模块，产物是 zip（manifest.json + lib/*.jar），
+        不链进平台运行时（方案 §2.1）。
+    </description>
+
+    <modules>
+        <module>databus-connector-bpm-http</module>
+        <module>databus-connector-jdbc-common</module>
+        <module>databus-connector-jdbc-pg</module>
+        <module>databus-connector-jdbc-mysql</module>
+    </modules>
+
+</project>

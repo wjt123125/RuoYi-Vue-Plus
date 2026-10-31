@@ -114,7 +114,19 @@ public final class CfgIntrospector {
             .keyWidget(shape.keyWidget())
             .valueWidget(shape.valueWidget())
             .valueExprRole(ann == null ? null : ann.valueExprRole())
+            .connectorFamily(connectorFamily(ann, widget))
             .build();
+    }
+
+    /**
+     * 连接器能力族：仅 CONNECTION_SELECT 字段输出，其余控件即使误标也忽略
+     * （material-market §15.12.1）。空串归一为 null，靠 NON_NULL 不写进 param_schema。
+     */
+    private static String connectorFamily(DatabusProp ann, WidgetKind widget) {
+        if (ann == null || widget != WidgetKind.CONNECTION_SELECT) {
+            return null;
+        }
+        return emptyToNull(ann.connectorFamily());
     }
 
     // ---------------------------------------------------------------------

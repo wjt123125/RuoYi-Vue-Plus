@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>org.dromara</groupId>
+        <artifactId>databus-connectors</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>databus-connector-jdbc-common</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <description>
+        JDBC 连接器公共实现（方案 §3.1）：AbstractJdbcConnector / JdbcConnectionCfg / JdbcDbType /
+        JdbcUrlBuilder / JdbcDriverRegistry / JdbcPoolRegistry / JdbcResultMapper / JdbcSqlGuard。
+        本模块不单独发包、不打 zip，由各库模块（databus-connector-jdbc-pg 等）作为 compile 依赖
+        打进自己的 connector-package.zip 的 lib/ 下（§2.2）。
+        依赖全部 provided：api 契约、HikariCP、slf4j、lombok 都由平台父加载器提供（§2.2 打包红线，
+        PluginClassLoader 的 PARENT_FIRST 前缀已含 org.dromara.databus.connector. / com.zaxxer.hikari. /
+        org.slf4j. / lombok.）。
+    </description>
+
+    <dependencies>
+        <!-- api 契约：Connector / SqlConnector / 四个 record / DriverDataSource。父加载器唯一一份 -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>databus-connector-api</artifactId>
+            <version>${revision}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- 连接池：com.zaxxer.hikari. 在 PARENT_FIRST 名单里，由平台 dynamic-datasource 传递提供 -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- 以下两项只 test scope：不进 target/lib、不进 connector-package.zip，
+             因此不触碰 §2.2 打包红线，也不与 §9.1「H2 禁入驱动白名单」冲突——
+             那条禁的是运行时可连的库种，这里是拿 H2 当「一个真实 JDBC 驱动」来验类型矩阵。 -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

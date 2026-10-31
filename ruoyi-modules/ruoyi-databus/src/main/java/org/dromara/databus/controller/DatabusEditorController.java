@@ -2,21 +2,14 @@ package org.dromara.databus.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.web.core.BaseController;
-import org.dromara.databus.context.JsonCodec;
-import org.dromara.databus.context.InputParamValidator;
 import org.dromara.databus.domain.bo.CmpPickBo;
 import org.dromara.databus.domain.bo.PreviewRunBo;
 import org.dromara.databus.domain.vo.CmpRecommendVo;
 import org.dromara.databus.domain.vo.PreviewRunVo;
-import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.bean.ELInfo;
-import org.dromara.databus.el.parser.generator.ExpressGenerator;
-import org.dromara.databus.executor.DatabusExecutionResult;
-import org.dromara.databus.executor.DatabusExecutor;
+import org.dromara.databus.service.IDatabusPreviewRunService;
 import org.dromara.databus.service.IDatabusRecommendService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,16 +27,13 @@ import java.util.List;
  *
  * @author databus
  */
-@Slf4j
 @Validated
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/databus/editor")
 public class DatabusEditorController extends BaseController {
 
-    private final ExpressGenerator expressGenerator;
-
-    private final DatabusExecutor databusExecutor;
+    private final IDatabusPreviewRunService previewRunService;
 
     private final IDatabusRecommendService recommendService;
 
@@ -78,6 +68,7 @@ public class DatabusEditorController extends BaseController {
     /**
      * 试运行（阶段 1C）：基于当前画布内容生成 EL、语法校验通过后直接按 EL 真执行（不落库），
      * 返回每步成败耗时与上下文快照。执行失败也以 HTTP 200 返回，错误信息在 errorMessage 中。
+     * 六步逻辑已抽到 {@link IDatabusPreviewRunService}，AI 工具与人工界面共用。
      *
      * @param bo 画布组件树 + 执行入参 JSON
      * @return EL 表达式、校验结果与执行结果
@@ -85,30 +76,7 @@ public class DatabusEditorController extends BaseController {
     @SaCheckPermission("databus:editor:run")
     @PostMapping("/preview-run")
     public R<PreviewRunVo> previewRun(@RequestBody PreviewRunBo bo) {
-        CmpProperty jsonEl = bo.getJsonEl();
-        String elStr = null;
-        try {
-            // 脚本节点（script/booleanScript）没有 @LiteflowComponent，EL 引用的 nodeId 必须先在
-            // FlowBus 中注册才能通过 LiteFlowChainELBuilder.validate / setEL 编译；故在 generateEL
-            // 之前先把画布上的脚本节点预注册（其他业务组件已由 Spring 扫描自动注册）。
-            databusExecutor.registerScriptNodes(jsonEl);
-
-            ELInfo elInfo = expressGenerator.generateEL(jsonEl);
-            elStr = elInfo == null ? null : elInfo.getElStr();
-            boolean valid = expressGenerator.verifyELExpression(jsonEl);
-            if (!valid) {
-                return R.ok(PreviewRunVo.fail(elStr, "EL 表达式校验失败，请检查连线与节点配置"));
-            }
-
-            Object requestData = JsonCodec.parse(bo.getRequestJson());
-            // 必填校验：默认值不注入试运行请求（前端已按默认值预填，这里只校验最终入参）
-            InputParamValidator.validateRequired(bo.getInputParams(), requestData);
-            DatabusExecutionResult executionResult = databusExecutor.executeByEl(elStr, requestData, jsonEl);
-            return R.ok(PreviewRunVo.executed(elStr, executionResult));
-        } catch (Exception e) {
-            log.warn("preview-run 生成/执行失败: {}", e.getMessage());
-            return R.ok(PreviewRunVo.fail(elStr, "试运行失败：" + e.getMessage()));
-        }
+        return R.ok(previewRunService.run(bo));
     }
 
 }

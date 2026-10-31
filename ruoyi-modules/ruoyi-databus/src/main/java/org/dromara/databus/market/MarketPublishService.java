@@ -69,6 +69,11 @@ public class MarketPublishService {
      */
     private static final String TYPE_CONNECTOR = MarketResourceTypes.CONNECTOR;
 
+    /**
+     * 连接器来源：dev 目录装载（这类行没有确定的包内容，不给提交上架）
+     */
+    private static final String CONNECTOR_SOURCE_DEV = "DEV";
+
     private static final String STATUS_PENDING = MarketStates.STATUS_PENDING;
     private static final String STATUS_ONLINE = MarketStates.STATUS_ONLINE;
     private static final String STATUS_OFFLINE = MarketStates.STATUS_OFFLINE;
@@ -141,6 +146,13 @@ public class MarketPublishService {
             DatabusConnectorDef source = connectorDefMapper.selectById(bo.getSourceId());
             if (source == null) {
                 throw new ServiceException("源连接器不存在或已卸载");
+            }
+            // dev 目录装载的连接器不能上架：version 固定是 dev，不对应一份确定的包内容，
+            // 审核人没有可核对的对象（下载原包 / 包内清单这两个入口对它也是拒的）
+            if (CONNECTOR_SOURCE_DEV.equals(source.getSource())) {
+                throw new ServiceException("连接器 " + source.getType()
+                    + " 是 dev 目录装载的，不能提交上架（它没有确定的包版本，审核人无从核对）；"
+                    + "请先 mvn package 后从上传通道装一次，再提交上架");
             }
             sourceCode = source.getType();
             JsonNode manifest = readManifest(source.getManifestSnapshot());
@@ -446,6 +458,15 @@ public class MarketPublishService {
             preview.setVersion(component.getVersion() == null ? null : String.valueOf(component.getVersion()));
             preview.setScriptLang(component.getScriptLang());
             preview.setDescription(component.getDescription());
+        } else if (TYPE_CONNECTOR.equals(item.getResourceType())) {
+            // 连接器（P1 看得见）：预览给下载/清单端点所需的 type + version；code 复用为连接器类型键
+            DatabusConnectorDef def = connectorDefMapper.selectById(item.getSourceId());
+            if (def == null) {
+                return preview;
+            }
+            preview.setAuthor(item.getOwnerCode());
+            preview.setCode(def.getType());
+            preview.setVersion(def.getVersion());
         }
         return preview;
     }

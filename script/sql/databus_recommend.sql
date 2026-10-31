@@ -64,6 +64,9 @@ insert ignore into databus_cmp_recommend_seed
   (1801007, 'ANY', 'WHEN',          'any', 65, '并行编排次于串行',          sysdate()),
   (1801008, 'ANY', 'response',      'any', 65, '链路收尾组件，偏后置',      sysdate()),
   (1801009, 'ANY', 'IF',            'any', 60, '需要条件分流时使用',        sysdate()),
+  -- dbQuery 给 76 而非基线 70：推荐区门槛是 75，新件零真账时按 70 走本地分融合会被压在门槛下、
+  -- 永远拿不到曝光也就永远攒不到真账（冷启动死锁）。SQL 取数在集成链里是高频叶子，值这个分。
+  (1801010, 'ANY', 'dbQuery',       'any', 76, '直连库取数，高频叶子（阶段 B 新件，冷启动曝光）', sysdate()),
 
   -- ── BPM 主线：会话 → 启流程 → 建 BO → 查 → 改/补 → 回写 → 响应/完任务 ──
   (1801101, 'sessionCreate',   'processStart',    'any', 88, '登录拿 sid 后启动流程', sysdate()),
@@ -87,6 +90,11 @@ insert ignore into databus_cmp_recommend_seed
   (1801204, 'rdsExecute',  'dataPatch',  'any', 76, '查询结果加工后回写',       sysdate()),
   (1801205, 'idCardToUserId', 'boCreate', 'any', 68, '换成 userId 后建/关联 BO', sysdate()),
   (1801206, 'idCardToUserId', 'httpRequest', 'any', 65, 'userId 供后续接口调用',  sysdate()),
+  -- dbQuery 的后继照抄 rdsExecute 那两条（1801203/1801204）：两者都是「SQL 取数 → 结果落数据空间」，
+  -- 差别只在走 BPM 网关还是直连库，下游加工形态完全一致，没有理由给出不同的分。
+  -- dbExecute / dbBatch 不给种子：它们是写侧叶子，没有高置信的专属后继，留给真账攒（本表只覆盖高置信关系）。
+  (1801207, 'dbQuery',     'fieldMap',   'any', 78, '查询结果字段搬运（与 rdsExecute 同口径）', sysdate()),
+  (1801208, 'dbQuery',     'dataPatch',  'any', 76, '查询结果加工后回写（与 rdsExecute 同口径）', sysdate()),
 
   -- ── 附件链：下载结果可直接接上传（desc 明写） ──
   (1801301, 'fileDownload', 'fileUpload', 'any', 80, '下载产物可直接接上传组件（desc 明写）', sysdate()),

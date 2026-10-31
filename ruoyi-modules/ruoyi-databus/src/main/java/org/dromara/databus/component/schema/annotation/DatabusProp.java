@@ -71,6 +71,19 @@ public @interface DatabusProp {
     int order() default Integer.MAX_VALUE;
 
     /**
+     * 连接器能力族声明，仅对 {@link WidgetKind#CONNECTION_SELECT} 字段有意义（其他控件填了也忽略）。
+     * <p>
+     * 取 {@code ConnectorDescriptor.family}（如 {@code jdbc} / {@code bpmHttp}），**不是**具体连接器 type：
+     * 组件只声明「我要一个 SQL 连接器」，具体是 {@code jdbc-postgresql} 还是 {@code jdbc-oracle}
+     * 由连接行自己决定。这样以后新增 {@code jdbc-hive} 无需改组件与已发布链路
+     * （databus-jdbc-connector-plan.md §8.3）。
+     * <p>
+     * 三处用途：① 编辑器连接下拉按族过滤；② 派生组件级 requiresConnectors（市场详情/安装提示）；
+     * ③ 落 {@code databus_component_connector_dep} 供「停用/卸载连接器反查影响面」。
+     */
+    String connectorFamily() default "";
+
+    /**
      * select/multiselect 候选项。
      */
     @Target({})

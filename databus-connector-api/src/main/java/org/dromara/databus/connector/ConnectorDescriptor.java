@@ -1,5 +1,6 @@
 package org.dromara.databus.connector;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -18,24 +19,32 @@ import java.util.Map;
  *       前端按 schema 动态渲染表单，不写死字段</li>
  * </ul>
  *
- * <p>本档边界：schema 用简化的字段描述（type/label/required/default），不引入 JSON Schema 全套规范。
- * 未来升级为完整 JSON Schema 时只需扩展 {@link ConfigField} 即可。
- *
  * @author databus
  */
 @Data
 public class ConnectorDescriptor {
 
-    /** Connector 类型标识（与 {@link Connector#getType()} 一致），如 "bpmHttp" */
+    /** Connector 类型标识（与 {@link Connector#getType()} 一致），如 "jdbc-postgresql" */
     private String type;
 
-    /** 展示标签（连接管理页与物料展示用），如 "BPM HTTP 连接器" */
+    /** 展示标签（连接管理页与物料展示用），如 "PostgreSQL JDBC 连接器" */
     private String label;
 
     /** 图标名（Iconify 字符串，与 cmp-defs icon 同范式），如 "ph:plugs" */
     private String icon;
 
-    /** 操作清单：本连接器支持的业务操作列表（如 BPM HTTP 含 4 个操作） */
+    /**
+     * 连接器族（方案 §8.3）：组件按族匹配连接器，而不是按具体 type。
+     *
+     * <p>JDBC 各库填 {@code "jdbc"}，BPM 填 {@code "bpmHttp"}（该族只有一个成员，族名即 type）。
+     * 这样 {@code dbQuery} 一个组件就能服务
+     * jdbc-postgresql / jdbc-mysql / jdbc-oracle …，新增一个库不用新增组件、不用改前端物料；
+     * 连接管理页的连接器下拉也按族过滤（只装了 pg 包时，下拉里不会出现 Oracle）。
+     * 留空表示不属于任何族（组件不按族匹配）。
+     */
+    private String family;
+
+    /** 操作清单：本连接器支持的业务操作列表 */
     private List<OperationDef> operations = new ArrayList<>();
 
     /** Connection 配置 schema：字段名 → 字段定义，驱动连接管理页表单动态渲染 */
@@ -84,12 +93,23 @@ public class ConnectorDescriptor {
         /** 描述说明（连接管理页表单下方提示） */
         private String description;
 
-        /**
-         * 是否敏感字段（密码 / token / secretKey 等）。
-         * <p>为 true 时连接管理服务把该字段从明文 config 中拆出，写入 credentials 加密 JSON 列；
-         * 未来动态表单阶段前端据此渲染密码框（type=password）。
-         */
+        /** 是否敏感字段（密码 / token / secretKey 等），前端据此渲染密码框、平台拆出加密落 credentials */
         private boolean sensitive;
+
+        /** 控件类型：TEXT / TEXTAREA / NUMBER / BOOLEAN / SELECT / PASSWORD / KEY_VALUE_MAP */
+        private String widget;
+
+        /** SELECT 候选项（widget=SELECT 时前端下拉选项） */
+        private List<Option> options;
+
+        /** 占位提示（输入框 placeholder） */
+        private String placeholder;
+
+        /** 条件显示规则（满足才显示该字段） */
+        private ShowWhen showWhen;
+
+        /** 分组（"基础" / "高级"，连接管理页表单折叠分组用） */
+        private String group;
 
         public ConfigField sensitive() {
             this.sensitive = true;
@@ -121,6 +141,41 @@ public class ConnectorDescriptor {
             f.setRequired(required);
             f.setDefaultValue(defaultValue);
             return f;
+        }
+    }
+
+    /**
+     * select 候选项（与平台侧 OptionVo 字段逐字对齐）。
+     *
+     * @param label 展示文案
+     * @param value 提交值
+     */
+    public record Option(String label, String value) {
+    }
+
+    /**
+     * 字段条件显示规则（与平台侧 ShowWhenVo 字段逐字对齐）：同一字段多条规则为 AND。
+     *
+     * @param field 依据字段名（相对当前对象层级，支持点路径）
+     * @param eq    相等条件，null 表示不启用
+     * @param ne    不等条件，null 表示不启用
+     * @param in    属于集合，null 表示不启用
+     * @param notIn 不属于集合，null 表示不启用
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ShowWhen(String field,
+                           String eq,
+                           String ne,
+                           List<String> in,
+                           List<String> notIn) {
+
+        public ShowWhen {
+            if (in != null) {
+                in = List.copyOf(in);
+            }
+            if (notIn != null) {
+                notIn = List.copyOf(notIn);
+            }
         }
     }
 }

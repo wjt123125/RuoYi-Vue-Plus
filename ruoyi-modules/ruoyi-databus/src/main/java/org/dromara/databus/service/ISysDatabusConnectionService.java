@@ -65,7 +65,7 @@ public interface ISysDatabusConnectionService {
      * @param bo 连接配置（无需先落库，前端"测试连接"按钮直接传当前表单值）
      * @return Connector 返回的成功提示信息
      */
-    String testConnection(SysDatabusConnectionBo bo);
+    Object testConnection(SysDatabusConnectionBo bo);
 
     /**
      * 把启用的连接（enabled=Y）从 DB 加载并转换为运行时 {@link Connection} 列表。

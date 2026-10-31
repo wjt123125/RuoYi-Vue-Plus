@@ -1,6 +1,7 @@
 package org.dromara.databus.domain.bo;
 
 import io.github.linpeilie.annotations.AutoMapper;
+import io.github.linpeilie.annotations.AutoMapping;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -11,12 +12,13 @@ import org.dromara.databus.domain.SysDatabusConnection;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.Map;
 
 /**
  * 数据总线连接管理业务对象 sys_databus_connection。
  *
- * <p>前端提交时字段平铺：endpoint / accessKey / apiSecret 等
- * 直接作为 BO 字段（不需要再嵌套 config 子对象），Service 层负责转 Connection.config Map。
+ * <p>连接器专属配置一律装在 {@link #config} 里，BO 上没有 endpoint / accessKey 这类平铺字段：
+ * 字段清单由连接器自己的 {@code describe().configSchema} 声明，平台侧不认识任何具体字段名。
  *
  * @author databus
  */
@@ -55,35 +57,6 @@ public class SysDatabusConnectionBo implements Serializable {
     private String connectorType;
 
     /**
-     * 连接地址
-     */
-    @Size(max = 255, message = "连接地址长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
-    private String endpoint;
-
-    /**
-     * OpenAPI access_key（CC 身份策略访问凭证）
-     */
-    @NotBlank(message = "AccessKey 不能为空", groups = {AddGroup.class, EditGroup.class})
-    @Size(max = 128, message = "access_key 长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
-    private String accessKey;
-
-    /**
-     * OpenAPI secret（CC 身份策略私钥，敏感字段落 credentials 加密列；编辑时留空表示不修改）
-     */
-    @Size(max = 128, message = "secret 长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
-    private String apiSecret;
-
-    /**
-     * HTTP 超时（毫秒）
-     */
-    private Integer timeout;
-
-    /**
-     * 失败重试次数
-     */
-    private Integer retryCount;
-
-    /**
      * 是否启用（Y启用 N禁用）
      */
     private String enabled;
@@ -92,5 +65,14 @@ public class SysDatabusConnectionBo implements Serializable {
      * 备注
      */
     private String remark;
+
+    /**
+     * 连接器专属配置（BPM 的 endpoint/accessKey/apiSecret、JDBC 的 host/port/database/username/password…）。
+     * <p>本表「零 DDL 扩展」的后端承接字段：前端按 connector 的 describe().configSchema 渲染动态表单，
+     * 直接把表单值作为本 Map 提交。敏感字段由 Service 按 descriptor 的 ConfigField.sensitive
+     * 拆进 credentials 加密列，其余进 config 明文列。
+     */
+    @AutoMapping(target = "config", ignore = true)
+    private Map<String, Object> config;
 
 }

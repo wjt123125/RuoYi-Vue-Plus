@@ -26,6 +26,7 @@ import java.util.List;
  * @param keyWidget     KEY_VALUE_MAP 键控件
  * @param valueWidget   KEY_VALUE_MAP 值控件
  * @param valueExprRole KEY_VALUE_MAP 值的表达式角色
+ * @param connectorFamily CONNECTION_SELECT 字段声明的连接器能力族（非具体 type）；其他控件为 null
  * @author databus
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -42,7 +43,8 @@ public record PropSchema(String name,
                          List<PropSchema> fields,
                          WidgetKind keyWidget,
                          WidgetKind valueWidget,
-                         ExprRole valueExprRole) {
+                         ExprRole valueExprRole,
+                         String connectorFamily) {
 
     public PropSchema {
         options = options == null ? null : List.copyOf(options);
@@ -73,6 +75,7 @@ public record PropSchema(String name,
         private WidgetKind keyWidget;
         private WidgetKind valueWidget;
         private ExprRole valueExprRole;
+        private String connectorFamily;
 
         private Builder(String name, WidgetKind widget) {
             this.name = name;
@@ -139,9 +142,15 @@ public record PropSchema(String name,
             return this;
         }
 
+        public Builder connectorFamily(String connectorFamily) {
+            this.connectorFamily = connectorFamily;
+            return this;
+        }
+
         public PropSchema build() {
             return new PropSchema(name, label, description, widget, required, exprRole,
-                placeholder, order, options, showWhen, fields, keyWidget, valueWidget, valueExprRole);
+                placeholder, order, options, showWhen, fields, keyWidget, valueWidget, valueExprRole,
+                connectorFamily);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿﻿﻿-- ----------------------------
+-- ----------------------------
 -- 数据总线示例链路种子数据（开发期手工维护：mock-presets.ts 与生成脚本已删除；零 ALTER 约束，整文件可直接重复执行）
 -- 执行顺序：先 databus_chain.sql（含 drop table 与建表/菜单）再跑本文件。带 is_template=1 的 10 条为精选模板库首批模板。
 -- 全部为草稿状态（status=0）；发布走前端/接口 publish，后端实时生成 EL 推 Rule-DB。
@@ -22,7 +22,8 @@ where chain_code = 'alert-test-always-fail'
   1762000000000100016, 1762000000000100017, 1762000000000100018, 1762000000000100019, 1762000000000100020,
   1762000000000100021, 1762000000000100022, 1762000000000100023, 1762000000000100024, 1762000000000100025,
   1762000000000100026, 1762000000000100027, 1762000000000100028, 1762000000000100029,
-  1762000000000100030, 1762000000000100031,
+  1762000000000100030, 1762000000000100031, 1762000000000100032, 1762000000000100033,
+  1762000000000100034, 1762000000000100035, 1762000000000100036, 1762000000000100037,
   1762000000000100901, 1762000000000100902 );
 
 insert into databus_chain
@@ -208,5 +209,50 @@ insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark, create_dept, create_by)
 values
   (1762000000000100031, 'review-main-demo', '联审测试·主链', 1, '0', null, null, '{"type":"THEN","children":[{"id":"review-sub-demo","type":"CHAIN"}]}', 'BASIC', sysdate(), 'chain-ref 引用 review-sub-demo：上架本链应连带子链与 reviewEcho 组件各补一张 PENDING 审核单', @db_seed_admin_did, @db_seed_admin_uid);
+
+-- ----------------------------
+-- JDBC 连接器实测链组（正本 docs/databus-jdbc-connector-plan.md §十一 阶段 B 验证清单第 2-4 条）
+-- 六条链覆盖 dbQuery / dbExecute / dbBatch 三个脚本组件，全部指向连接 jdbc-mysql-demo。
+-- 前置三件（缺一即执行报错，报错内容本身就是诊断线索）：
+--   1) script/sql/databus_jdbc_demo_mysql.sql 已执行（建库 + databus_demo 账号 + 三张靶表）；
+--   2) databus_connection.sql 的 1762000000000020003 行已灌入（jdbc-mysql-demo，enabled=Y）；
+--   3) jdbc-mysql 连接器已装载：dev 走 application-dev.yml 的 dev-plugin-dir（需先
+--      mvn -pl databus-connectors/databus-connector-jdbc-mysql -am package -DskipTests
+--      把驱动放进 target/lib），生产走物料市场上传 connector-package.zip 并启用。
+-- 六条都是草稿（status=0），发布走前端/接口 publish。归属 test（同大多数种子链）。
+-- 验收看执行记录的数据空间，不用另配 setValue：
+--   dbQuery   → $.<tag>.rows / .row / .value / .rowCount / .columns
+--   dbExecute → $.<tag>.affectedRows / .generatedKeys
+--   dbBatch   → $.<tag>.affectedRows（数组，长度==参数组数）/ .batchCount
+-- ----------------------------
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, create_dept, create_by)
+values
+  (1762000000000100032, 'jdbc-query-rows', 'JDBC·多行查询（? 占位 + 动态参数）', 1, '0', null, null, '{"type":"THEN","children":[{"id":"dbQuery","type":"NodeComponent","properties":{"tag":"db1","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"select user_id, user_name, dept_id, salary, status from jdbc_org_user where dept_id = ? and status = ?\\",\\"args\\":[\\"{{ $.request.deptId }}\\",\\"{{ $.request.status }}\\"],\\"resultMode\\":\\"rows\\",\\"maxRows\\":100}"}}]}', 'BASIC', '[{"path":"$.request.deptId","type":"number","defaultValue":103,"required":true},{"path":"$.request.status","type":"text","defaultValue":"0","required":false}]', sysdate(), 'JDBC 最小闭环：验插件装载→建池→参数绑定→结果映射。期望 $.db1.rowCount=2（103 部门两人），rows 里 salary 是字符串（decimalAsString 默认 true）、user_name 中文不乱码。改 deptId=999 应得 rowCount=0 且 rows 为空数组。', @db_seed_test_did, @db_seed_test_uid);
+
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, create_dept, create_by)
+values
+  (1762000000000100033, 'jdbc-query-modes', 'JDBC·首行与标量（resultMode 三档）', 1, '0', null, null, '{"type":"THEN","children":[{"id":"dbQuery","type":"NodeComponent","properties":{"tag":"db2","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"select user_id, user_name, salary from jdbc_org_user where dept_id = ? order by salary desc\\",\\"args\\":[\\"{{ $.request.deptId }}\\"],\\"resultMode\\":\\"first\\"}"}},{"id":"dbQuery","type":"NodeComponent","properties":{"tag":"db3","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"select count(*) from jdbc_org_user where dept_id = ?\\",\\"args\\":[\\"{{ $.request.deptId }}\\"],\\"resultMode\\":\\"scalar\\",\\"scalarType\\":\\"int\\"}"}}]}', 'BASIC', '[{"path":"$.request.deptId","type":"number","defaultValue":105,"required":true}]', sysdate(), '验 resultMode 另两档：$.db2.row 是单个对象（首行，salary 最高的 u003），$.db2.rows 同时也有；$.db3.value 是数字 2 而不是字符串（scalarType=int 生效）。同一连接两个节点应复用同一个池（连接池 key = connectionId + config 指纹）。', @db_seed_test_did, @db_seed_test_uid);
+
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark, create_dept, create_by)
+values
+  (1762000000000100034, 'jdbc-type-matrix', 'JDBC·类型矩阵全量比对', 1, '0', null, null, '{"type":"THEN","children":[{"id":"dbQuery","type":"NodeComponent","properties":{"tag":"dbm","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"select * from jdbc_type_matrix order by id\\",\\"resultMode\\":\\"rows\\"}"}}]}', 'BASIC', sysdate(), 'JdbcResultMapper §7.1 逐列比对料。四行各有看点：full 行验各类型转换与时间格式（c_datetime 必须是 2026-10-31 13:45:09，不带 T/Z）、c_binary/c_varbinary/c_blob 是 Base64、c_json 走 default 兜底成字符串；snowflake 行验 c_bigint=1762000000000100001 转成 String（超 2^53 不丢精度）；all-null 行验所有列都是 null 而非空串或 0；empty-string 行验空串与 NULL 不被混同。', @db_seed_test_did, @db_seed_test_uid);
+
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, create_dept, create_by)
+values
+  (1762000000000100035, 'jdbc-execute-keys', 'JDBC·写入并回填自增主键', 1, '0', null, null, '{"type":"THEN","children":[{"id":"dbExecute","type":"NodeComponent","properties":{"tag":"dbw","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"insert into jdbc_write_log (user_id, action, payload) values (?, ?, ?)\\",\\"args\\":[\\"{{ $.request.userId }}\\",\\"{{ $.request.action }}\\",\\"{{ $.request.payload }}\\"],\\"returnGeneratedKeys\\":true}"}}]}', 'BASIC', '[{"path":"$.request.userId","type":"text","defaultValue":"u001","required":true},{"path":"$.request.action","type":"text","defaultValue":"manual-test","required":true},{"path":"$.request.payload","type":"text","defaultValue":"由链路写入","required":false}]', sysdate(), '验 dbExecute：$.dbw.affectedRows=1，$.dbw.generatedKeys 是长度 1 的数组（新自增 id）。事务只包本组件内——执行完即提交，可去靶库 select * from jdbc_write_log 复核；重复执行会一直追加行。执行日志里应有 stmtType=INSERT（语句类型审计，不记 SQL 原文）。', @db_seed_test_did, @db_seed_test_uid);
+
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, create_dept, create_by)
+values
+  (1762000000000100036, 'jdbc-batch-write', 'JDBC·批量写入（单语句 + 参数组）', 1, '0', null, null, '{"type":"THEN","children":[{"id":"dbBatch","type":"NodeComponent","properties":{"tag":"dbb","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"insert into jdbc_write_log (user_id, action, payload) values (?, ?, ?)\\",\\"argsList\\":[[\\"{{ $.request.userId }}\\",\\"batch-1\\",\\"第一组：动态参数\\"],[\\"u002\\",\\"batch-2\\",\\"第二组：字面量\\"],[\\"u003\\",\\"batch-3\\",\\"第三组：字面量\\"]],\\"batchSize\\":2}"}}]}', 'BASIC', '[{"path":"$.request.userId","type":"text","defaultValue":"u001","required":true}]', sysdate(), '验 dbBatch 单语句模式：三组参数、batchSize=2 → $.dbb.batchCount=2，$.dbb.affectedRows 长度必须是 3（每组一个值，不是每批一个）。整体一个事务：把第二组的表名改成不存在的列可验全批回滚（三组都不落库）。', @db_seed_test_did, @db_seed_test_uid);
+
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, create_dept, create_by)
+values
+  (1762000000000100037, 'jdbc-full-loop', 'JDBC·查完再写（节点产出跨节点引用）', 1, '0', null, null, '{"type":"THEN","children":[{"id":"dbQuery","type":"NodeComponent","properties":{"tag":"dbq","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"select user_id, user_name from jdbc_org_user where dept_id = ? order by user_id\\",\\"args\\":[\\"{{ $.request.deptId }}\\"],\\"resultMode\\":\\"rows\\"}"}},{"id":"dbExecute","type":"NodeComponent","properties":{"tag":"dblog","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"insert into jdbc_write_log (user_id, action, payload) values (?, ?, ?)\\",\\"args\\":[\\"{{ $.dbq.rows[0].user_id }}\\",\\"sync\\",\\"部门 {{ $.request.deptId }} 共 {{ $.dbq.rowCount }} 人，首人 {{ $.dbq.rows[0].user_name }}\\"],\\"returnGeneratedKeys\\":true}"}}]}', 'BASIC', '[{"path":"$.request.deptId","type":"number","defaultValue":108,"required":true}]', sysdate(), '验数据空间跨节点传递：第二个节点的 args 用 JSONPath 取第一个节点的产出（$.dbq.rows[0].user_id / $.dbq.rowCount）。期望 $.dblog.affectedRows=1，靶库里新行的 user_id=u005、payload 里嵌了 rowCount=2 与「钱七」。这条也顺带验中文在参数绑定路径上不乱码（不只是结果映射路径）。', @db_seed_test_did, @db_seed_test_uid);
 
 -- ----------------------------

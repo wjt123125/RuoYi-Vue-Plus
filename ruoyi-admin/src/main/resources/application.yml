@@ -310,6 +310,11 @@ databus:
       enabled: true
       # Spring cron：默认每分钟整点扫描一次
       cron: "0 * * * * ?"
+  # 连接器包（zip）落盘与装载根目录（方案 §2.2：{package-dir}/{type}/{version}/connector-package.zip）。
+  # 显式写出而非依赖 @Value 的 :plugins 默认值——相对路径以**进程工作目录**为基准，
+  # 用脚本/systemd/容器启动时工作目录往往不是仓库根，包会静默落到别处；部署时改成绝对路径即可。
+  connector:
+    package-dir: plugins
 
 --- # mqtt 配置
 # 具体配置还需查看文档

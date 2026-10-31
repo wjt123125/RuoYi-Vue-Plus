@@ -17,7 +17,7 @@ import java.util.Map;
  * <ul>
  *   <li>序列化落库（{@code sys_databus_connection.config} 字段存 JSON）</li>
  *   <li>连接管理页表单按 {@link ConnectorDescriptor#getConfigSchema()} 动态渲染</li>
- *   <li>具体 Connector 实现按自己熟悉的强类型 POJO 反序列化（如 {@code BpmHttpConnectionCfg}）</li>
+ *   <li>具体 Connector 实现按自己熟悉的强类型 POJO 反序列化</li>
  * </ul>
  *
  * <p>运行时归属：{@code DatabusContext.connections} 注册表持有当前流程执行可用的连接实例，
@@ -33,12 +33,11 @@ public class Connection {
     /** 连接名称（用户可读，连接管理页展示） */
     private String name;
 
-    /** 关联的 Connector 类型标识（如 "bpmHttp"），决定本连接由哪个 Connector 处理 */
+    /** 关联的 Connector 类型标识（如 "jdbc-postgresql"），决定本连接由哪个 Connector 处理 */
     private String connectorType;
 
     /**
      * 连接配置：Map 形式存储，key 由 {@link ConnectorDescriptor#getConfigSchema()} 定义。
-     * 如 bpmHttp 连接含 {@code endpoint / accessKey / apiSecret / timeoutMs / retryCount}（apiSecret 落 credentials）。
      */
     private Map<String, Object> config = new LinkedHashMap<>();
 

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>org.dromara</groupId>
+        <artifactId>databus-connectors</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>databus-connector-bpm-http</artifactId>
+    <!-- 连接器包版本：与 manifest.json 的 version 一致，独立于平台 revision -->
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <description>
+        BPM HTTP 连接器（type=bpmHttp）：从平台拆出的独立 maven 模块，打 zip（manifest.json + lib/本体 jar）。
+        连接器不引平台业务类；Json 序列化自理（Jackson 3 tools.jackson，provided 由父加载器提供）。
+    </description>
+
+    <dependencies>
+        <!-- 连接器契约 api：provided 编译用，打包不带（父加载器只有一份，红线 §2.2） -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>databus-connector-api</artifactId>
+            <version>${revision}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- lombok：@Slf4j/@Data 编译期处理（provided 不进包） -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- slf4j 门面：@Slf4j 生成代码引用，运行期由父加载器提供（provided） -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Jackson 3（tools.jackson）：本地 Json 工具类，版本由 spring-boot-dependencies 管理，provided 不进包 -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- spring-web：RestClient / MediaType，由父加载器提供（provided） -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 打 zip：根含 manifest.json，lib/ 只放本体 jar（不 repackage、不收任何过渡依赖） -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
+                <configuration>
+                    <finalName>connector-package</finalName>
+                    <appendAssemblyId>false</appendAssemblyId>
+                    <descriptors>
+                        <descriptor>src/assembly/connector-zip.xml</descriptor>
+                    </descriptors>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>make-zip</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

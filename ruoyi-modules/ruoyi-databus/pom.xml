@@ -29,6 +29,14 @@
             <artifactId>ruoyi-api</artifactId>
         </dependency>
 
+        <!-- 连接器契约 api：Connector/SqlConnector/Connection/sql record/spi.DriverDataSource，
+             compile 链进运行时（父加载器只有一份），连接器实现者以此 jar 编译 -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>databus-connector-api</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <!-- 接口文档 -->
         <dependency>
             <groupId>org.dromara</groupId>

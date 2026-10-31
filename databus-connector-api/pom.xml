@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>org.dromara</groupId>
+        <artifactId>ruoyi-vue-plus</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>databus-connector-api</artifactId>
+
+    <description>
+        数据总线连接器契约模块：连接器实现者唯一需要的编译依赖（JDK + Lombok + Jackson 注解）。
+        只声明 Connector 协议层契约与 SQL 能力接口，不依赖 Spring / MyBatis-Plus / ruoyi-common。
+    </description>
+
+    <dependencies>
+        <!-- lombok：@Data 走 Lombok，provided 不进连接器包 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Jackson 注解：ConfigField.showWhen 的 @JsonInclude(NON_NULL)，
+             版本由 spring-boot-dependencies(BOM) 管理 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

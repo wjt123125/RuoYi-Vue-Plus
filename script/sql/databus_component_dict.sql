@@ -75,7 +75,7 @@ create table databus_component_domain (
 ) engine=innodb comment='物料业务域字典表';
 
 -- ----------------------------
--- seed：分组七行 + 业务域三行
+-- seed：分组七行 + 业务域四行
 -- label/color/sort 逐字抄自前端现有 PALETTE_GROUPS 与 BUSINESS_SECTION_META，
 -- 保证字典化迁移后视觉零变化。
 -- ----------------------------
@@ -94,4 +94,5 @@ insert ignore into databus_component_domain
   (id, domain_key, domain_name, color, sort, is_default, create_time, remark) values
   (1762000000001200101, 'bpm',    'BPM 平台', '#7c3aed', 10, 'N', sysdate(), 'BPM 平台集成件'),
   (1762000000001200102, 'common', '通用组件', '#67c23a', 20, 'Y', sysdate(), '通用数据加工件；domain 为空的件兜底归此域'),
-  (1762000000001200103, 'slot',   '条件组件', '#e6a23c', 30, 'N', sysdate(), '算子条件位件（forLoop/iteratorLoop/switchRoute/booleanScript）；成员由后端按 node_type≠NODE 派生，不需人工指派');
+  (1762000000001200103, 'slot',   '条件组件', '#e6a23c', 30, 'N', sysdate(), '算子条件位件（forLoop/iteratorLoop/switchRoute/booleanScript）；成员由后端按 node_type≠NODE 派生，不需人工指派'),
+  (1762000000001200104, 'db',     '数据库',   '#0ea5e9', 40, 'N', sysdate(), '直连数据库件（dbQuery/dbExecute/dbBatch）；依赖 family=jdbc 的连接器，具体库由连接行决定');

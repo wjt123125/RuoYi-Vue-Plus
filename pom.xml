@@ -480,6 +480,10 @@
         <module>ruoyi-modules</module>
         <!-- api模块 -->
         <module>ruoyi-api</module>
+        <!-- 连接器契约 api 模块（薄契约：Connector/SqlConnector/DriverDataSource） -->
+        <module>databus-connector-api</module>
+        <!-- 连接器车间：独立连接器实现模块，产物 zip 不进平台运行时 -->
+        <module>databus-connectors</module>
     </modules>
     <packaging>pom</packaging>
 

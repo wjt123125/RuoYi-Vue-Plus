@@ -132,6 +132,8 @@ public class DatabusComponentBo implements Serializable {
 
     /**
      * 启停状态（0启用 1停用）
+     * <p>修改接口不接收此字段——insertByBo 空值兜底 '0'、updateByBo 显式置 null（不更新）；
+     * 启停走 PUT /databus/component/{id}/status（治理专属权限 databus:component:toggle）。
      */
     private String status;
 

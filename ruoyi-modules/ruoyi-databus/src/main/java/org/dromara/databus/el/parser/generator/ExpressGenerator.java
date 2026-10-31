@@ -9,6 +9,7 @@ import org.dromara.databus.el.parser.base.ExpressParser;
 import org.dromara.databus.el.parser.selector.ParserSelector;
 import com.yomahub.liteflow.builder.el.LiteFlowChainELBuilder;
 import com.yomahub.liteflow.common.ChainConstant;
+import com.yomahub.liteflow.common.entity.ValidationResp;
 import com.yomahub.liteflow.flow.FlowBus;
 import com.yomahub.liteflow.flow.element.Condition;
 import com.yomahub.liteflow.util.QlExpressUtils;
@@ -32,9 +33,9 @@ import java.util.Map;
  *   3. ParserSelector 找到根 Condition 对应的解析器
  *   4. builderVO + builderCondition + builderChildren 递归转成 CmpProperty 树
  *
- * 【JSON → EL】generateEL(CmpProperty) / verifyELExpression(CmpProperty)
+ * 【JSON → EL】generateEL(CmpProperty) / validateEL(CmpProperty)
  *   1. builderEL 走"模板法五步曲"递归拼出 EL 字符串
- *   2. verifyELExpression 额外用 LiteFlowChainELBuilder.validate 校验合法性
+ *   2. validateEL 额外用 LiteFlowChainELBuilder.validateWithEx 校验合法性，并把失败原因带回调用方
  * </pre>
  *
  * @author <a href="mailto:dogsong99@163.com">dosong</a>
@@ -131,16 +132,27 @@ public class ExpressGenerator {
 
     /**
      * JSON → EL + 合法性校验：生成 EL 后交给 LiteFlow 官方
-     * {@link LiteFlowChainELBuilder#validate} 验证能否被解析，
+     * {@link LiteFlowChainELBuilder#validateWithEx} 验证能否被解析，
      * 前端保存编排前用它做"语法体检"。
+     * <p>
+     * 返回失败原因而非 boolean：校验不通过最常见的根因是节点没注册进 FlowBus，
+     * LiteFlow 会给出 {@code [xxx] is not exist or [xxx] is not registered} 这样
+     * 直接指向病灶的信息，boolean 会把它整段丢掉。
+     *
+     * @return 失败原因；{@code null} 表示校验通过
      */
-    public boolean verifyELExpression(CmpProperty jsonEl) {
+    public String validateEL(CmpProperty jsonEl) {
         String elStr = builderEL(jsonEl);
         if (null == elStr) {
-            return false;
+            return "EL 表达式生成失败";
         }
         log.info("生成EL表达式成功, elStr: {}", elStr);
-        return LiteFlowChainELBuilder.validate(elStr);
+        ValidationResp resp = LiteFlowChainELBuilder.validateWithEx(elStr);
+        if (resp.isSuccess()) {
+            return null;
+        }
+        Exception cause = resp.getCause();
+        return cause == null ? "EL 表达式校验失败" : cause.getMessage();
     }
 
     /**

@@ -1,0 +1,14 @@
+{
+  "type": "jdbc-postgresql",
+  "label": "PostgreSQL JDBC 连接器",
+  "icon": "ph:database",
+  "version": "1.0.0",
+  "engine": "jvm",
+  "mainClass": "org.dromara.databus.connector.jdbc.postgresql.PostgresJdbcConnector",
+  "dbType": "postgresql",
+  "driver": {
+    "name": "org.postgresql:postgresql",
+    "version": "42.7.11",
+    "license": "BSD-2-Clause"
+  }
+}

@@ -1,6 +1,7 @@
 package org.dromara.databus.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
@@ -105,7 +106,7 @@ public class DatabusComponentController extends BaseController {
     }
 
     /**
-     * 修改组件元信息
+     * 修改组件元信息（不接收 status：启停走独立端点）
      */
     @SaCheckPermission("databus:component:edit")
     @Log(title = "数据总线组件", businessType = BusinessType.UPDATE)
@@ -113,6 +114,24 @@ public class DatabusComponentController extends BaseController {
     @PutMapping()
     public R<Void> edit(@Validated @RequestBody DatabusComponentBo bo) {
         return toAjax(componentService.updateByBo(bo));
+    }
+
+    /**
+     * 启停组件（治理专属独立权限点）：与「修改组件」拆开，持有 edit 的操作员改得了元信息、
+     * 停不了物料投放。停用不硬拦存量——编辑器面板不再露出，已发布链路继续运行。
+     *
+     * @param id     组件主键
+     * @param status 目标状态（0启用 1停用）
+     */
+    @SaCheckPermission("databus:component:toggle")
+    @Log(title = "数据总线组件启停", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @PutMapping("/{id}/status")
+    public R<Void> toggleStatus(@NotNull(message = "主键不能为空")
+                                @PathVariable("id") Long id,
+                                @NotBlank(message = "启停状态不能为空")
+                                @RequestParam("status") String status) {
+        return toAjax(componentService.updateStatus(id, status));
     }
 
     /**

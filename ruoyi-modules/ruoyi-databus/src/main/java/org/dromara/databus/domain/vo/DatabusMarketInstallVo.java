@@ -97,6 +97,11 @@ public class DatabusMarketInstallVo implements Serializable {
     private String componentCode;
 
     /**
+     * 上架者登录名（取自市场物料行 owner_code；物料行已删时为空，前端不渲染 @作者）
+     */
+    private String ownerCode;
+
+    /**
      * 链路闭包级联清单（decisions §十四-1/2：全 fork，每条独立成行；仅 CHAIN 安装返回）。
      * <p>
      * 含主链与全部级联子链（post-order 序，主链居末）：NEW＝本次新复制；REUSED＝命中既有同源

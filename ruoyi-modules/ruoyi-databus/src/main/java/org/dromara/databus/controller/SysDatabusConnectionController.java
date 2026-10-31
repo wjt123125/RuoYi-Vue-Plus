@@ -114,7 +114,7 @@ public class SysDatabusConnectionController extends BaseController {
     @SaCheckPermission("databus:connection:test")
     @Log(title = "数据总线连接测试", businessType = BusinessType.OTHER)
     @PostMapping("/test")
-    public R<String> test(@Validated @RequestBody SysDatabusConnectionBo bo) {
+    public R<Object> test(@Validated @RequestBody SysDatabusConnectionBo bo) {
         return R.ok("测试成功", connectionService.testConnection(bo));
     }
 

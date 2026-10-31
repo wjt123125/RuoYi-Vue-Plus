@@ -1,0 +1,1 @@
+本目录产物是 zip（连接器包），不是平台代码。每个子模块打出的 zip（manifest.json + lib/*.jar）走平台上传链路装载，绝不链进 ruoyi-databus 运行时（相关约束见 docs/databus-jdbc-connector-plan.md §2.1）。

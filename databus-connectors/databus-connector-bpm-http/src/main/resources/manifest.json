@@ -1,0 +1,8 @@
+{
+  "type": "bpmHttp",
+  "label": "BPM HTTP 连接器",
+  "icon": "ph:plugs",
+  "version": "1.0.0",
+  "engine": "jvm",
+  "mainClass": "org.dromara.databus.connector.bpm.BpmHttpConnector"
+}

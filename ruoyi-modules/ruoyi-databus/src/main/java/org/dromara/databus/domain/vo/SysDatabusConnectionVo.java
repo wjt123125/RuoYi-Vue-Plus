@@ -1,12 +1,15 @@
 package org.dromara.databus.domain.vo;
 
 import io.github.linpeilie.annotations.AutoMapper;
+import io.github.linpeilie.annotations.AutoMapping;
+import io.github.linpeilie.annotations.ReverseAutoMapping;
 import lombok.Data;
 import org.dromara.databus.domain.SysDatabusConnection;
 
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 数据总线连接管理视图对象 sys_databus_connection
@@ -41,31 +44,6 @@ public class SysDatabusConnectionVo implements Serializable {
     private String connectorType;
 
     /**
-     * 连接地址
-     */
-    private String endpoint;
-
-    /**
-     * OpenAPI access_key
-     */
-    private String accessKey;
-
-    /**
-     * OpenAPI secret（回显用，前端密码框）
-     */
-    private String apiSecret;
-
-    /**
-     * HTTP 超时（毫秒）
-     */
-    private Integer timeout;
-
-    /**
-     * 失败重试次数
-     */
-    private Integer retryCount;
-
-    /**
      * 是否启用（Y启用 N禁用）
      */
     private String enabled;
@@ -74,6 +52,15 @@ public class SysDatabusConnectionVo implements Serializable {
      * 备注
      */
     private String remark;
+
+    /**
+     * 连接器专属配置回显（只含 config 明文列，如 JDBC 的 host/port/database/username）。
+     * <p>安全口径：credentials 加密列整列不下发，敏感字段（如 password）恒为空；
+     * 编辑时留空即沿用旧值，填新值才替换。
+     */
+    @AutoMapping(target = "config", ignore = true)
+    @ReverseAutoMapping(target = "config", ignore = true)
+    private Map<String, Object> config;
 
     /**
      * 创建时间

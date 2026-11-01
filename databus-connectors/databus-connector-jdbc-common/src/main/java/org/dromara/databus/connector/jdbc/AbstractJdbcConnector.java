@@ -10,7 +10,6 @@ import org.dromara.databus.connector.ConnectorException;
 import org.dromara.databus.connector.sql.BatchResult;
 import org.dromara.databus.connector.sql.ExecuteResult;
 import org.dromara.databus.connector.sql.QueryOptions;
-import org.dromara.databus.connector.sql.QueryResult;
 import org.dromara.databus.connector.sql.SqlConnector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,8 +44,14 @@ import java.util.Properties;
  * <p>子类只声明自己对应哪个 {@link JdbcDbType}（十几行），type / 驱动类名 / URL 模板 / 默认端口 /
  * 探活语句全部来自枚举，用户无法自填 driverClass（§9.1 P0）。
  *
- * <p>两层契约都实现：能力接口 {@link SqlConnector} 的三个方法（脚本组件走这条，有编译期类型检查），
+ * <p>两层契约都实现：能力接口 {@link SqlConnector} 的五个方法（脚本组件走这条，有编译期类型检查），
  * 以及通用逃生舱 {@link #invoke}（按 operation 分发到同一套实现，保证「不改平台也能调」）。
+ *
+ * <p><b>operation 只有三个（query / execute / batch），能力接口方法有五个</b>：结果形态
+ * （多行 / 首行 / 标量）由方法名区分而不是由 {@code resultMode} 字段区分，因此 {@code query}
+ * 这一个 operation 在 {@link #invoke} 里按 {@code resultMode} 分发到
+ * {@code queryForList} / {@code queryForMap} / {@code queryForObject} 之一，
+ * 返回的 Map 与组件写进数据空间的结构逐字一致（§3.3 / §3.4）。
  *
  * <p><b>rowCount 的语义偏离</b>：§7.1 说 rowCount「不受 maxRows 截断影响」，实现上做不到——
  * {@code setMaxRows} 之后驱动只回传上限内的行，拿不到真实命中总数（要拿就得再跑一次
@@ -86,6 +91,9 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
 
     /** logSql=true 时每个参数只回显的前缀长度（§7.3：args 可能含身份证等敏感数据） */
     private static final int ARG_PREVIEW_LEN = 8;
+
+    /** opts 传 null 时的缺省：四个字段全空，等于一律取连接配置里的值 */
+    private static final QueryOptions DEFAULT_OPTIONS = new QueryOptions(null, null, null, null);
 
     /** 连接池注册表：每包一份，见类注释 */
     private final JdbcPoolRegistry pools = new JdbcPoolRegistry();
@@ -316,48 +324,45 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
     // ---------------------------- 能力接口 ----------------------------
 
     @Override
-    public QueryResult query(Connection conn, String sql, List<Object> args, QueryOptions opts) {
-        JdbcConnectionCfg cfg = JdbcConnectionCfg.from(dbType(), conn.getConfig());
-        JdbcSqlGuard.requireNonBlank(sql);
-        JdbcSqlGuard.checkReadOnly(sql, cfg.readOnly());
-        QueryOptions options = opts == null ? new QueryOptions(null, null, null, null, null) : opts;
-        String resultMode = normalizeResultMode(options.resultMode());
-        JdbcConnectionCfg effective = cfg.withColumnNameCase(options.columnNameCase());
-        int maxRows = clamp(options.maxRows() == null ? cfg.maxRows() : options.maxRows(),
-            1, JdbcConnectionCfg.MAX_ROWS_HARD_LIMIT);
-        int fetchSize = Math.max(0, options.fetchSize() == null ? cfg.fetchSize() : options.fetchSize());
-
-        DataSource dataSource = pools.dataSource(conn.getId(), dbType(), cfg);
-        long start = System.nanoTime();
-        try (java.sql.Connection c = dataSource.getConnection()) {
-            // PostgreSQL 只在 autoCommit=false 时才按 fetchSize 分批取数（§7.2），其余库无害
-            boolean restoreAutoCommit = false;
-            if (fetchSize > 0 && c.getAutoCommit()) {
-                c.setAutoCommit(false);
-                restoreAutoCommit = true;
-            }
-            try (PreparedStatement ps = c.prepareStatement(sql)) {
-                applyStatement(ps, cfg, maxRows, fetchSize);
-                bind(ps, args);
-                try (ResultSet rs = ps.executeQuery()) {
-                    QueryResult result = collect(rs, effective, resultMode, options.scalarType());
-                    logOp(OPERATION_QUERY, conn, sql, args, cfg, result.rowCount(), start);
-                    return result;
-                }
-            } finally {
-                if (restoreAutoCommit) {
-                    rollbackQuietly(c);
-                    restoreAutoCommit(c, true);
-                }
-            }
-        } catch (SQLException e) {
-            log.error("[db] 查询失败 connId={} type={}", conn.getId(), getType(), e);
-            throw new ConnectorException("JDBC_QUERY_FAILED", "SQL 查询失败：" + classify(e), e);
-        }
+    public List<Map<String, Object>> queryForList(Connection conn, String sql, List<Object> args, QueryOptions opts) {
+        QueryOptions options = orDefault(opts);
+        return runQuery(conn, sql, args, options, (rs, cfg) -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            JdbcResultMapper.readRows(rs, cfg, row -> {
+                rows.add(row);
+                return true;
+            });
+            return new QueryOutcome<>(rows, rows.size());
+        }).value();
     }
 
     @Override
-    public ExecuteResult execute(Connection conn, String sql, List<Object> args, boolean returnGeneratedKeys) {
+    public Map<String, Object> queryForMap(Connection conn, String sql, List<Object> args, QueryOptions opts) {
+        QueryOptions options = orDefault(opts);
+        return runQuery(conn, sql, args, options, (rs, cfg) -> {
+            List<Map<String, Object>> first = new ArrayList<>(1);
+            // sink 返回 false 即停止读取：LIMIT 1 语义，命中多行也不报错（§3.4 红线）
+            JdbcResultMapper.readRows(rs, cfg, row -> {
+                first.add(row);
+                return false;
+            });
+            return new QueryOutcome<>(first.isEmpty() ? null : first.get(0), first.size());
+        }).value();
+    }
+
+    @Override
+    public Object queryForObject(Connection conn, String sql, List<Object> args, QueryOptions opts) {
+        QueryOptions options = orDefault(opts);
+        return runQuery(conn, sql, args, options, (rs, cfg) -> {
+            ResultSetMetaData meta = rs.getMetaData();
+            int firstType = meta.getColumnCount() > 0 ? meta.getColumnType(1) : Types.VARCHAR;
+            Object value = JdbcResultMapper.readScalar(rs, firstType, cfg, options.scalarType());
+            return new QueryOutcome<>(value, value == null ? 0 : 1);
+        }).value();
+    }
+
+    @Override
+    public ExecuteResult update(Connection conn, String sql, List<Object> args, boolean returnGeneratedKeys) {
         JdbcConnectionCfg cfg = JdbcConnectionCfg.from(dbType(), conn.getConfig());
         JdbcSqlGuard.requireNonBlank(sql);
         // 只读连接上 execute 必然被拒（写语句不在放行关键字里）——§9.1 P1
@@ -395,7 +400,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
     }
 
     @Override
-    public BatchResult batch(Connection conn, String sql, List<List<Object>> argsList, int batchSize) {
+    public BatchResult batchUpdate(Connection conn, String sql, List<List<Object>> argsList, int batchSize) {
         JdbcConnectionCfg cfg = JdbcConnectionCfg.from(dbType(), conn.getConfig());
         JdbcSqlGuard.requireNonBlank(sql);
         JdbcSqlGuard.checkReadOnly(sql, cfg.readOnly());
@@ -450,22 +455,49 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
     /**
      * operation 分发（§1.4.2 逃生舱）：三个 operation 落到同一套能力接口实现，
      * 保证「不改平台、不引 api 也能从脚本调」。
+     *
+     * <p>{@code query} 按 {@code resultMode} 分发到三个查询方法之一，返回的 Map 按形态严格给
+     * （§3.3）：rows → {@code rows/rowCount/columns}、first → {@code row/rowCount/columns}、
+     * scalar → {@code value}，<b>不该有的 key 不出现</b>，与 dbQuery 组件写进数据空间的结构逐字一致。
      */
     @Override
     public Object invoke(Connection connection, String operation, Map<String, Object> params) {
         Map<String, Object> p = params == null ? Map.of() : params;
         String op = operation == null ? "" : operation.trim();
         return switch (op) {
-            case OPERATION_QUERY -> query(connection, str(p, "sql"), argList(p.get("args")),
-                new QueryOptions(str(p, "resultMode"), str(p, "scalarType"),
-                    integer(p, "maxRows"), integer(p, "fetchSize"), null));
-            case OPERATION_EXECUTE -> execute(connection, str(p, "sql"), argList(p.get("args")),
+            case OPERATION_QUERY -> invokeQuery(connection, p);
+            case OPERATION_EXECUTE -> update(connection, str(p, "sql"), argList(p.get("args")),
                 boolParam(p, "returnGeneratedKeys"));
-            case OPERATION_BATCH -> batch(connection, str(p, "sql"), argMatrix(p.get("argsList")),
+            case OPERATION_BATCH -> batchUpdate(connection, str(p, "sql"), argMatrix(p.get("argsList")),
                 integerOr(p, "batchSize", DEFAULT_BATCH_SIZE));
             default -> throw new ConnectorException("OPERATION_NOT_SUPPORTED",
                 "连接器 " + getType() + " 未实现 operation=" + operation + "（支持 query / execute / batch）");
         };
+    }
+
+    /** query 逃生舱：按 resultMode 选方法，再按形态拼输出（LinkedHashMap 保证 key 顺序稳定） */
+    private Object invokeQuery(Connection connection, Map<String, Object> p) {
+        String sql = str(p, "sql");
+        List<Object> args = argList(p.get("args"));
+        QueryOptions opts = new QueryOptions(str(p, "scalarType"),
+            integer(p, "maxRows"), integer(p, "fetchSize"), null);
+        Map<String, Object> out = new LinkedHashMap<>();
+        switch (normalizeResultMode(str(p, "resultMode"))) {
+            case "scalar" -> out.put("value", queryForObject(connection, sql, args, opts));
+            case "first" -> {
+                Map<String, Object> row = queryForMap(connection, sql, args, opts);
+                out.put("row", row);
+                out.put("rowCount", row == null ? 0 : 1);
+                out.put("columns", columnsOf(row));
+            }
+            default -> {
+                List<Map<String, Object>> rows = queryForList(connection, sql, args, opts);
+                out.put("rows", rows);
+                out.put("rowCount", rows.size());
+                out.put("columns", columnsOf(rows));
+            }
+        }
+        return out;
     }
 
     // ---------------------------- 生命周期（§3.1 表格） ----------------------------
@@ -502,42 +534,78 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
 
     // ---------------------------- 私有实现 ----------------------------
 
-    /** 按 resultMode 收集结果（§3.4：resultMode 决定 rows / row / value 哪个有值） */
-    private QueryResult collect(ResultSet rs, JdbcConnectionCfg cfg, String resultMode, String scalarType)
-        throws SQLException {
-        List<String> columns = columnsOf(rs, cfg);
-        if ("scalar".equals(resultMode)) {
-            ResultSetMetaData meta = rs.getMetaData();
-            int firstType = meta.getColumnCount() > 0 ? meta.getColumnType(1) : Types.VARCHAR;
-            Object value = JdbcResultMapper.readScalar(rs, firstType, cfg, scalarType);
-            return new QueryResult(List.of(), Map.of(), value, value == null ? 0 : 1, columns);
+    /**
+     * 三个查询方法共用的执行模板：取池 → 建语句 → 绑参 → 交给 handler 读成某种形态 → 记日志。
+     *
+     * <p>形态差异全在 handler 里，模板内不含任何 resultMode 分支（§3.4：形态由方法名决定）。
+     */
+    private <T> QueryOutcome<T> runQuery(Connection conn, String sql, List<Object> args, QueryOptions options,
+                                        ResultHandler<T> handler) {
+        JdbcConnectionCfg cfg = JdbcConnectionCfg.from(dbType(), conn.getConfig());
+        JdbcSqlGuard.requireNonBlank(sql);
+        JdbcSqlGuard.checkReadOnly(sql, cfg.readOnly());
+        JdbcConnectionCfg effective = cfg.withColumnNameCase(options.columnNameCase());
+        int maxRows = clamp(options.maxRows() == null ? cfg.maxRows() : options.maxRows(),
+            1, JdbcConnectionCfg.MAX_ROWS_HARD_LIMIT);
+        int fetchSize = Math.max(0, options.fetchSize() == null ? cfg.fetchSize() : options.fetchSize());
+
+        DataSource dataSource = pools.dataSource(conn.getId(), dbType(), cfg);
+        long start = System.nanoTime();
+        try (java.sql.Connection c = dataSource.getConnection()) {
+            // PostgreSQL 只在 autoCommit=false 时才按 fetchSize 分批取数（§7.2），其余库无害
+            boolean restoreAutoCommit = false;
+            if (fetchSize > 0 && c.getAutoCommit()) {
+                c.setAutoCommit(false);
+                restoreAutoCommit = true;
+            }
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                applyStatement(ps, cfg, maxRows, fetchSize);
+                bind(ps, args);
+                try (ResultSet rs = ps.executeQuery()) {
+                    QueryOutcome<T> outcome = handler.handle(rs, effective);
+                    logOp(OPERATION_QUERY, conn, sql, args, cfg, outcome.rowCount(), start);
+                    return outcome;
+                }
+            } finally {
+                if (restoreAutoCommit) {
+                    rollbackQuietly(c);
+                    restoreAutoCommit(c, true);
+                }
+            }
+        } catch (SQLException e) {
+            log.error("[db] 查询失败 connId={} type={}", conn.getId(), getType(), e);
+            throw new ConnectorException("JDBC_QUERY_FAILED", "SQL 查询失败：" + classify(e), e);
         }
-        List<Map<String, Object>> rows = new ArrayList<>();
-        if ("first".equals(resultMode)) {
-            JdbcResultMapper.readRows(rs, cfg, row -> {
-                rows.add(row);
-                return false;
-            });
-            Map<String, Object> first = rows.isEmpty() ? null : rows.get(0);
-            return new QueryResult(List.of(), first, null, first == null ? 0 : 1, columns);
-        }
-        JdbcResultMapper.readRows(rs, cfg, row -> {
-            rows.add(row);
-            return true;
-        });
-        return new QueryResult(rows, rows.isEmpty() ? null : rows.get(0), null, rows.size(), columns);
     }
 
-    /** 列名清单（getColumnLabel + columnNameCase 归一，§7.1） */
-    private List<String> columnsOf(ResultSet rs, JdbcConnectionCfg cfg) throws SQLException {
-        ResultSetMetaData meta = rs.getMetaData();
-        int count = meta.getColumnCount();
-        List<String> columns = new ArrayList<>(count);
-        for (int i = 1; i <= count; i++) {
-            String label = meta.getColumnLabel(i);
-            columns.add(label == null ? "column" + i : JdbcResultMapper.normalizeColumn(label, cfg.columnNameCase()));
-        }
-        return columns;
+    /**
+     * handler 的产物：形态化的值 + 实际读取行数。
+     * rowCount 只为 {@link #logOp} 与 {@link #invokeQuery} 拼输出用，不出现在能力接口签名上。
+     */
+    private record QueryOutcome<T>(T value, int rowCount) {
+    }
+
+    /** 结果形态处理器：拿到已执行的 ResultSet，读成自己那一种形态 */
+    @FunctionalInterface
+    private interface ResultHandler<T> {
+        QueryOutcome<T> handle(ResultSet rs, JdbcConnectionCfg cfg) throws SQLException;
+    }
+
+    /** 列名清单（多行）：行 Map 是 LinkedHashMap，keySet 顺序即 SELECT 列序 */
+    private static List<String> columnsOf(List<Map<String, Object>> rows) {
+        return rows.isEmpty() ? List.of() : columnsOf(rows.get(0));
+    }
+
+    /**
+     * 列名清单（单行）。<b>0 行时是空表</b>：能力接口只回行数据不回元数据，
+     * 空结果拿不到列名（要列名请查 information_schema）。列名已按 columnNameCase 归一（§7.1）。
+     */
+    private static List<String> columnsOf(Map<String, Object> row) {
+        return row == null ? List.of() : new ArrayList<>(row.keySet());
+    }
+
+    private static QueryOptions orDefault(QueryOptions opts) {
+        return opts == null ? DEFAULT_OPTIONS : opts;
     }
 
     /** 自增主键回填；驱动不支持时返回空表而不抛错（不是所有库/所有语句都有生成键） */

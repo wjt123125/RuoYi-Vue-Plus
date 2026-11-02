@@ -207,7 +207,7 @@ class DatabusMarketInstallForkTest {
         // 副本落草稿态：可编辑的普通顶层链（decisions §十四-1）
         for (DatabusChain copy : insertedChains) {
             assertEquals(Integer.valueOf(1), copy.getVersion());
-            assertEquals("0", copy.getStatus());
+            assertEquals("DRAFT", copy.getStatus());
             assertEquals("0", copy.getIsTemplate());
             assertEquals(Long.valueOf(DIRECTORY_ID), copy.getDirectoryId());
         }

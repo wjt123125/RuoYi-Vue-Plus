@@ -19,6 +19,7 @@ import org.dromara.databus.domain.vo.DatabusMarketCategoryVo;
 import org.dromara.databus.domain.vo.DatabusMarketItemVo;
 import org.dromara.databus.domain.vo.DatabusMarketPreviewVo;
 import org.dromara.databus.domain.vo.DatabusMarketReviewDetailVo;
+import org.dromara.databus.enums.ConnectorDefStatusEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
@@ -62,7 +63,6 @@ public class MarketQueryService {
 
     private static final String STATUS_ONLINE = MarketStates.STATUS_ONLINE;
     private static final String STATUS_PENDING = MarketStates.STATUS_PENDING;
-    private static final String DEF_STATUS_ENABLED = MarketStates.DEF_STATUS_ENABLED;
 
     private final DatabusMarketItemMapper marketItemMapper;
 
@@ -305,7 +305,7 @@ public class MarketQueryService {
                                Map<Long, Long> installedMap, Map<Long, DatabusConnectorDef> connectorDefMap) {
         if (TYPE_CONNECTOR.equals(item.getResourceType())) {
             DatabusConnectorDef def = connectorDefMap.get(item.getSourceId());
-            boolean installed = def != null && DEF_STATUS_ENABLED.equals(def.getStatus());
+            boolean installed = def != null && ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus());
             vo.setInstalled(installed);
             vo.setLocalResourceId(installed ? def.getId() : null);
         } else {

@@ -31,7 +31,7 @@ snail-job:
 --- # snail-ai 配置
 snail-ai:
   # 启用客户端模式
-  enabled: false
+  enabled: true
   # ==================== Server 连接 ====================
   # Server 端 gRPC 地址（即 snail-ai-starter 的 snail-ai.server.grpc-port）
   server:

@@ -219,7 +219,7 @@ class DatabusChainClosureTest {
         chain.setId((long) (100 + chainsByCode.size()));
         chain.setChainCode(code);
         chain.setChainName(name);
-        chain.setStatus(ChainStatusEnum.PUBLISHED.getCode());
+        chain.setStatus(ChainStatusEnum.ENABLED.getCode());
         chain.setIsTemplate("0");
         chain.setCmpProperty(cmpProperty);
         chainsByCode.put(code, chain);

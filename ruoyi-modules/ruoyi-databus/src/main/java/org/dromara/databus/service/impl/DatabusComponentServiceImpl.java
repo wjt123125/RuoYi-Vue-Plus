@@ -24,6 +24,7 @@ import org.dromara.databus.domain.DatabusComponentGroup;
 import org.dromara.databus.domain.DatabusComponentVersion;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
+import org.dromara.databus.enums.ComponentStatusEnum;
 import org.dromara.databus.domain.bo.ScriptSaveBo;
 import org.dromara.databus.domain.vo.ComponentDomainVo;
 import org.dromara.databus.domain.vo.ComponentGroupVo;
@@ -66,16 +67,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Service
 public class DatabusComponentServiceImpl implements IDatabusComponentService {
-
-    /**
-     * 启用状态
-     */
-    private static final String STATUS_ENABLED = "0";
-
-    /**
-     * 停用状态（编辑器面板不再投放；已发布链路照常运行）
-     */
-    private static final String STATUS_DISABLED = "1";
 
     /**
      * 正常（未废弃）
@@ -144,7 +135,7 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
                 (a, b) -> a, LinkedHashMap::new));
 
         List<DatabusComponent> rows = componentMapper.selectList(Wrappers.<DatabusComponent>lambdaQuery()
-            .eq(DatabusComponent::getStatus, STATUS_ENABLED)
+            .eq(DatabusComponent::getStatus, ComponentStatusEnum.ENABLED.getCode())
             // 软退役件（deprecated=1）停止投放：存量链路照常运行，新画布拖不进，树侧据此红标缺依赖
             .eq(DatabusComponent::getDeprecated, DEPRECATED_NO)
             .orderByAsc(DatabusComponent::getSort)
@@ -219,7 +210,12 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
         lqw.like(StringUtils.isNotBlank(bo.getComponentCode()), DatabusComponent::getComponentCode, bo.getComponentCode());
         lqw.like(StringUtils.isNotBlank(bo.getComponentName()), DatabusComponent::getComponentName, bo.getComponentName());
         lqw.eq(StringUtils.isNotBlank(bo.getCategory()), DatabusComponent::getCategory, bo.getCategory());
-        lqw.eq(StringUtils.isNotBlank(bo.getStatus()), DatabusComponent::getStatus, bo.getStatus());
+        if (StringUtils.isBlank(bo.getStatus())) {
+            // 草稿组件未采纳，默认不出现在组件管理列表
+            lqw.ne(DatabusComponent::getStatus, ComponentStatusEnum.DRAFT.getCode());
+        } else {
+            lqw.eq(DatabusComponent::getStatus, bo.getStatus());
+        }
         lqw.orderByAsc(DatabusComponent::getCategory)
             .orderByDesc(DatabusComponent::getCreateTime);
         return lqw;
@@ -231,7 +227,7 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
         validateComponentCodeUnique(bo);
         DatabusComponent add = MapstructUtils.convert(bo, DatabusComponent.class);
         if (StringUtils.isBlank(add.getStatus())) {
-            add.setStatus(STATUS_ENABLED);
+            add.setStatus(ComponentStatusEnum.ENABLED.getCode());
         }
         if (StringUtils.isBlank(add.getDeprecated())) {
             add.setDeprecated(DEPRECATED_NO);
@@ -267,11 +263,16 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
 
     @Override
     public Boolean updateStatus(Long id, String status) {
-        if (!STATUS_ENABLED.equals(status) && !STATUS_DISABLED.equals(status)) {
-            throw new ServiceException("启停状态只能是 0（启用）或 1（停用）");
+        if (!ComponentStatusEnum.ENABLED.getCode().equals(status)
+            && !ComponentStatusEnum.DISABLED.getCode().equals(status)) {
+            throw new ServiceException("启停状态只能是 ENABLED（启用）或 DISABLED（停用）");
         }
-        if (componentMapper.selectById(id) == null) {
+        DatabusComponent existing = componentMapper.selectById(id);
+        if (existing == null) {
             throw new ServiceException("组件不存在：" + id);
+        }
+        if (ComponentStatusEnum.DRAFT.getCode().equals(existing.getStatus())) {
+            throw new ServiceException("草稿组件没有启停概念，请先采纳或删除");
         }
         return componentMapper.update(null, Wrappers.<DatabusComponent>lambdaUpdate()
             .set(DatabusComponent::getStatus, status)

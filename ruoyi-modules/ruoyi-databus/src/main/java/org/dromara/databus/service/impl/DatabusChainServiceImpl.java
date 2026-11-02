@@ -51,8 +51,8 @@ import java.util.stream.Collectors;
 /**
  * 链路定义 Service 实现。
  * <p>
- * 阶段 1A 维护草稿（version=1/status=0）；阶段 3 链路管理页补 publish/offline 状态流转：
- * 发布 0草稿/2已下线 → 1已发布 + version+1；下线 1已发布 → 2已下线（定义保留可重新发布）。
+ * 阶段 1A 维护草稿（version=1/status=DRAFT）；阶段 3 链路管理页补 publish/offline 状态流转：
+ * 发布 DRAFT 草稿/DISABLED 已下线 → ENABLED 已发布 + version+1；下线 ENABLED 已发布 → DISABLED 已下线（定义保留可重新发布）。
  * <p>
  * 发布/下线/删除与 Rule-DB 联动（{@link RulePublishService} 推送/移除 lf_chain 规则）：
  * 发布先推规则后改状态（推失败状态不变，不留"已发布但引擎无规则"的不可执行窗口）；
@@ -193,8 +193,8 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
     @Override
     public ChainStatsVo countByStatus() {
         long draft = countByStatus(ChainStatusEnum.DRAFT.getCode());
-        long published = countByStatus(ChainStatusEnum.PUBLISHED.getCode());
-        long offline = countByStatus(ChainStatusEnum.OFFLINE.getCode());
+        long published = countByStatus(ChainStatusEnum.ENABLED.getCode());
+        long offline = countByStatus(ChainStatusEnum.DISABLED.getCode());
         ChainStatsVo vo = new ChainStatsVo();
         vo.setDraft(draft);
         vo.setPublished(published);
@@ -375,7 +375,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         }
         String status = chain.getStatus();
         if (!ChainStatusEnum.DRAFT.getCode().equals(status)
-            && !ChainStatusEnum.OFFLINE.getCode().equals(status)) {
+            && !ChainStatusEnum.DISABLED.getCode().equals(status)) {
             throw new ServiceException("当前状态不允许发布（仅草稿/已下线可发布）");
         }
         // 子流程引用把关（decisions.md 第七章）：草稿期不拦（编排自由），发布这道关一次性校验——
@@ -393,7 +393,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         rulePublishService.publishChain(chain.getChainCode(), elExpression, cmpProperty);
         DatabusChain update = new DatabusChain();
         update.setId(id);
-        update.setStatus(ChainStatusEnum.PUBLISHED.getCode());
+        update.setStatus(ChainStatusEnum.ENABLED.getCode());
         update.setVersion(chain.getVersion() + 1);
         // 回写实时生成的 EL，保持表内字段与组件树一致（add/update 也是这口径）
         update.setElExpression(elExpression);
@@ -545,14 +545,14 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         if (chain == null) {
             throw new ServiceException("链路不存在或已删除");
         }
-        if (!ChainStatusEnum.PUBLISHED.getCode().equals(chain.getStatus())) {
+        if (!ChainStatusEnum.ENABLED.getCode().equals(chain.getStatus())) {
             throw new ServiceException("当前状态不允许下线（仅已发布可下线）");
         }
         // 先改状态（下线立即可见），再移除 Rule-DB 规则；移除失败仅记日志不阻断——
         // 残留规则因状态已下线不会被执行（执行入口按状态校验），重新发布时被覆盖
         DatabusChain update = new DatabusChain();
         update.setId(id);
-        update.setStatus(ChainStatusEnum.OFFLINE.getCode());
+        update.setStatus(ChainStatusEnum.DISABLED.getCode());
         boolean flag = chainMapper.updateById(update) > 0;
         if (flag) {
             rulePublishService.removeChainQuietly(chain.getChainCode());
@@ -668,7 +668,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
             if (TEMPLATE_FLAG_YES.equals(sub.getIsTemplate())) {
                 throw new ServiceException("子流程'" + refCode + "'是精选模板，运行时不可被引用，请复制副本后引用副本");
             }
-            if (!ChainStatusEnum.PUBLISHED.getCode().equals(sub.getStatus())) {
+            if (!ChainStatusEnum.ENABLED.getCode().equals(sub.getStatus())) {
                 throw new ServiceException("子流程'" + refCode + "'尚未发布，请先发布它再发布本链路");
             }
             if (sub.getCmpProperty() == null) {
@@ -765,7 +765,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
             if (TEMPLATE_FLAG_YES.equals(sub.getIsTemplate())) {
                 throw new ServiceException("子流程'" + refCode + "'是精选模板，运行时不可被引用，请复制副本后引用副本");
             }
-            if (!ChainStatusEnum.PUBLISHED.getCode().equals(sub.getStatus())) {
+            if (!ChainStatusEnum.ENABLED.getCode().equals(sub.getStatus())) {
                 throw new ServiceException("子流程'" + refCode + "'尚未发布，请先发布它再发布本链路");
             }
             if (sub.getCmpProperty() == null) {
@@ -828,7 +828,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         if (chain == null) {
             throw new ServiceException("链路不存在或已删除");
         }
-        if (ChainStatusEnum.PUBLISHED.getCode().equals(chain.getStatus())) {
+        if (ChainStatusEnum.ENABLED.getCode().equals(chain.getStatus())) {
             throw new ServiceException("当前链路已发布，请先下线后再设为精选模板");
         }
         Integer sort = bo.getTemplateSort() == null ? TEMPLATE_DEFAULT_SORT : bo.getTemplateSort();

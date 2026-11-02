@@ -57,7 +57,7 @@ public class DatabusConnectorController extends BaseController {
 
     /**
      * 上传连接器包（zip＝manifest.json + lib/）：校验 + 落盘 + 入库。
-     * 新 type 默认 INACTIVE（未启用，审核即信任），enable 是治理者显式动作。
+     * 新 type 默认 PENDING（待审核 / 未启用，审核即信任），enable 是治理者显式动作。
      */
     @SaCheckPermission("databus:connector:upload")
     @Log(title = "连接器包上传", businessType = BusinessType.INSERT)

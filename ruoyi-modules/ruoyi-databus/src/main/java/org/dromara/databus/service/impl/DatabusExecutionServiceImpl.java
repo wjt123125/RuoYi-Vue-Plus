@@ -167,10 +167,10 @@ public class DatabusExecutionServiceImpl implements IDatabusExecutionService {
     }
 
     /**
-     * 已发布校验红线：仅 status=1 可从手动执行/重跑入口走正式通道。
+     * 已发布校验红线：仅 status=ENABLED 可从手动执行/重跑入口走正式通道。
      */
     private void assertPublished(DatabusChain chain) {
-        if (!ChainStatusEnum.PUBLISHED.getCode().equals(chain.getStatus())) {
+        if (!ChainStatusEnum.ENABLED.getCode().equals(chain.getStatus())) {
             throw new ServiceException("链路'" + chain.getChainName() + "'不是已发布状态，不能执行（请先发布）");
         }
     }

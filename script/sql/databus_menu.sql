@@ -79,8 +79,8 @@ insert into sys_menu values (1762000000000000021, '链路查询', 17614000000000
 insert into sys_menu values (1762000000000000022, '链路新增', 1761400000000020000, 12, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:add', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
 insert into sys_menu values (1762000000000000023, '链路修改', 1761400000000020000, 13, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
 insert into sys_menu values (1762000000000000024, '链路删除', 1761400000000020000, 14, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
-insert into sys_menu values (1762000000000000025, '链路发布', 1761400000000020000, 15, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:publish', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '发布链路：status 0→1/2→1 + version+1');
-insert into sys_menu values (1762000000000000026, '链路下线', 1761400000000020000, 16, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:offline', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '下线链路：status 1→2');
+insert into sys_menu values (1762000000000000025, '链路发布', 1761400000000020000, 15, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:publish', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '发布链路：status DRAFT/DISABLED→ENABLED + version+1');
+insert into sys_menu values (1762000000000000026, '链路下线', 1761400000000020000, 16, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:offline', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '下线链路：status ENABLED→DISABLED');
 insert into sys_menu values (1762000000000000027, '链路模板标记', 1761400000000020000, 17, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:editor:template', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '链路设为/取消精选模板（运营动作）；标记需填模板说明，已发布链路须先下线');
 
 -- ----------------------------
@@ -103,7 +103,7 @@ insert into sys_menu values (1761400000000020011, '组件新增', 17614000000000
 insert into sys_menu values (1761400000000020012, '组件修改', 1761400000000020000, 33, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
 insert into sys_menu values (1761400000000020013, '组件删除', 1761400000000020000, 34, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '');
 insert into sys_menu values (1761400000000020014, '脚本编辑', 1761400000000020000, 35, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:script:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '受信作者：保存即编译热更，等同服务端代码发布');
-insert into sys_menu values (1761400000000020030, '组件启停', 1761400000000020000, 36, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:toggle', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'PUT /databus/component/{id}/status（status 0/1）；与「组件修改」拆开——治理专属，操作员有 edit 也停不了物料投放');
+insert into sys_menu values (1761400000000020030, '组件启停', 1761400000000020000, 36, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:component:toggle', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'PUT /databus/component/{id}/status（status ENABLED/DISABLED）；与「组件修改」拆开——治理专属，操作员有 edit 也停不了物料投放');
 
 -- ----------------------------
 -- ⑦ 市场（order 40~45）
@@ -120,7 +120,7 @@ insert into sys_menu values (1761400000000020023, '市场删除', 17614000000000
 -- ----------------------------
 insert into sys_menu values (1761400000000020025, '连接器列表查看', 1761400000000020000, 46, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:list', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'GET /databus/connector/defs（内置∪def 合并视图；连接管理页 CONNECTOR_OPTIONS 动态化）');
 insert into sys_menu values (1761400000000020026, '连接器包上传', 1761400000000020000, 47, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:upload', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'POST /databus/connector/packages（市场 tab 内上传 zip，校验+落盘+入库；同 type 升版本＝热更新）');
-insert into sys_menu values (1761400000000020027, '连接器启停与废弃', 1761400000000020000, 48, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'POST defs/{type}/enable|disable|deprecate（运行层 INACTIVE/ENABLED/DISABLED/DEPRECATED；未启用/禁用挡新建连接不拦存量；废弃＝停机退役的终态，不可逆，之后只能卸载）');
+insert into sys_menu values (1761400000000020027, '连接器启停与废弃', 1761400000000020000, 48, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:edit', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'POST defs/{type}/enable|disable|deprecate（运行层 PENDING/ENABLED/DISABLED/DEPRECATED；未启用/禁用挡新建连接不拦存量；废弃＝停机退役的终态，不可逆，之后只能卸载）');
 insert into sys_menu values (1761400000000020028, '连接器卸载', 1761400000000020000, 49, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:connector:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, 'DELETE defs/{type}（默认拒绝在用连接；?force=true 管理员强制，存量连接悬空自然衰减）；menu_id 20029（2026-10-24 施工纠偏：原 20028 与组件列表查看撞 id，decisions 菜单收敛终态未覆盖此撞号）');
 
 -- ----------------------------

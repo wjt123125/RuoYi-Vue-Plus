@@ -49,7 +49,7 @@ public class DatabusChainVo implements Serializable {
     private Integer version;
 
     /**
-     * 状态（0草稿 1已发布 2已下线）
+     * 状态（DRAFT 草稿 / ENABLED 已发布 / DISABLED 已下线）
      */
     private String status;
 

@@ -100,7 +100,7 @@ class DatabusChainPublishFreezeTest {
 
         ArgumentCaptor<DatabusChain> chainCaptor = ArgumentCaptor.forClass(DatabusChain.class);
         verify(chainMapper).updateById(chainCaptor.capture());
-        assertEquals(ChainStatusEnum.PUBLISHED.getCode(), chainCaptor.getValue().getStatus());
+        assertEquals(ChainStatusEnum.ENABLED.getCode(), chainCaptor.getValue().getStatus());
         assertEquals(2, chainCaptor.getValue().getVersion());
         assertEquals("THEN(b);", chainCaptor.getValue().getElExpression());
 
@@ -122,7 +122,7 @@ class DatabusChainPublishFreezeTest {
      */
     @Test
     void publish_statusGateRejected_noFreeze() {
-        when(chainMapper.selectById(1L)).thenReturn(chain(1L, "chainB", "链B", ChainStatusEnum.PUBLISHED.getCode(), 1));
+        when(chainMapper.selectById(1L)).thenReturn(chain(1L, "chainB", "链B", ChainStatusEnum.ENABLED.getCode(), 1));
         when(expressGenerator.generateEL(any())).thenReturn(elInfo("THEN(b);"));
 
         ServiceException ex = assertThrows(ServiceException.class, () -> chainService.publish(1L, 1L));

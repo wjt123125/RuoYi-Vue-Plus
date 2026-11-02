@@ -9,6 +9,7 @@ import org.dromara.databus.connector.ConnectorException;
 import org.dromara.databus.connector.ConnectorManifest;
 import org.dromara.databus.connector.ConnectorRegistry;
 import org.dromara.databus.domain.DatabusConnectorDef;
+import org.dromara.databus.enums.ConnectorDefStatusEnum;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -86,16 +87,6 @@ public class DevConnectorLoader {
      * 来源角标：dev 目录装载（无特权，仅展示用）
      */
     private static final String SOURCE_DEV = "DEV";
-
-    /**
-     * 运行层状态：启用（dev 装载即可用，不走审核）
-     */
-    private static final String STATUS_ENABLED = "ENABLED";
-
-    /**
-     * 运行层状态：已废弃（终态不可逆，dev 通道不给复活后门）
-     */
-    private static final String STATUS_DEPRECATED = "DEPRECATED";
 
     /**
      * 引擎档：jvm（目录装载只支持这一档）
@@ -220,7 +211,7 @@ public class DevConnectorLoader {
         DatabusConnectorDef existing = defMapper.selectOne(Wrappers.<DatabusConnectorDef>lambdaQuery()
             .eq(DatabusConnectorDef::getType, type)
             .last("limit 1"));
-        if (existing != null && STATUS_DEPRECATED.equals(existing.getStatus())) {
+        if (existing != null && ConnectorDefStatusEnum.DEPRECATED.getCode().equals(existing.getStatus())) {
             throw new ServiceException("连接器 " + type + " 已废弃（终态不可逆），dev 通道不能复活；请先卸载再重新上传");
         }
 
@@ -248,7 +239,7 @@ public class DevConnectorLoader {
                 pluginManager.unload(type);
             }
             connectorRegistry.register(type, DEV_VERSION, connector, loader);
-            connectorRegistry.clearInactive(type);
+            connectorRegistry.clearPending(type);
             connectorRegistry.clearDisabled(type);
             pluginManager.clearLoadFailure(type);
         } catch (ConnectorException e) {
@@ -297,7 +288,7 @@ public class DevConnectorLoader {
             row.setEngine(manifest.getEngine());
             row.setManifestSnapshot(manifestJson);
             row.setPackagePath(packagePath);
-            row.setStatus(STATUS_ENABLED);
+            row.setStatus(ConnectorDefStatusEnum.ENABLED.getCode());
             row.setSource(SOURCE_DEV);
             row.setCreateTime(now);
             row.setUpdateTime(now);
@@ -308,7 +299,7 @@ public class DevConnectorLoader {
         existing.setEngine(manifest.getEngine());
         existing.setManifestSnapshot(manifestJson);
         existing.setPackagePath(packagePath);
-        existing.setStatus(STATUS_ENABLED);
+        existing.setStatus(ConnectorDefStatusEnum.ENABLED.getCode());
         existing.setSource(SOURCE_DEV);
         existing.setUpdateTime(now);
         defMapper.updateById(existing);

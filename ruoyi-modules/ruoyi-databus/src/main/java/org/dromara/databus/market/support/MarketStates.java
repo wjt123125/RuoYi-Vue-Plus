@@ -46,27 +46,6 @@ public final class MarketStates {
     public static final String MODE_SHARED = "SHARED";
 
     /**
-     * 链路状态（databus_chain.status）：草稿
-     */
-    public static final String CHAIN_STATUS_DRAFT = "0";
-
-    /**
-     * 链路状态（databus_chain.status）：已发布
-     */
-    public static final String CHAIN_STATUS_PUBLISHED = "1";
-
-    /**
-     * 组件启停（databus_component.status）：启用
-     */
-    public static final String COMPONENT_STATUS_ENABLED = "0";
-
-    /**
-     * 连接器 def 行的状态（databus_connector_def.status，和 DatabusConnectorServiceImpl 里的值一样）：启用。
-     * 判断「装了没有」时用（装连接器＝改成启用，全局生效，不是记在某个人的安装记录里）
-     */
-    public static final String DEF_STATUS_ENABLED = "ENABLED";
-
-    /**
      * 模板标记（0＝不是）：复制出来的副本一律不带模板标记
      */
     public static final String TEMPLATE_FLAG_NO = "0";

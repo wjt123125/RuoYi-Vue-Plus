@@ -25,17 +25,17 @@ public class ChainStatsVo implements Serializable {
     private Long total;
 
     /**
-     * 待发布草稿数（status=0）
+     * 待发布草稿数（status=DRAFT）
      */
     private Long draft;
 
     /**
-     * 运行中已发布数（status=1）
+     * 运行中已发布数（status=ENABLED）
      */
     private Long published;
 
     /**
-     * 已下线数（status=2）
+     * 已下线数（status=DISABLED）
      */
     private Long offline;
 

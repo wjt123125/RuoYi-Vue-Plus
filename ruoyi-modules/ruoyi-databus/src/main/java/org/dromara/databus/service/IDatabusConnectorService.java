@@ -22,7 +22,7 @@ public interface IDatabusConnectorService {
      * <p>
      * 流程：解包校验 manifest（必填/命名/engine 枚举）→ type 冲突检测
      * （同 type 同 version 报错；升版本＝热更新 def 行，status 保持）→
-     * 落盘 plugins/{type}/{version}/ → 入库（新 type 默认 INACTIVE，enable 为显式治理动作）。
+     * 落盘 plugins/{type}/{version}/ → 入库（新 type 默认 PENDING，enable 为显式治理动作）。
      *
      * @param file   连接器包（zip）
      * @param userId 上传者 id
@@ -52,7 +52,7 @@ public interface IDatabusConnectorService {
      * 废弃（DEPRECATED，终态不可逆）：从可执行态（ENABLED / DISABLED）停机退役——
      * 广播停用 + 卸载实例 + Registry 挂废弃门禁，def 行与包文件保留（可继续下载原包核对），
      * 之后只能卸载，不能再启用/停用，也不接受升版本热更新。
-     * <p>INACTIVE（从未启用）不允许废弃：直接卸载即可，废弃语义是「曾经可用、现已退役」。
+     * <p>PENDING（从未启用）不允许废弃：直接卸载即可，废弃语义是「曾经可用、现已退役」。
      */
     Boolean deprecate(String type);
 

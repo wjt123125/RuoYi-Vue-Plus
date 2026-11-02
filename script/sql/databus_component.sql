@@ -13,7 +13,8 @@
 --
 -- component_code 唯一键：自定义物料编码，链路 cmp_property 节点 "id" 引用此值；
 --   与内置注解件同码时 /options 内置优先、DB 行丢弃（台账露出「编码冲突」）。
--- status（0启用 1停用）与 databus_chain 的 status（0草稿 1已发布 2已下线）语义不同；
+-- status（DRAFT 草稿 / ENABLED 启用 / DISABLED 停用）与 databus_chain 的 status
+--   （DRAFT / ENABLED / DISABLED）词表相同、语义不同（链路草稿＝不可跑，组件草稿＝未采纳）；
 --   deprecated（0正常 1废弃）与 status 停用不同：停用＝不进物料面板，
 --   废弃＝老链路仍可见、面板置灰提示「别在新链路用」。
 -- ----------------------------
@@ -41,7 +42,7 @@ create table databus_component (
     script_lang       varchar(16)     default null              comment '脚本语言（java/groovy 等，第二步脚本宿主启用）【工件】',
     script_body       longtext        default null              comment '脚本正文（第二步脚本原子，javax-pro 完整 Java 类源码）【工件】',
     version           int(11)         default 1                 comment '脚本版本（热更自增；版本历史表第二步另设计）【工件】',
-    status            char(1)         default '0'               comment '启停状态（0启用 1停用；停用不进物料面板）【治理】',
+    status            varchar(16)     default 'ENABLED'         comment '启停状态（DRAFT 草稿 / ENABLED 启用 / DISABLED 停用；停用不进物料面板）【治理】',
     deprecated        char(1)         default '0'               comment '废弃标记（0正常 1废弃；废弃件老链路可见、面板置灰）【治理】',
     deprecate_note    varchar(200)    default null              comment '废弃提示文案（引导替代组件）【治理】',
     doc_url           varchar(255)    default null              comment '文档链接（wiki 锚点或外部 URL）【治理】',

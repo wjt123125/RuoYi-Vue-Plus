@@ -1,7 +1,7 @@
 -- ----------------------------
 -- 数据总线链路定义表 databus_chain
 -- 阶段 1A 建表，2026-09-22 按设计文档 §4.2 沉淀完整 DDL：
--- 轻量单表模式（status 三态：0草稿/1已发布/2已下线），
+-- 轻量单表模式（status 三态：DRAFT 草稿 / ENABLED 已发布 / DISABLED 已下线），
 -- 草稿与发布共用一份 el_expression + canvas_data，发布即固化当前编排为运行版本，
 -- 改了就得重发才生效；version 每次发布递增，但不存历史快照（MVP 拍板不做版本历史）。
 -- log_level 字段控制执行记录档位（OFF/BASIC/FULL），默认 BASIC，挂字典 databus_log_level。
@@ -13,7 +13,7 @@ create table databus_chain (
     chain_code        varchar(100)    not null                  comment '链路编码（全局唯一）',
     chain_name        varchar(100)    not null                  comment '链路名称（用户可读）',
     version           int(11)         default 1                  comment '版本号（每次发布递增，草稿阶段恒为 1）',
-    status            char(1)         default '0'                comment '状态（0草稿 1已发布 2已下线）',
+    status            varchar(16)     default 'DRAFT'            comment '状态（DRAFT 草稿 / ENABLED 已发布 / DISABLED 已下线）',
     el_expression     text            default null               comment 'LiteFlow EL 表达式（由后端从 CmpProperty 权威生成）',
     canvas_data       text            default null               comment '画布 JSON（VueFlow nodes/edges 序列化，编辑器还原用）',
     cmp_property      text            default null               comment '画布逻辑组件树 JSON（CmpProperty 序列化，EL 权威源的输入；发布时据此提取脚本节点推 lf_script）',

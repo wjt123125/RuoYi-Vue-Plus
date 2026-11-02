@@ -14,6 +14,9 @@ import org.dromara.databus.domain.bo.MarketInstallMoveBo;
 import org.dromara.databus.domain.vo.DatabusMarketInstallVo;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
+import org.dromara.databus.enums.ChainStatusEnum;
+import org.dromara.databus.enums.ComponentStatusEnum;
+import org.dromara.databus.enums.ConnectorDefStatusEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
@@ -89,10 +92,6 @@ public class MarketInstallService {
      */
     private static final String MODE_SHARED = MarketStates.MODE_SHARED;
 
-    private static final String CHAIN_STATUS_DRAFT = MarketStates.CHAIN_STATUS_DRAFT;
-    private static final String CHAIN_STATUS_PUBLISHED = MarketStates.CHAIN_STATUS_PUBLISHED;
-    private static final String COMPONENT_STATUS_ENABLED = MarketStates.COMPONENT_STATUS_ENABLED;
-    private static final String DEF_STATUS_ENABLED = MarketStates.DEF_STATUS_ENABLED;
     private static final String TEMPLATE_FLAG_NO = MarketStates.TEMPLATE_FLAG_NO;
     private static final String TEMPLATE_FLAG_YES = MarketStates.TEMPLATE_FLAG_YES;
     private static final String CODE_SEPARATOR = MarketStates.CODE_SEPARATOR;
@@ -190,12 +189,12 @@ public class MarketInstallService {
         if (def == null) {
             throw new ServiceException("源连接器不存在或已卸载");
         }
-        if (DEF_STATUS_ENABLED.equals(def.getStatus())) {
+        if (ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus())) {
             throw new ServiceException("该连接器已启用，无需重复安装");
         }
         DatabusConnectorDef update = new DatabusConnectorDef();
         update.setId(def.getId());
-        update.setStatus(DEF_STATUS_ENABLED);
+        update.setStatus(ConnectorDefStatusEnum.ENABLED.getCode());
         connectorDefMapper.updateById(update);
         // install_count 是安装记录的条数缓存，连接器不写安装记录，所以不刷（§15.3）
         DatabusMarketInstallVo vo = new DatabusMarketInstallVo();
@@ -295,7 +294,7 @@ public class MarketInstallService {
         copy.setChainCode(newCode);
         copy.setChainName(sourceChain.getChainName());
         copy.setVersion(DRAFT_VERSION);
-        copy.setStatus(CHAIN_STATUS_DRAFT);
+        copy.setStatus(ChainStatusEnum.DRAFT.getCode());
         copy.setLogLevel(sourceChain.getLogLevel());
         copy.setInputParams(sourceChain.getInputParams());
         copy.setDirectoryId(targetDirectoryId);
@@ -335,7 +334,7 @@ public class MarketInstallService {
         }
         return new InstallOutcome(source.getId(), MODE_SHARED, componentHash(source),
             normalizeDirectoryId(directoryId), source.getComponentCode(),
-            COMPONENT_STATUS_ENABLED.equals(source.getStatus()), null);
+            ComponentStatusEnum.ENABLED.getCode().equals(source.getStatus()), null);
     }
 
     /**
@@ -585,7 +584,7 @@ public class MarketInstallService {
                 if (chain != null) {
                     name = chain.getChainName();
                     summary = chain.getRemark();
-                    enabled = CHAIN_STATUS_PUBLISHED.equals(chain.getStatus());
+                    enabled = ChainStatusEnum.ENABLED.getCode().equals(chain.getStatus());
                 }
             } else if (TYPE_COMPONENT.equals(resourceType)) {
                 if (component != null) {
@@ -593,7 +592,7 @@ public class MarketInstallService {
                     icon = component.getIcon();
                     color = component.getColor();
                     summary = component.getDescription();
-                    enabled = COMPONENT_STATUS_ENABLED.equals(component.getStatus());
+                    enabled = ComponentStatusEnum.ENABLED.getCode().equals(component.getStatus());
                     // 组件（SHARED）在链里被引用时：前端拿编码反查安装记录行，好显示打开按钮
                     vo.setComponentCode(component.getComponentCode());
                 }
@@ -694,7 +693,7 @@ public class MarketInstallService {
         if (TYPE_CHAIN.equals(resourceType)) {
             count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
                 .in(DatabusChain::getId, localIds)
-                .eq(DatabusChain::getStatus, CHAIN_STATUS_PUBLISHED));
+                .eq(DatabusChain::getStatus, ChainStatusEnum.ENABLED.getCode()));
         } else if (TYPE_COMPONENT.equals(resourceType)) {
             count = componentMapper.selectCount(Wrappers.<DatabusComponent>lambdaQuery()
                 .in(DatabusComponent::getId, localIds)

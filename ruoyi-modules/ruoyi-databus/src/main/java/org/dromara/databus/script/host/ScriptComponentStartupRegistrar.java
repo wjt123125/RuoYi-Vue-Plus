@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.databus.domain.DatabusComponent;
+import org.dromara.databus.enums.ComponentStatusEnum;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -27,7 +28,7 @@ import java.util.List;
  * ERROR 日志，绝不拖死整个应用——别的件照常上工，坏件在运行时健康接口里
  * 露脸，链路执行到它才报「节点缺失」，修好保存一次即上线。
  *
- * <p>停用件（status=1）不捞不注册；停用动作本身也不摘 FlowBus 节点
+ * <p>非启用件（status≠ENABLED）不捞不注册；停用动作本身也不摘 FlowBus 节点
  * （已编译链路手里还捏着节点副本），重启后停用件自然不进 FlowBus——
  * 紧急止血以重启为界。
  *
@@ -38,9 +39,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @Order(200)
 public class ScriptComponentStartupRegistrar implements ApplicationRunner {
-
-    /** 组件台账的状态位：0 启用（只有启用件才来补课）。 */
-    private static final String STATUS_ENABLED = "0";
 
     private final DatabusComponentMapper componentMapper;
 
@@ -56,7 +54,7 @@ public class ScriptComponentStartupRegistrar implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         List<DatabusComponent> rows = componentMapper.selectList(Wrappers.<DatabusComponent>lambdaQuery()
-            .eq(DatabusComponent::getStatus, STATUS_ENABLED)
+            .eq(DatabusComponent::getStatus, ComponentStatusEnum.ENABLED.getCode())
             .isNotNull(DatabusComponent::getScriptBody)
             .ne(DatabusComponent::getScriptBody, "")
             .orderByAsc(DatabusComponent::getId));

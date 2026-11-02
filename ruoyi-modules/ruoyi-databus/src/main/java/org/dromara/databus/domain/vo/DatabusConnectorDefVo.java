@@ -55,7 +55,7 @@ public class DatabusConnectorDefVo implements Serializable {
     private String icon;
 
     /**
-     * 运行层状态（INACTIVE / ENABLED / DISABLED / DEPRECATED）
+     * 运行层状态（PENDING / ENABLED / DISABLED / DEPRECATED）
      */
     private String status;
 

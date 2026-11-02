@@ -190,7 +190,7 @@ class DatabusChainPublishGuideTest {
      * 子链 chainB（create_by=1 本人）：THEN( 组件 compY )——已发布（被主链引用的前提）
      */
     private DatabusChain subChainB() {
-        return chain(2L, "chainB", "链B", ChainStatusEnum.PUBLISHED.getCode(), 1L,
+        return chain(2L, "chainB", "链B", ChainStatusEnum.ENABLED.getCode(), 1L,
             then(node("compY")));
     }
 
@@ -198,7 +198,7 @@ class DatabusChainPublishGuideTest {
      * 子链 chainC（create_by=99 他人）：已发布
      */
     private DatabusChain subChainC() {
-        return chain(3L, "chainC", "链C", ChainStatusEnum.PUBLISHED.getCode(), 99L,
+        return chain(3L, "chainC", "链C", ChainStatusEnum.ENABLED.getCode(), 99L,
             then(node("compZ")));
     }
 

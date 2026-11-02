@@ -38,7 +38,7 @@ public class ConnectorRegistry {
 
     private final Map<String, ClassLoader> loaders = new ConcurrentHashMap<>();
 
-    private final Set<String> inactiveTypes = ConcurrentHashMap.newKeySet();
+    private final Set<String> pendingTypes = ConcurrentHashMap.newKeySet();
 
     private final Set<String> disabledTypes = ConcurrentHashMap.newKeySet();
 
@@ -68,7 +68,7 @@ public class ConnectorRegistry {
         connectors.remove(type);
         versions.remove(type);
         loaders.remove(type);
-        inactiveTypes.remove(type);
+        pendingTypes.remove(type);
         disabledTypes.remove(type);
         deprecatedTypes.remove(type);
     }
@@ -85,8 +85,8 @@ public class ConnectorRegistry {
             throw new ConnectorException("CONNECTOR_DEPRECATED",
                     "连接器 " + type + " 已废弃（终态不可逆），请改用其他连接器");
         }
-        if (inactiveTypes.contains(type)) {
-            throw new ConnectorException("CONNECTOR_INACTIVE",
+        if (pendingTypes.contains(type)) {
+            throw new ConnectorException("CONNECTOR_PENDING",
                     "连接器 " + type + " 未启用，请先启用后重试");
         }
         if (disabledTypes.contains(type)) {
@@ -116,10 +116,10 @@ public class ConnectorRegistry {
     }
 
     /**
-     * 标记未启用（def 行置 INACTIVE 时由 Platform 侧刷新）。
+     * 标记未启用（def 行置 PENDING 时由 Platform 侧刷新）。
      */
-    public void markInactive(String type) {
-        inactiveTypes.add(type);
+    public void markPending(String type) {
+        pendingTypes.add(type);
     }
 
     /**
@@ -134,7 +134,7 @@ public class ConnectorRegistry {
      * 保证 {@link #ofType(String)} 报「已废弃」而不是过期的「已禁用」。废弃不可逆，故无 clear 方法。
      */
     public void markDeprecated(String type) {
-        inactiveTypes.remove(type);
+        pendingTypes.remove(type);
         disabledTypes.remove(type);
         deprecatedTypes.add(type);
     }
@@ -142,8 +142,8 @@ public class ConnectorRegistry {
     /**
      * 清除未启用标记（def 行 ENABLED 时刷新）。
      */
-    public void clearInactive(String type) {
-        inactiveTypes.remove(type);
+    public void clearPending(String type) {
+        pendingTypes.remove(type);
     }
 
     /**

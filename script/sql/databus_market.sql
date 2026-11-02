@@ -122,18 +122,18 @@ select
     c.component_name, c.description, substr(c.icon, 1, 64), c.color,
     null, null, 'ONLINE', 0, 0, 0, sysdate(), sysdate(), null
 from databus_component c
-where c.status = '0' and c.deprecated = '0' and c.del_flag = '0'
+where c.status = 'ENABLED' and c.deprecated = '0' and c.del_flag = '0'
   and not exists (select 1 from databus_market_item m
                   where m.owner_id = @mi_owner and m.resource_type = 'COMPONENT' and m.source_id = c.id)
 order by c.sort, c.id
 limit 8;
 
--- 链路货源冷启动：mock 链路默认全为草稿（status=0），市场链路种子只取「已发布非模板」，
--- 故此处先精选 6 条「纯本地逻辑示例」置为已发布（status='1'），供下方种子挑选；
+-- 链路货源冷启动：mock 链路默认全为草稿（status=DRAFT），市场链路种子只取「已发布非模板」，
+-- 故此处先精选 6 条「纯本地逻辑示例」置为已发布（status=ENABLED），供下方种子挑选；
 -- 仅挑逻辑示例（排除 bpm-* 需外部环境 / alert-test-* 告警用例），幂等可重复执行。
 -- 注意：此处仅改市场展示所需的发布态，不推 Rule-DB（正式执行仍走链路工作台发布）。
 update databus_chain
-set status = '1'
+set status = 'ENABLED'
 where is_template = '0' and del_flag = '0'
   and chain_code in ('serial-all', 'if-empty-false', 'while-loop', 'iterator-nested', 'and-logic', 'or-logic');
 
@@ -148,7 +148,7 @@ select
     ch.chain_name, ch.remark, null, null,
     null, null, 'ONLINE', 0, 0, 0, sysdate(), sysdate(), null
 from databus_chain ch
-where ch.status = '1' and ch.is_template = '0' and ch.del_flag = '0'
+where ch.status = 'ENABLED' and ch.is_template = '0' and ch.del_flag = '0'
   and ch.chain_code in ('serial-all', 'if-empty-false', 'while-loop', 'iterator-nested', 'and-logic', 'or-logic')
   and not exists (select 1 from databus_market_item m
                   where m.owner_id = @mi_owner and m.resource_type = 'CHAIN' and m.source_id = ch.id)

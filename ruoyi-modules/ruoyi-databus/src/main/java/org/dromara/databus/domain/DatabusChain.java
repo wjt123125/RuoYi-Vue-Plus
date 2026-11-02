@@ -45,7 +45,7 @@ public class DatabusChain extends BaseEntity {
     private Integer version;
 
     /**
-     * 状态（0草稿 1已发布 2已下线）
+     * 状态（DRAFT 草稿 / ENABLED 已发布 / DISABLED 已下线）
      */
     private String status;
 
@@ -103,7 +103,7 @@ public class DatabusChain extends BaseEntity {
     /**
      * 是否精选模板（0否 1是）
      * <p>
-     * 模板恒为草稿（status='0'）：不可发布、不推 Rule-DB、不进手动执行入口；
+     * 模板恒为草稿（status='DRAFT'）：不可发布、不推 Rule-DB、不进手动执行入口；
      * 标记/取消走模板专用端点，不经通用保存通路写入。
      */
     private String isTemplate;

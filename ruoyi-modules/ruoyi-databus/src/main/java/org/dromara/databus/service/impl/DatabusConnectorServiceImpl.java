@@ -14,6 +14,7 @@ import org.dromara.databus.domain.DatabusConnectorDef;
 import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.domain.SysDatabusConnection;
 import org.dromara.databus.domain.vo.DatabusConnectorDefVo;
+import org.dromara.databus.enums.ConnectorDefStatusEnum;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.mapper.SysDatabusConnectionMapper;
@@ -51,7 +52,7 @@ import java.util.zip.ZipInputStream;
  *
  * <p>上传链路：zip 校验（根级 manifest.json + 路径防穿越）→ manifest 必填/命名/engine
  * 校验 → type 冲突检测（同 type 同 version 报错；升版本＝热更新 def 行）→
- * 落盘 {@code plugins/{type}/{version}/} → 新类型装载预检 → 入库。新 type 默认 INACTIVE（未启用）：
+ * 落盘 {@code plugins/{type}/{version}/} → 新类型装载预检 → 入库。新 type 默认 PENDING（待审核）：
  * 审核即信任（§15.11），enable 是治理者的显式动作。
  *
  * <p>defs 视图：连接器零内置（方案 §1.2），只查 def 行；装载后运行态从
@@ -63,7 +64,7 @@ import java.util.zip.ZipInputStream;
  * force=true 强制（先 §4.3 四步清扫再删行删包，存量连接悬空自然衰减）。
  *
  * <p>包目录可配置 {@code databus.connector.package-dir}（默认相对工作目录 {@code plugins}）。
- * 应用启动时从 def 表回装：INACTIVE → 建未启用门禁，DISABLED → 建禁用门禁，
+ * 应用启动时从 def 表回装：PENDING → 建未启用门禁，DISABLED → 建禁用门禁，
  * DEPRECATED → 建废弃门禁（不装载），ENABLED（jvm）→ 重新装载。
  *
  * @author databus
@@ -72,26 +73,6 @@ import java.util.zip.ZipInputStream;
 @RequiredArgsConstructor
 @Service
 public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
-
-    /**
-     * 运行层状态：启用
-     */
-    private static final String STATUS_ENABLED = "ENABLED";
-
-    /**
-     * 运行层状态：未启用（上传初始态，挡新建连接）
-     */
-    private static final String STATUS_INACTIVE = "INACTIVE";
-
-    /**
-     * 运行层状态：禁用（从已启用停用，挡新建连接，存量保留）
-     */
-    private static final String STATUS_DISABLED = "DISABLED";
-
-    /**
-     * 运行层状态：已废弃（终态不可逆：停机 + 摘出可选列表，包与 def 行保留，只能再卸载）
-     */
-    private static final String STATUS_DEPRECATED = "DEPRECATED";
 
     /**
      * 引擎档：jvm（PluginClassLoader 在线装卸）
@@ -157,7 +138,7 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
     private String packageDir;
 
     /**
-     * 应用启动回装：INACTIVE → 建未启用门禁；DISABLED → 建禁用门禁；DEPRECATED → 建废弃门禁（不装载）；
+     * 应用启动回装：PENDING → 建未启用门禁；DISABLED → 建禁用门禁；DEPRECATED → 建废弃门禁（不装载）；
      * ENABLED（jvm）→ 重新装载；source=DEV → 跳过（由 DevConnectorLoader 从目录装载，§五）。
      * 此处失败不阻断启动（与「运行时拿不到连接器是预期内错误」一致）。
      */
@@ -168,13 +149,13 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
                 String type = def.getType();
                 if (SOURCE_DEV.equals(def.getSource())) {
                     log.info("跳过 dev 装载连接器 type={}（由 DevConnectorLoader 从目录装载，仅 dev profile 生效）", type);
-                } else if (STATUS_INACTIVE.equals(def.getStatus())) {
-                    connectorRegistry.markInactive(type);
-                } else if (STATUS_DISABLED.equals(def.getStatus())) {
+                } else if (ConnectorDefStatusEnum.PENDING.getCode().equals(def.getStatus())) {
+                    connectorRegistry.markPending(type);
+                } else if (ConnectorDefStatusEnum.DISABLED.getCode().equals(def.getStatus())) {
                     connectorRegistry.markDisabled(type);
-                } else if (STATUS_DEPRECATED.equals(def.getStatus())) {
+                } else if (ConnectorDefStatusEnum.DEPRECATED.getCode().equals(def.getStatus())) {
                     connectorRegistry.markDeprecated(type);
-                } else if (STATUS_ENABLED.equals(def.getStatus()) && ENGINE_JVM.equals(def.getEngine())) {
+                } else if (ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus()) && ENGINE_JVM.equals(def.getEngine())) {
                     try {
                         loadConnector(def);
                     } catch (Exception e) {
@@ -209,7 +190,7 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
                 + " 已存在，请升级版本号后重新上传（同 type 升版本＝热更新）");
         }
         // 废弃是终态（不可逆）：不给「升版本热更新」这条复活后门，需先卸载再重新上传
-        if (existing != null && STATUS_DEPRECATED.equals(existing.getStatus())) {
+        if (existing != null && ConnectorDefStatusEnum.DEPRECATED.getCode().equals(existing.getStatus())) {
             throw new ServiceException("连接器 " + manifest.getType()
                 + " 已废弃（终态不可逆），不能升版本热更新；如确需继续使用，请先卸载再重新上传");
         }
@@ -245,13 +226,13 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             row.setManifestSnapshot(manifestJson);
             row.setPackagePath(packagePath);
             // 审核即信任（§15.11）：新包默认未启用，enable 是治理者显式动作
-            row.setStatus(STATUS_INACTIVE);
+            row.setStatus(ConnectorDefStatusEnum.PENDING.getCode());
             row.setSource(SOURCE_UPLOAD);
             row.setCreateBy(userId);
             row.setCreateTime(now);
             row.setUpdateTime(now);
             defMapper.insert(row);
-            connectorRegistry.markInactive(row.getType());
+            connectorRegistry.markPending(row.getType());
         } else {
             // 热更新（§15.5）：刷版本/manifest/包路径，status 保持不停机；
             // 旧实例继续在 Registry 运行，新版本待 enable 装载
@@ -319,13 +300,13 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             throw new ServiceException("启用即审核：请先勾选「已审核代码」并确认信任（verified）");
         }
         def.setVerified(Boolean.TRUE);
-        return toggle(def, STATUS_ENABLED);
+        return toggle(def, ConnectorDefStatusEnum.ENABLED.getCode());
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Boolean disable(String type) {
-        return toggle(requireDef(type), STATUS_DISABLED);
+        return toggle(requireDef(type), ConnectorDefStatusEnum.DISABLED.getCode());
     }
 
     @Override
@@ -335,10 +316,10 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         // 废弃是终态，会把 dev 通道一起堵死（DevConnectorLoader 拒绝装载已废弃的 type），
         // 而 dev 行的状态本来每次启动都被覆盖，落这个态毫无意义
         rejectDevRow(def, "不能废弃（废弃是终态，会把开发通道一起堵死）");
-        if (STATUS_DEPRECATED.equals(def.getStatus())) {
+        if (ConnectorDefStatusEnum.DEPRECATED.getCode().equals(def.getStatus())) {
             throw new ServiceException("连接器 " + type + " 已废弃（终态不可逆）；如需彻底移除请卸载");
         }
-        if (!STATUS_ENABLED.equals(def.getStatus()) && !STATUS_DISABLED.equals(def.getStatus())) {
+        if (!ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus()) && !ConnectorDefStatusEnum.DISABLED.getCode().equals(def.getStatus())) {
             throw new ServiceException("连接器 " + type + " 尚未启用过（当前 " + def.getStatus()
                 + "），无需废弃；未启用的包直接卸载即可");
         }
@@ -346,7 +327,7 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         pluginManager.broadcastSuspend(type);
         pluginManager.unload(type);
         connectorRegistry.markDeprecated(type);
-        def.setStatus(STATUS_DEPRECATED);
+        def.setStatus(ConnectorDefStatusEnum.DEPRECATED.getCode());
         def.setUpdateTime(LocalDateTime.now());
         return defMapper.updateById(def) > 0;
     }
@@ -612,16 +593,16 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
     private Boolean toggle(DatabusConnectorDef def, String status) {
         String type = def.getType();
         rejectDevRow(def, "启用/停用状态由开发通道管理，在这里改了下次启动也会被覆盖");
-        if (STATUS_DEPRECATED.equals(def.getStatus())) {
+        if (ConnectorDefStatusEnum.DEPRECATED.getCode().equals(def.getStatus())) {
             throw new ServiceException("连接器 " + type + " 已废弃（终态不可逆），不能再启用/停用");
         }
-        if (STATUS_ENABLED.equals(status)) {
+        if (ConnectorDefStatusEnum.ENABLED.getCode().equals(status)) {
             try {
                 loadConnector(def);
             } catch (Exception e) {
                 throw new ServiceException("装载连接器 " + type + " 失败：" + e.getMessage());
             }
-            connectorRegistry.clearInactive(type);
+            connectorRegistry.clearPending(type);
             connectorRegistry.clearDisabled(type);
         } else {
             pluginManager.broadcastSuspend(type);

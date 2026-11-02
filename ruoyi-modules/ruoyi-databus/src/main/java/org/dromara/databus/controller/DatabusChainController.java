@@ -110,7 +110,7 @@ public class DatabusChainController extends BaseController {
     }
 
     /**
-     * 发布链路：status 0草稿/2已下线 → 1已发布 + version+1
+     * 发布链路：status DRAFT 草稿/DISABLED 已下线 → ENABLED 已发布 + version+1
      * <p>
      * 草稿与发布共用一份 el_expression + canvas_data，发布即固化当前编排为运行版本；
      * 已下线链路可重新发布，version 继续递增。

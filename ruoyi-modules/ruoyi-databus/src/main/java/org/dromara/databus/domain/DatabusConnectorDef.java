@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
  * 连接器运行层台账对象 databus_connector_def（万物皆包，databus-material-market.md §15.6）
  *
  * <p>一行＝一个连接器类型（type 全局唯一）。与市场层 databus_market_item 解耦：
- * 市场管买卖（PENDING/ONLINE...），本表管运行（INACTIVE / ENABLED / DISABLED / DEPRECATED）；
+ * 市场管买卖（PENDING/ONLINE...），本表管运行（PENDING / ENABLED / DISABLED / DEPRECATED）；
  * 市场下线只挡新安装，存量 def 照常运行（§15.4）。
  *
  * <p>type 唯一键承载「冲突检测」：不存在＝新插入；同 type 同 version＝报错；
@@ -59,7 +59,7 @@ public class DatabusConnectorDef {
     private String packagePath;
 
     /**
-     * 运行层状态（INACTIVE / ENABLED / DISABLED / DEPRECATED）
+     * 运行层状态（PENDING / ENABLED / DISABLED / DEPRECATED）
      */
     private String status;
 

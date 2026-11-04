@@ -1,4 +1,5 @@
 {
+  "artifact": "${project.artifactId}",
   "type": "jdbc-postgresql",
   "label": "PostgreSQL JDBC 连接器",
   "icon": "ph:database",

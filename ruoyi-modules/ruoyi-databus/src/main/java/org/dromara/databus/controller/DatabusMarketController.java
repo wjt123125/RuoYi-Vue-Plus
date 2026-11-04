@@ -25,6 +25,7 @@ import org.dromara.databus.domain.vo.DatabusMarketReviewDetailVo;
 import org.dromara.databus.service.IDatabusMarketService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -153,14 +154,30 @@ public class DatabusMarketController extends BaseController {
     /* ---------------- 供给（上架侧） ---------------- */
 
     /**
-     * 提交上架（进待审；同源重复提交则更新回待审）。
+     * 提交上架（进待审；同源重复提交则更新回待审）。返回物料行 id，前端据此切「我的上架」并高亮新行。
      */
     @SaCheckPermission("databus:market:publish")
     @Log(title = "物料市场上架", businessType = BusinessType.INSERT)
     @RepeatSubmit
     @PostMapping("/publish")
-    public R<Void> publish(@Validated @RequestBody MarketPublishBo bo) {
-        return toAjax(marketService.publish(bo, LoginHelper.getUserId(), LoginHelper.getUsername()));
+    public R<Long> publish(@Validated @RequestBody MarketPublishBo bo) {
+        return R.ok(marketService.publish(bo, LoginHelper.getUserId(), LoginHelper.getUsername()));
+    }
+
+    /**
+     * 连接器包上架（上传即提交）：multipart＝zip 包 + 上架元数据 JSON 分片。
+     * <p>
+     * 上传不再单独暴露成「上传连接器包」动作：落包、建/更新 def、建/重置市场物料
+     * 都在这一次提交里完成，提交后统一进待审，走「审核启用 → 上架 → 安装使用」闭环。
+     * 权限同时要 market:publish 与 connector:upload（前者管上架，后者管包体入库）。
+     */
+    @SaCheckPermission({"databus:market:publish", "databus:connector:upload"})
+    @Log(title = "连接器包上架", businessType = BusinessType.INSERT)
+    @RepeatSubmit
+    @PostMapping("/publish/connector")
+    public R<Long> publishConnector(@RequestParam("file") MultipartFile file,
+                                    @Validated @RequestPart("meta") MarketPublishBo meta) {
+        return R.ok(marketService.publishConnector(file, meta, LoginHelper.getUserId(), LoginHelper.getUsername()));
     }
 
     /**

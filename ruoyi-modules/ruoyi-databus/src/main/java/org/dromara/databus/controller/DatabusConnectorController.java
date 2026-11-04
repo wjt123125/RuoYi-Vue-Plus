@@ -24,18 +24,18 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 连接器运行层接口（万物皆包，databus-material-market.md §15.7 四端点）。
+ * 连接器运行层接口（万物皆包，databus-material-market.md §15.7）。
  * <p>
- * 前两组对齐市场 tab 内上传入口（不另设独立包管理页，§15.3）：
+ * 连接器包的上传不再单独暴露：唯一入口是「上架物料 → 类型选连接器 → 传包」，
+ * 由 POST /databus/market/publish/connector 在提交上架时一并完成落包与入库，
+ * 提交即进待审，走「审核启用 → 上架 → 安装使用」闭环。
  * <ul>
- *   <li>上传：POST /databus/connector/packages（zip 校验+落盘+入库；同 type 升版本＝热更新）</li>
  *   <li>视图：GET /databus/connector/defs（连接器零内置，只查 def 行；连接管理页 CONNECTOR_OPTIONS 动态化）</li>
  *   <li>启停：POST /databus/connector/defs/{type}/enable | /disable（运行层状态机）</li>
  *   <li>废弃：POST /databus/connector/defs/{type}/deprecate（DEPRECATED 终态，不可逆）</li>
@@ -56,24 +56,21 @@ public class DatabusConnectorController extends BaseController {
     private final PluginManager pluginManager;
 
     /**
-     * 上传连接器包（zip＝manifest.json + lib/）：校验 + 落盘 + 入库。
-     * 新 type 默认 PENDING（待审核 / 未启用，审核即信任），enable 是治理者显式动作。
-     */
-    @SaCheckPermission("databus:connector:upload")
-    @Log(title = "连接器包上传", businessType = BusinessType.INSERT)
-    @RepeatSubmit
-    @PostMapping("/packages")
-    public R<DatabusConnectorDefVo> upload(@RequestParam("file") MultipartFile file) {
-        return R.ok(connectorService.upload(file, LoginHelper.getUserId()));
-    }
-
-    /**
      * def 视图（含 status / source / verified；驱动连接管理页下拉与连接器卡片）。
      */
     @SaCheckPermission("databus:connector:list")
     @GetMapping("/defs")
     public R<List<DatabusConnectorDefVo>> defs() {
         return R.ok(connectorService.listDefs());
+    }
+
+    /**
+     * 我的已装连接器（当前用户有安装记录且已启用）：已装列表与建链选连接器用。
+     */
+    @SaCheckPermission("databus:connector:list")
+    @GetMapping("/defs/mine")
+    public R<List<DatabusConnectorDefVo>> myDefs() {
+        return R.ok(connectorService.listMyDefs());
     }
 
     /**
@@ -140,7 +137,7 @@ public class DatabusConnectorController extends BaseController {
     public ResponseEntity<byte[]> download(@NotBlank(message = "类型不能为空") @PathVariable("type") String type,
                                            @NotBlank(message = "版本不能为空") @PathVariable("version") String version) {
         byte[] bytes = connectorService.readPackage(type, version);
-        String filename = "connector-" + type + "-" + version + ".zip";
+        String filename = connectorService.packageFileName(type, version);
         ContentDisposition disposition = ContentDisposition.attachment()
             .filename(filename, StandardCharsets.UTF_8)
             .build();

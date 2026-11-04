@@ -326,18 +326,15 @@ justauth:
       client-secret: 1f7d08**********5b7**********29e
       redirect-uri: ${justauth.address}/social-callback?source=gitea
 
---- # 数据总线连接器 dev 目录装载（databus-jdbc-connector-plan.md §五）
-# 逗号分隔多个 target/classes 目录：跳过打包/上传/审核，启动即装载，
-# 改代码后 POST /databus/connector/dev/reload?type=xxx 热重载（几秒钟）。
-# 仅限 dev profile（DevConnectorLoader 标 @Profile("dev")，生产环境 Bean 不创建）；
-# 本配置键不写进 application-prod.yml 与客户配置模板（§5.3 第 2 条）；
-# 目录 canonical 后必须是项目根（user.dir）下级路径，含 ..、UNC、跨盘符一律拒绝并启动失败（§5.3 第 3 条）。
-# 依赖 jar 走同级 target/lib/*.jar（maven prepare-package 生成，IDE 编译不生成）：
-# 首次需先 mvn -pl databus-connectors/<module> package -DskipTests 把驱动放进去。
-# 这里刻意写【相对仓库根】的路径而不是绝对路径：相对路径由 Paths.get(text).toAbsolutePath()
-# 拿 user.dir 做基准解析，所以换机器、换盘符都不用改，这份配置才能进仓库共享。
-# 代价是启动时工作目录必须是仓库根（IDE 默认如此；脚本/容器启动要显式 cd 到仓库根），
-# 否则解析出的目录不存在，DevConnectorLoader 会 log.warn 跳过该条 —— 连接器装不上但不炸启动。
+--- # 数据总线连接器 dev 目录装载
+# 逗号分隔多个 target/classes：启动直接从编译输出装载，改代码后调 POST /databus/connector/dev/reload?type=xxx 生效。
+# 仅 dev profile 生效；路径必须是仓库根下级（启动目录也得是仓库根）；首次需先 mvn package 生成 target/lib 里的驱动 jar。
+#
+# 要测上传的 zip 包：注释本行，删记录，重启，上传，再换管理员账号勾「已审核」启用。删记录二选一：
+#   ① 调删除接口 DELETE /databus/connector/defs/{type}（type 为 bpmHttp / jdbc-mysql / jdbc-postgresql），
+#      需带登录 token 与 databus:connector:remove 权限；界面上 dev 行只显示「重载」，没有卸载按钮；
+#   ② 停后端后执行 delete from databus_connector_def where type in ('bpmHttp','jdbc-mysql','jdbc-postgresql');
+# 顺序反了的话，重启会把记录改回 dev，包等于没装。
 databus:
   connector:
     dev-plugin-dir: databus-connectors/databus-connector-bpm-http/target/classes,databus-connectors/databus-connector-jdbc-pg/target/classes,databus-connectors/databus-connector-jdbc-mysql/target/classes

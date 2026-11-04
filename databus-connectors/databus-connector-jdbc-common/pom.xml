@@ -18,7 +18,7 @@
         JDBC 连接器公共实现（方案 §3.1）：AbstractJdbcConnector / JdbcConnectionCfg / JdbcDbType /
         JdbcUrlBuilder / JdbcDriverRegistry / JdbcPoolRegistry / JdbcResultMapper / JdbcSqlGuard。
         本模块不单独发包、不打 zip，由各库模块（databus-connector-jdbc-pg 等）作为 compile 依赖
-        打进自己的 connector-package.zip 的 lib/ 下（§2.2）。
+        打进自己的 {artifact}-{version}.zip 的 lib/ 下（§2.2）。
         依赖全部 provided：api 契约、HikariCP、slf4j、lombok 都由平台父加载器提供（§2.2 打包红线，
         PluginClassLoader 的 PARENT_FIRST 前缀已含 org.dromara.databus.connector. / com.zaxxer.hikari. /
         org.slf4j. / lombok.）。
@@ -52,7 +52,7 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- 以下两项只 test scope：不进 target/lib、不进 connector-package.zip，
+        <!-- 以下两项只 test scope：不进 target/lib、不进 {artifact}-{version}.zip，
              因此不触碰 §2.2 打包红线，也不与 §9.1「H2 禁入驱动白名单」冲突——
              那条禁的是运行时可连的库种，这里是拿 H2 当「一个真实 JDBC 驱动」来验类型矩阵。 -->
         <dependency>

@@ -49,9 +49,6 @@ import java.util.zip.ZipInputStream;
 @Component
 public class PluginManager {
 
-    /** 包内清单文件名（zip 根级），与上传落盘 {@code DatabusConnectorServiceImpl} 保持一致 */
-    private static final String PACKAGE_FILE_NAME = "connector-package.zip";
-
     /** zip 内连接器实现与驱动所在前缀 */
     private static final String LIB_PREFIX = "lib/";
 
@@ -89,7 +86,7 @@ public class PluginManager {
      * 成功则清掉上一次留下的记录。异常照常抛出，调用方（上传预检 / 启动回装 / 重载）自己决定怎么处理。
      *
      * @param type       连接器类型（与 manifest 一致，作注册键）
-     * @param packageDir 包目录（含 {@code connector-package.zip}；解压产物也落此目录）
+     * @param packageDir 包目录（含 {@code manifest.packageFileName()} 推导出的 zip；解压产物也落此目录）
      * @param manifest   已校验的 manifest（装载前由上游解析/校验）
      * @return 已注册的 Connector 实例
      */
@@ -112,7 +109,7 @@ public class PluginManager {
             throw new ConnectorException("LOAD_FAILED",
                 "manifest.json 缺少 mainClass（engine=jvm 反射实例化必要字段）：" + type);
         }
-        Path zip = packageDir.resolve(PACKAGE_FILE_NAME);
+        Path zip = packageDir.resolve(manifest.packageFileName());
         if (!Files.isRegularFile(zip)) {
             throw new ConnectorException("LOAD_FAILED", "连接器包不存在：" + zip);
         }

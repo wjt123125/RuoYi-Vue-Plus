@@ -13,7 +13,8 @@
 
     <files>
         <file>
-            <source>src/main/resources/manifest.json</source>
+            <!-- 取 process-resources 过滤后的版本：${project.artifactId} 已注入 manifest -->
+            <source>${project.build.outputDirectory}/manifest.json</source>
             <outputDirectory>/</outputDirectory>
             <filtered>false</filtered>
         </file>

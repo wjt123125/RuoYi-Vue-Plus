@@ -48,7 +48,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>建 {@link PluginClassLoader}，URL 是 {@code target/classes} 加同级 {@code target/lib/*.jar}
  *       （与 §2.4 红线二用同一目录，不另设一套；IDE 编译不生成 lib，故可选）；</li>
  *   <li>{@code Class.forName(manifest.mainClass)} 实例化，注册进 {@link ConnectorRegistry}；</li>
- *   <li>往 {@code databus_connector_def} 写一行 {@code source=DEV / status=ENABLED / version=dev}。
+ *   <li>往 {@code databus_connector_def} 写一行 {@code source=DEV / status=ENABLED}，
+ *       {@code version} 取 manifest 里的真实版本（DEV 只由来源角标表达，版本列不再写占位值）。
  *       <b>不写</b> {@code databus_market_item}——只改运行层，市场层不受影响。</li>
  * </ol>
  *
@@ -77,11 +78,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Profile("dev")
 @RequiredArgsConstructor
 public class DevConnectorLoader {
-
-    /**
-     * dev 装载的版本号（固定值：dev 目录内容随编译变化，版本号不代表确定包内容）
-     */
-    private static final String DEV_VERSION = "dev";
 
     /**
      * 来源角标：dev 目录装载（无特权，仅展示用）
@@ -154,18 +150,33 @@ public class DevConnectorLoader {
      */
     public List<String> reload(String type) {
         if (type == null || type.isBlank()) {
+            List<String> dirs = configuredDirs();
+            if (dirs.isEmpty()) {
+                throw new ServiceException("未配置 databus.connector.dev-plugin-dir，无可重载的连接器目录");
+            }
             List<String> reloaded = new ArrayList<>();
-            for (String dir : configuredDirs()) {
-                reloaded.add(loadFrom(resolveSafeDir(dir)));
+            for (String dir : dirs) {
+                String loadedType = loadFrom(resolveSafeDir(dir));
+                if (loadedType != null) {
+                    reloaded.add(loadedType);
+                }
             }
             if (reloaded.isEmpty()) {
-                throw new ServiceException("未配置 databus.connector.dev-plugin-dir，无可重载的连接器目录");
+                throw new ServiceException("没有可重载的连接器：目录都已配置，但对应 type 均被正式包占用"
+                    + "（dev 目录不接管已上传的类型，先卸载正式包再调试）");
             }
             return reloaded;
         }
         String key = type.trim();
         Path dir = loadedDirs.get(key);
         if (dir == null) {
+            DatabusConnectorDef def = defMapper.selectOne(Wrappers.<DatabusConnectorDef>lambdaQuery()
+                .eq(DatabusConnectorDef::getType, key)
+                .last("limit 1"));
+            if (def != null && !SOURCE_DEV.equals(def.getSource())) {
+                throw new ServiceException("连接器 " + key + " 已由正式包占用（source=" + def.getSource()
+                    + "，version=" + def.getVersion() + "），dev 目录不接管；要本地调试请先卸载正式包");
+            }
             // 只给模块名不给绝对路径（整串路径糊在红条里没人读得下去），并且必须点破：
             // 这份清单是进程启动时读 yml 的快照，刚改过配置不重启，看到的永远是旧的，
             // 用户会得出「明明配了却说没配」的错误结论。
@@ -174,7 +185,13 @@ public class DevConnectorLoader {
                 + "如果刚改过 application-dev.yml 的 databus.connector.dev-plugin-dir，要先重启后端才会生效；"
                 + "配置没问题就是该连接器上一次装载失败了，原因见连接器市场里它那一行的状态提示。");
         }
-        return List.of(loadFrom(dir));
+        // 上次装载过、这次已被上传的包接管（source 已不是 DEV）时 loadFrom 返回 null，
+        // 直接塞进 List.of 会 NPE。目录条目仍留在 loadedDirs：卸载正式包后还能从这个目录重载
+        String loaded = loadFrom(dir);
+        if (loaded == null) {
+            throw new ServiceException("连接器 " + key + " 已由正式包占用，dev 目录不接管；要本地调试请先卸载正式包");
+        }
+        return List.of(loaded);
     }
 
     // ---------------------------- 私有实现 ----------------------------
@@ -214,6 +231,13 @@ public class DevConnectorLoader {
         if (existing != null && ConnectorDefStatusEnum.DEPRECATED.getCode().equals(existing.getStatus())) {
             throw new ServiceException("连接器 " + type + " 已废弃（终态不可逆），dev 通道不能复活；请先卸载再重新上传");
         }
+        // 正式包优先：DEV 行之外的行（UPLOAD 等）是审核后的正式记录，dev 目录不再抢这个 type。
+        // 否则每次重启都会把用户上传的包顶掉，还会把状态改回 ENABLED、绕过审核。
+        if (existing != null && !SOURCE_DEV.equals(existing.getSource())) {
+            log.warn("DEV 模式：跳过连接器 {}，该类型已由正式包占用（source={}，version={}）；"
+                + "要本地调试请先卸载正式包", type, existing.getSource(), existing.getVersion());
+            return null;
+        }
 
         List<URL> urls = new ArrayList<>();
         urls.add(toUrl(classesDir));
@@ -234,11 +258,12 @@ public class DevConnectorLoader {
             // 与正式包同一口径：驱动名问连接器本人要，必须由包内提供，缺了就是装载失败。
             // 放在卸旧实例之前，校验不过时上一版继续跑
             pluginManager.verifyRequiredDriver(type, loader, connector);
-            // 实例化与驱动校验都通过才卸旧的：dev 代码顶掉已上传的正式包（本地调试口径）
+            // 实例化与驱动校验都通过才卸旧的：重载时用新编译的实例顶掉本类上一次装载的实例
+            // （被正式包占用的 type 在上面已跳过，走不到这里）
             if (connectorRegistry.get(type) != null) {
                 pluginManager.unload(type);
             }
-            connectorRegistry.register(type, DEV_VERSION, connector, loader);
+            connectorRegistry.register(type, manifest.getVersion(), connector, loader);
             connectorRegistry.clearPending(type);
             connectorRegistry.clearDisabled(type);
             pluginManager.clearLoadFailure(type);
@@ -273,9 +298,9 @@ public class DevConnectorLoader {
      * <b>不触碰 verified</b>（§1.3：信任档由审批人勾选，不由 source 自动推导）。
      *
      * <p>{@code package_path} 写 class 目录的父目录（{@code target}），与列定义一致
-     * （该列是「zip 落盘目录」，{@code mvn package} 产出的 connector-package.zip 就在这一层）。
+     * （该列是「zip 落盘目录」，{@code mvn package} 产出的 {artifact}-{version}.zip 就在这一层）。
      * dev 装载自己不读这一列（目录来自配置项 dev-plugin-dir），写对它是为了让
-     * 「package_path + connector-package.zip = zip 全路径」这条算法对全表都成立，不必按来源分支。
+     * 「package_path + manifest 推导出的文件名 = zip 全路径」这条算法对全表都成立，不必按来源分支。
      */
     private void upsertDef(DatabusConnectorDef existing, String type, ConnectorManifest manifest,
                            String manifestJson, Path classesDir) {
@@ -284,7 +309,7 @@ public class DevConnectorLoader {
         if (existing == null) {
             DatabusConnectorDef row = new DatabusConnectorDef();
             row.setType(type);
-            row.setVersion(DEV_VERSION);
+            row.setVersion(manifest.getVersion());
             row.setEngine(manifest.getEngine());
             row.setManifestSnapshot(manifestJson);
             row.setPackagePath(packagePath);
@@ -295,7 +320,7 @@ public class DevConnectorLoader {
             defMapper.insert(row);
             return;
         }
-        existing.setVersion(DEV_VERSION);
+        existing.setVersion(manifest.getVersion());
         existing.setEngine(manifest.getEngine());
         existing.setManifestSnapshot(manifestJson);
         existing.setPackagePath(packagePath);

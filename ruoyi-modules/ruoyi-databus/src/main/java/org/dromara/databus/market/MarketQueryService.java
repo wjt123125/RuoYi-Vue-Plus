@@ -56,8 +56,8 @@ public class MarketQueryService {
     private static final String TYPE_CHAIN = MarketResourceTypes.CHAIN;
 
     /**
-     * 资源类型：连接器（§15.3「什么都能装」：装连接器＝把 def 行改成启用状态、全局生效，
-     * 所以判断「装了没有」看的是 def 行的状态，不是个人安装记录）
+     * 资源类型：连接器（§15.3「什么都能装」：安装只写一条个人安装记录，
+     * 连接器本体全局共享；启用状态由治理动作控制）
      */
     private static final String TYPE_CONNECTOR = MarketResourceTypes.CONNECTOR;
 
@@ -106,12 +106,10 @@ public class MarketQueryService {
         Page<DatabusMarketItem> page = marketItemMapper.selectPage(pageQuery.build(), lqw);
 
         Map<Long, Long> installedMap = buildInstalledMap(userId, page.getRecords());
-        // 连接器这一类不看个人安装记录，改看 def 行是不是启用状态（装连接器＝全局启用，§15.3）
-        Map<Long, DatabusConnectorDef> connectorDefMap = connectorDefMap(page.getRecords());
         List<DatabusMarketItemVo> voList = new ArrayList<>(page.getRecords().size());
         for (DatabusMarketItem item : page.getRecords()) {
             DatabusMarketItemVo vo = assembler.toItemVo(item);
-            fillInstalled(vo, item, userId, installedMap, connectorDefMap);
+            fillInstalled(vo, item, userId, installedMap);
             voList.add(vo);
         }
         return PageResult.build(voList, page.getTotal());
@@ -157,7 +155,7 @@ public class MarketQueryService {
         }
         DatabusMarketItemVo vo = assembler.toItemVo(item);
         Map<Long, Long> installedMap = buildInstalledMap(userId, List.of(item));
-        fillInstalled(vo, item, userId, installedMap, connectorDefMap(List.of(item)));
+        fillInstalled(vo, item, userId, installedMap);
         return vo;
     }
 
@@ -279,40 +277,16 @@ public class MarketQueryService {
     }
 
     /**
-     * 把这批物料里连接器类型的 def 行查出来：market_item.source_id（就是 def.id）→ def 行。
-     */
-    private Map<Long, DatabusConnectorDef> connectorDefMap(List<DatabusMarketItem> items) {
-        List<Long> defIds = items.stream()
-            .filter(item -> TYPE_CONNECTOR.equals(item.getResourceType()))
-            .map(DatabusMarketItem::getSourceId)
-            .filter(Objects::nonNull)
-            .distinct()
-            .toList();
-        if (defIds.isEmpty()) {
-            return Map.of();
-        }
-        return connectorDefMapper.selectByIds(defIds).stream()
-            .collect(Collectors.toMap(DatabusConnectorDef::getId, def -> def, (a, b) -> a));
-    }
-
-    /**
      * 往返回结果里填三个字段：installed（装了没有）/ localResourceId（本地那份的 id）/ mine（是不是我上架的）。
      * <p>
-     * 链路和组件看个人安装记录；连接器看 def 行是不是启用状态（装连接器＝全局启用，§15.3），
-     * 这时 localResourceId 填的是 def.id——前端拿它去 defs 列表里对上、取出 type，才能做启用停用和卸载。
+     * 三类物料一律看个人安装记录：连接器安装时也写一条记录（localResourceId＝def.id），
+     * 所以没装过的人卡片上不会显示「已装」，建链选连接器时也选不到。
      */
     private void fillInstalled(DatabusMarketItemVo vo, DatabusMarketItem item, Long userId,
-                               Map<Long, Long> installedMap, Map<Long, DatabusConnectorDef> connectorDefMap) {
-        if (TYPE_CONNECTOR.equals(item.getResourceType())) {
-            DatabusConnectorDef def = connectorDefMap.get(item.getSourceId());
-            boolean installed = def != null && ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus());
-            vo.setInstalled(installed);
-            vo.setLocalResourceId(installed ? def.getId() : null);
-        } else {
-            Long localResourceId = installedMap.get(item.getId());
-            vo.setInstalled(localResourceId != null);
-            vo.setLocalResourceId(localResourceId);
-        }
+                               Map<Long, Long> installedMap) {
+        Long localResourceId = installedMap.get(item.getId());
+        vo.setInstalled(localResourceId != null);
+        vo.setLocalResourceId(localResourceId);
         vo.setMine(Objects.equals(item.getOwnerId(), userId));
     }
 }

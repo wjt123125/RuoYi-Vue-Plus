@@ -1,21 +1,26 @@
 package org.dromara.databus.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import cn.dev33.satoken.stp.StpUtil;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.connector.Connector;
 import org.dromara.databus.connector.ConnectorDescriptor;
 import org.dromara.databus.connector.ConnectorManifest;
 import org.dromara.databus.connector.ConnectorRegistry;
 import org.dromara.databus.connector.plugin.PluginManager;
 import org.dromara.databus.domain.DatabusConnectorDef;
+import org.dromara.databus.domain.DatabusInstall;
 import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.domain.SysDatabusConnection;
 import org.dromara.databus.domain.vo.DatabusConnectorDefVo;
 import org.dromara.databus.enums.ConnectorDefStatusEnum;
+import org.dromara.databus.market.support.MarketStates;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
+import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.mapper.SysDatabusConnectionMapper;
 import org.dromara.databus.service.IDatabusConnectorService;
@@ -52,7 +57,7 @@ import java.util.zip.ZipInputStream;
  *
  * <p>上传链路：zip 校验（根级 manifest.json + 路径防穿越）→ manifest 必填/命名/engine
  * 校验 → type 冲突检测（同 type 同 version 报错；升版本＝热更新 def 行）→
- * 落盘 {@code plugins/{type}/{version}/} → 新类型装载预检 → 入库。新 type 默认 PENDING（待审核）：
+ * 落盘 {@code plugins/{type}/{version}/{artifact}-{version}.zip} → 新类型装载预检 → 入库。新 type 默认 PENDING（待审核）：
  * 审核即信任（§15.11），enable 是治理者的显式动作。
  *
  * <p>defs 视图：连接器零内置（方案 §1.2），只查 def 行；装载后运行态从
@@ -98,6 +103,11 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
     private static final String RESOURCE_TYPE_CONNECTOR = "CONNECTOR";
 
     /**
+     * 市场物料状态：已上架（货架可见、可被安装）
+     */
+    private static final String MARKET_STATUS_ONLINE = "ONLINE";
+
+    /**
      * 上传包体上限（50MB；manifest 声明式包通常几 KB，jvm 档 jar 为主要体量来源）
      */
     private static final long MAX_PACKAGE_BYTES = 50L * 1024 * 1024;
@@ -107,11 +117,6 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
      */
     private static final String MANIFEST_ENTRY = "manifest.json";
 
-    /**
-     * 落盘文件名（固定名，目录即版本隔离）
-     */
-    private static final String PACKAGE_FILE_NAME = "connector-package.zip";
-
     private final DatabusConnectorDefMapper defMapper;
 
     private final SysDatabusConnectionMapper connectionMapper;
@@ -120,6 +125,11 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
      * 市场物料行（只为反查上架者 owner_code：def 表自己没有作者列）
      */
     private final DatabusMarketItemMapper marketItemMapper;
+
+    /**
+     * 安装记录（判断「我的已装连接器」用：安装连接器会写一条记录）
+     */
+    private final DatabusInstallMapper installMapper;
 
     private final ConnectorRegistry connectorRegistry;
 
@@ -181,11 +191,14 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         ConnectorManifest manifest = parseManifest(manifestJson);
         manifest.validate();
 
-        // type 冲突检测（§15.5 上传行）：同 type 同 version 报错；升版本＝热更新
+        // type 冲突检测（§15.5 上传行）：同 type 同 version 报错；升版本＝热更新。
+        // DEV 行例外：它是 dev-plugin-dir 启动时临时登记的，不算正式版本占用，允许上传直接接管，
+        // 否则同一个 type 会永远被本地开发目录挡住，测试用户无法验证自己的包。
         DatabusConnectorDef existing = defMapper.selectOne(Wrappers.<DatabusConnectorDef>lambdaQuery()
             .eq(DatabusConnectorDef::getType, manifest.getType())
             .last("limit 1"));
-        if (existing != null && manifest.getVersion().equals(existing.getVersion())) {
+        boolean devRow = existing != null && SOURCE_DEV.equals(existing.getSource());
+        if (existing != null && !devRow && manifest.getVersion().equals(existing.getVersion())) {
             throw new ServiceException("连接器 " + manifest.getType() + " 版本 " + manifest.getVersion()
                 + " 已存在，请升级版本号后重新上传（同 type 升版本＝热更新）");
         }
@@ -195,18 +208,19 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
                 + " 已废弃（终态不可逆），不能升版本热更新；如确需继续使用，请先卸载再重新上传");
         }
 
-        // 落盘 plugins/{type}/{version}/connector-package.zip（type/version 已正则约束，无穿越面）
+        // 落盘 plugins/{type}/{version}/{artifact}-{version}.zip（type/version 已正则约束，无穿越面）
         Path dir = Paths.get(packageDir, manifest.getType(), manifest.getVersion());
         try {
             Files.createDirectories(dir);
-            file.transferTo(dir.resolve(PACKAGE_FILE_NAME).toAbsolutePath());
+            file.transferTo(dir.resolve(manifest.packageFileName()).toAbsolutePath());
         } catch (IOException e) {
             throw new ServiceException("包落盘失败（目录 " + dir + "）：" + e.getMessage());
         }
         String packagePath = dir.toString().replace('\\', '/');
 
-        // 新类型装载预检（§10.1）：engine=jvm 上传即试装载，失败立刻报错不留到运行时
-        if (existing == null && ENGINE_JVM.equals(manifest.getEngine())) {
+        // 新类型装载预检（§10.1）：engine=jvm 上传即试装载，失败立刻报错不留到运行时；
+        // 接管 DEV 行同样要预检——此时跑的还是 dev 目录的实例，正式包能不能起来必须先在这次验收
+        if ((existing == null || devRow) && ENGINE_JVM.equals(manifest.getEngine())) {
             try {
                 pluginManager.load(manifest.getType(), dir, manifest);
                 pluginManager.unload(manifest.getType());
@@ -234,14 +248,23 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             defMapper.insert(row);
             connectorRegistry.markPending(row.getType());
         } else {
-            // 热更新（§15.5）：刷版本/manifest/包路径，status 保持不停机；
-            // 旧实例继续在 Registry 运行，新版本待 enable 装载
+            // 升版本＝换了新内容，旧版本的审核结论不继承：清 verified、回 PENDING，
+            // 并卸下旧实例、把市场物料一起下线，等作者重新提交上架、治理者重新审核启用。
+            // 这条不变式是「审了才能跑」的前提——否则新包会带着上一次的 verified 直接过审。
             existing.setVersion(manifest.getVersion());
             existing.setEngine(manifest.getEngine());
             existing.setManifestSnapshot(manifestJson);
             existing.setPackagePath(packagePath);
+            // 接管 DEV 行：来源改回 UPLOAD，否则查看包仍按 dev 行拒绝、下次重启 dev 目录又会把它抢回去
+            existing.setSource(SOURCE_UPLOAD);
+            existing.setVerified(Boolean.FALSE);
+            existing.setStatus(ConnectorDefStatusEnum.PENDING.getCode());
             existing.setUpdateTime(now);
             defMapper.updateById(existing);
+            offlineMarketItems(existing);
+            pluginManager.broadcastSuspend(existing.getType());
+            pluginManager.unload(existing.getType());
+            connectorRegistry.markPending(existing.getType());
             row = existing;
         }
         return toVo(row);
@@ -249,7 +272,60 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
 
     @Override
     public List<DatabusConnectorDefVo> listDefs() {
+        // 全量台账只给治理者（能启停/卸载的人）：市场中「已上架」状态不足以看全量，
+        // 上架者若拿到全量，会把别人未审核的 PENDING 包也当成货架内容（已装管理变成包台账）。
+        // 非治理者只看「已启用且已上架」，没上架的包、待启用/停用/废弃一律不可见。
+        boolean fullView = LoginHelper.isSuperAdmin()
+            || StpUtil.hasPermission("databus:connector:edit");
         List<DatabusConnectorDef> defs = defMapper.selectList(Wrappers.<DatabusConnectorDef>lambdaQuery()
+            .eq(!fullView, DatabusConnectorDef::getStatus, ConnectorDefStatusEnum.ENABLED.getCode())
+            .orderByAsc(DatabusConnectorDef::getType));
+        if (!fullView) {
+            Set<Long> onlineDefIds = marketItemMapper.selectList(Wrappers.<DatabusMarketItem>lambdaQuery()
+                    .eq(DatabusMarketItem::getResourceType, RESOURCE_TYPE_CONNECTOR)
+                    .eq(DatabusMarketItem::getStatus, MARKET_STATUS_ONLINE))
+                .stream()
+                .map(DatabusMarketItem::getSourceId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+            defs.removeIf(def -> !onlineDefIds.contains(def.getId()));
+        }
+        List<DatabusConnectorDefVo> vos = defs.stream()
+            .map(this::toVo)
+            .collect(Collectors.toList());
+        fillOwnerCode(defs, vos);
+        return vos;
+    }
+
+    /**
+     * 我的已装连接器：只返回当前用户有安装记录、且处于已启用状态的 def 行。
+     * 已装列表和建链时选连接器都走这里，没装过的连接器不会出现。
+     */
+    @Override
+    public List<DatabusConnectorDefVo> listMyDefs() {
+        Long userId = LoginHelper.getUserId();
+        Set<Long> itemIds = installMapper.selectList(Wrappers.<DatabusInstall>lambdaQuery()
+                .eq(DatabusInstall::getOwnerId, userId))
+            .stream()
+            .map(DatabusInstall::getMarketItemId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        if (itemIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Set<Long> defIds = marketItemMapper.selectList(Wrappers.<DatabusMarketItem>lambdaQuery()
+                .in(DatabusMarketItem::getId, itemIds)
+                .eq(DatabusMarketItem::getResourceType, RESOURCE_TYPE_CONNECTOR))
+            .stream()
+            .map(DatabusMarketItem::getSourceId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        if (defIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<DatabusConnectorDef> defs = defMapper.selectList(Wrappers.<DatabusConnectorDef>lambdaQuery()
+            .in(DatabusConnectorDef::getId, defIds)
+            .eq(DatabusConnectorDef::getStatus, ConnectorDefStatusEnum.ENABLED.getCode())
             .orderByAsc(DatabusConnectorDef::getType));
         List<DatabusConnectorDefVo> vos = defs.stream()
             .map(this::toVo)
@@ -327,6 +403,8 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         pluginManager.broadcastSuspend(type);
         pluginManager.unload(type);
         connectorRegistry.markDeprecated(type);
+        // 废弃终态同样要从市场下线：不能再有人装它
+        offlineMarketItems(def);
         def.setStatus(ConnectorDefStatusEnum.DEPRECATED.getCode());
         def.setUpdateTime(LocalDateTime.now());
         return defMapper.updateById(def) > 0;
@@ -361,6 +439,8 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         } else {
             deletePackageDir(def.getPackagePath());
         }
+        // 连接器没了，市场里的物料也要下线，避免普通用户看到一份装不了的东西
+        offlineMarketItems(def);
         return defMapper.deleteById(def.getId()) > 0;
     }
 
@@ -404,6 +484,15 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         } catch (IOException e) {
             throw new ServiceException("读取连接器包失败（" + type + ":" + version + "）：" + e.getMessage());
         }
+    }
+
+    /**
+     * 包文件名（{@code {artifact}-{version}.zip}），下载附件名与落盘/构建产物同一规则。
+     */
+    @Override
+    public String packageFileName(String type, String version) {
+        DatabusConnectorDef def = requireDefByTypeVersion(type, version);
+        return parseManifest(def.getManifestSnapshot()).packageFileName();
     }
 
     /**
@@ -474,10 +563,12 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
     }
 
     /**
-     * def 行 → 落盘 zip 文件路径（plugins/{type}/{version}/connector-package.zip）。
+     * def 行 → 落盘 zip 文件路径（plugins/{type}/{version}/{artifact}-{version}.zip）。
+     * 文件名从 manifestSnapshot 推导，保证与构建产物、上传落盘同一规则。
      */
     private Path packageFileOf(DatabusConnectorDef def) {
-        Path zip = Paths.get(def.getPackagePath(), PACKAGE_FILE_NAME);
+        ConnectorManifest manifest = parseManifest(def.getManifestSnapshot());
+        Path zip = Paths.get(def.getPackagePath(), manifest.packageFileName());
         if (!Files.isRegularFile(zip)) {
             throw new ServiceException("连接器包文件缺失：" + zip);
         }
@@ -608,10 +699,28 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             pluginManager.broadcastSuspend(type);
             pluginManager.unload(type);
             connectorRegistry.markDisabled(type);
+            // 停用后市场里不该再挂着它能装：直接下架，读端查询就不需要跨表判 def 状态
+            offlineMarketItems(def);
         }
         def.setStatus(status);
         def.setUpdateTime(LocalDateTime.now());
         return defMapper.updateById(def) > 0;
+    }
+
+    /**
+     * 连接器变得不可用（停用/废弃/卸载）时，把它的市场物料一起下线。
+     * 市场只挂能装的东西，这条不变式由写入端维持，读端查询就不用再跨表判断 def 状态。
+     */
+    private void offlineMarketItems(DatabusConnectorDef def) {
+        if (def == null || def.getId() == null) {
+            return;
+        }
+        DatabusMarketItem update = new DatabusMarketItem();
+        update.setStatus(MarketStates.STATUS_OFFLINE);
+        marketItemMapper.update(update, Wrappers.<DatabusMarketItem>lambdaUpdate()
+            .eq(DatabusMarketItem::getResourceType, RESOURCE_TYPE_CONNECTOR)
+            .eq(DatabusMarketItem::getSourceId, def.getId())
+            .eq(DatabusMarketItem::getStatus, MarketStates.STATUS_ONLINE));
     }
 
     /**
@@ -638,7 +747,7 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
     private void rejectDevRow(DatabusConnectorDef def, String reason) {
         if (SOURCE_DEV.equals(def.getSource())) {
             throw new ServiceException("连接器 " + def.getType() + " 是 dev 目录装载的，" + reason
-                + "；改代码后调「重新加载」即可生效。需要走审核、启停、下载包的完整流程，请 mvn package 后从上传通道装一次");
+                + "；改代码后调「重新加载」即可生效。需要走审核、启停、下载包的完整流程，请 mvn package 后在「上架物料」里选择连接器并上传该 zip");
         }
     }
 
@@ -701,6 +810,7 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         vo.setUpdateTime(def.getUpdateTime());
         try {
             ConnectorManifest manifest = objectMapper.readValue(def.getManifestSnapshot(), ConnectorManifest.class);
+            vo.setArtifact(manifest.getArtifact());
             vo.setLabel(manifest.getLabel());
             vo.setIcon(manifest.getIcon());
             vo.setOperations(manifest.getOperations());

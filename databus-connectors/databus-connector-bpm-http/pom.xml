@@ -16,7 +16,7 @@
     <packaging>jar</packaging>
 
     <description>
-        BPM HTTP 连接器（type=bpmHttp）：从平台拆出的独立 maven 模块，打 zip（manifest.json + lib/本体 jar）。
+        BPM HTTP 连接器（type=bpmHttp）：从平台拆出的独立 maven 模块，产物 databus-connector-bpm-http-1.0.0.zip（manifest.json + lib/本体 jar）。
         连接器不引平台业务类；Json 序列化自理（Jackson 3 tools.jackson，provided 由父加载器提供）。
     </description>
 
@@ -59,6 +59,13 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- manifest.json 注入 artifactId：包文件名 = artifact-version.zip，与运行时落盘/解包/下载同一规则 -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
             <!-- 打 zip：根含 manifest.json，lib/ 只放本体 jar（不 repackage、不收任何过渡依赖） -->
             <plugin>
@@ -66,7 +73,8 @@
                 <artifactId>maven-assembly-plugin</artifactId>
                 <version>3.7.1</version>
                 <configuration>
-                    <finalName>connector-package</finalName>
+                    <!-- 产物名 = artifactId-version.zip（如 databus-connector-bpm-http-1.0.0.zip），与 manifest 推导规则一致 -->
+                    <finalName>${project.artifactId}-${project.version}</finalName>
                     <appendAssemblyId>false</appendAssemblyId>
                     <descriptors>
                         <descriptor>src/assembly/connector-zip.xml</descriptor>

@@ -78,6 +78,12 @@ public class DatabusMarketReviewDetailVo implements Serializable {
          * 描述（COMPONENT 关键信息）
          */
         private String description;
+
+        /**
+         * 连接器启用状态（仅 CONNECTOR：PENDING / ENABLED / DISABLED / DEPRECATED）。
+         * 审核页只做展示：PENDING 的通过审核会同时完成首次启用，不再单独提供「启用」按钮。
+         */
+        private String connectorStatus;
     }
 
     /**

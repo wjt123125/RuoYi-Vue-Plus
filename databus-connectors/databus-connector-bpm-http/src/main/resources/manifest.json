@@ -1,4 +1,5 @@
 {
+  "artifact": "${project.artifactId}",
   "type": "bpmHttp",
   "label": "BPM HTTP 连接器",
   "icon": "ph:plugs",

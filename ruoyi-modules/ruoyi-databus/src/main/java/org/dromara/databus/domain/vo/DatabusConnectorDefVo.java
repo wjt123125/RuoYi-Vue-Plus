@@ -13,7 +13,7 @@ import java.util.Map;
  * 连接器 def 视图对象（连接管理页 CONNECTOR_OPTIONS 动态化 / 市场连接器卡片用）
  *
  * <p>GET /databus/connector/defs 的视图行：连接器零内置（方案 §1.2），只查 def 行。
- * manifest 快照解析回填 label / icon / operations / configSchema，
+ * manifest 快照解析回填 artifact / label / icon / operations / configSchema，
  * 前端据此动态渲染连接表单（§15.1 前端直渲）。
  *
  * @author databus
@@ -38,6 +38,11 @@ public class DatabusConnectorDefVo implements Serializable {
      * 版本号（manifest 声明）
      */
     private String version;
+
+    /**
+     * 构建模块标识（manifest 的 artifact，Maven artifactId）；下载附件名据此推导成 {@code artifact-version.zip}
+     */
+    private String artifact;
 
     /**
      * 引擎档（http / jvm / native）

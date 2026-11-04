@@ -92,6 +92,18 @@ public class DatabusMarketInstallVo implements Serializable {
     private Boolean enabled;
 
     /**
+     * 本地副本治理状态（链路 DRAFT/ENABLED/DISABLED；组件 ENABLED/DISABLED；连接器 def 状态）。
+     * 前端行状态圆点按此上色；enabled 保留作旧的布尔口径兼容。
+     */
+    private String status;
+
+    /**
+     * 运行态健康（仅链路）：最近一次执行记录状态 RUNNING/SUCCESS/FAILED，无记录时为空。
+     * 用来区分「已发布但最近执行失败」，与治理状态叠成同一个圆点。
+     */
+    private String health;
+
+    /**
      * 组件编码（SHARED 组件引用叶子的 open 通道：前端按 code 反查台账行打开详情）
      */
     private String componentCode;

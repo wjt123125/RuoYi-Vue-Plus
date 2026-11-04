@@ -12,6 +12,7 @@ import org.dromara.databus.domain.vo.DatabusMarketInstallVo;
 import org.dromara.databus.domain.vo.DatabusMarketItemVo;
 import org.dromara.databus.domain.vo.DatabusMarketPreviewVo;
 import org.dromara.databus.domain.vo.DatabusMarketReviewDetailVo;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -70,8 +71,24 @@ public interface IDatabusMarketService {
 
     /**
      * 提交上架（进待审；同源重复提交则更新并回到待审）
+     *
+     * @return 物料行 id（新建或复用的同源行）
      */
-    Boolean publish(MarketPublishBo bo, Long userId, String ownerCode);
+    Long publish(MarketPublishBo bo, Long userId, String ownerCode);
+
+    /**
+     * 连接器包上架：上传 zip 即提交上架。
+     * <p>
+     * 落包、建/更新 def（PENDING）与建/重置市场物料（PENDING）在一次提交里完成；
+     * 上传不再是独立动作，提交后统一进待审。
+     *
+     * @param file      连接器包（zip）
+     * @param meta      上架元数据（类型由服务端固定为 CONNECTOR，sourceId 由落包结果回填）
+     * @param userId    当前用户 id（同时写成 def 的 create_by）
+     * @param ownerCode 当前用户账号
+     * @return 新物料行 id（前端据此跳到「我的上架」并高亮该行）
+     */
+    Long publishConnector(MultipartFile file, MarketPublishBo meta, Long userId, String ownerCode);
 
     /**
      * 批量提审（POST /databus/market/publish/batch，decisions §十四-6 发布引导弹窗确认后的

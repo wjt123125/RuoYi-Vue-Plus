@@ -8,6 +8,7 @@ import org.dromara.common.core.utils.StringUtils;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.DatabusComponent;
 import org.dromara.databus.domain.DatabusConnectorDef;
+import org.dromara.databus.domain.DatabusExecution;
 import org.dromara.databus.domain.DatabusInstall;
 import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.domain.bo.MarketInstallMoveBo;
@@ -20,6 +21,7 @@ import org.dromara.databus.enums.ConnectorDefStatusEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
+import org.dromara.databus.mapper.DatabusExecutionMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.market.support.ChainForkRedirector;
@@ -53,7 +55,8 @@ import java.util.stream.Collectors;
  *       每条都是独立的行，都放在「我的」目录最外层；安装记录只记主链这一条，
  *       跟着复制出来的子链副本靠 source_chain_id 能查到是从哪条链复制来的；</li>
  *   <li>组件＝大家一起用同一个：不复制副本，localResourceId 直接指向源组件，作者改了两边马上都生效；</li>
- *   <li>连接器＝启用：把 def 行状态改成 ENABLED，全局生效，不复制也不写安装记录（§15.3）。</li>
+ *   <li>连接器＝写一条安装记录：连接器本体是全局共享的一份，安装不复制也不启用/停用，
+ *       只决定「我」在自己的清单和建链选择器里能不能看到它；启用是治理动作（§15.3）。</li>
  * </ul>
  * 卸载按 mode 分开处理：FORK 删本地副本，顺带把「装完之后一直没动过」的子链副本一起删；
  * SHARED 只删安装记录，组件本体不动。
@@ -74,8 +77,8 @@ public class MarketInstallService {
     private static final String TYPE_CHAIN = MarketResourceTypes.CHAIN;
 
     /**
-     * 资源类型：连接器（§15.3「什么都能装」：装连接器就是把 def 行启用，
-     * 不复制副本，也不写安装记录）
+     * 资源类型：连接器（§15.3「什么都能装」：装连接器只写一条个人安装记录，
+     * 连接器本体全局共享，启用/停用归治理）
      */
     private static final String TYPE_CONNECTOR = MarketResourceTypes.CONNECTOR;
 
@@ -114,6 +117,11 @@ public class MarketInstallService {
     private final DatabusConnectorDefMapper connectorDefMapper;
 
     /**
+     * 执行记录：已装管理列表取链路最近一次执行状态（运行健康圆点）
+     */
+    private final DatabusExecutionMapper executionMapper;
+
+    /**
      * 链路服务：查依赖清单，以及删链的唯一入口（里面会做引用检查、清 Rule-DB 的 lf_chain、清安装记录）
      */
     private final IDatabusChainService chainService;
@@ -131,7 +139,7 @@ public class MarketInstallService {
     private final MarketClosureLoader closureLoader;
 
     /**
-     * 安装物料：链路复制一份副本 / 组件大家一起用同一个 / 连接器启用。
+     * 安装物料：链路复制一份副本 / 组件和连接器写一条安装记录（本体共享）。
      */
     @Transactional(rollbackFor = Exception.class)
     public DatabusMarketInstallVo install(Long itemId, Long directoryId, Long userId) {
@@ -143,9 +151,9 @@ public class MarketInstallService {
             throw new ServiceException("物料未上线，暂不可安装");
         }
 
-        // 装连接器＝把 def 行置为启用：不复制副本、不写安装记录，做完就返回（§15.3）
+        // 装连接器＝写一条个人安装记录：连接器本体全局只有一份，安装不改它的启停状态
         if (TYPE_CONNECTOR.equals(item.getResourceType())) {
-            return enableConnector(item, userId);
+            return installConnector(item, userId);
         }
         assertNotInstalled(itemId, userId);
 
@@ -181,23 +189,30 @@ public class MarketInstallService {
     }
 
     /**
-     * 装连接器（§15.3）：就是把 def 行置为启用——不复制副本、不用选目录、不写安装记录
-     * （安装记录只记链路和组件）。启用/停用/卸载都走 /databus/connector/defs 那几个接口
+     * 装连接器（§15.3）：连接器必须已由治理员启用；安装只给当前用户写一条安装记录，
+     * 不改 def 的启停状态（启用/停用是治理动作），也不复制副本。
+     * 「已装」只影响这个人在自己清单和建链选择器里看不看得到它。
      */
-    private DatabusMarketInstallVo enableConnector(DatabusMarketItem item, Long userId) {
+    private DatabusMarketInstallVo installConnector(DatabusMarketItem item, Long userId) {
         DatabusConnectorDef def = connectorDefMapper.selectById(item.getSourceId());
         if (def == null) {
             throw new ServiceException("源连接器不存在或已卸载");
         }
-        if (ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus())) {
-            throw new ServiceException("该连接器已启用，无需重复安装");
+        if (!ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus())) {
+            throw new ServiceException("连接器尚未启用，暂不可安装");
         }
-        DatabusConnectorDef update = new DatabusConnectorDef();
-        update.setId(def.getId());
-        update.setStatus(ConnectorDefStatusEnum.ENABLED.getCode());
-        connectorDefMapper.updateById(update);
-        // install_count 是安装记录的条数缓存，连接器不写安装记录，所以不刷（§15.3）
+        assertNotInstalled(item.getId(), userId);
+        DatabusInstall record = new DatabusInstall();
+        record.setOwnerId(userId);
+        record.setMarketItemId(item.getId());
+        record.setLocalResourceId(def.getId());
+        record.setMode(MODE_SHARED);
+        record.setCreateTime(LocalDateTime.now());
+        installMapper.insert(record);
+        // install_count 是安装记录条数，连接器和组件一样按记录累计
+        refreshCounts(item.getId());
         DatabusMarketInstallVo vo = new DatabusMarketInstallVo();
+        vo.setId(record.getId());
         vo.setOwnerId(userId);
         vo.setMarketItemId(item.getId());
         vo.setLocalResourceId(def.getId());
@@ -208,7 +223,7 @@ public class MarketInstallService {
         vo.setSummary(item.getSummary());
         vo.setIcon(item.getIcon());
         vo.setColor(item.getColor());
-        vo.setCreateTime(LocalDateTime.now());
+        vo.setCreateTime(record.getCreateTime());
         return vo;
     }
 
@@ -388,8 +403,8 @@ public class MarketInstallService {
      */
     @Transactional(rollbackFor = Exception.class)
     public Boolean uninstall(Long resourceId, Long userId) {
-        // 连接器没有安装记录（装它就是启用 def 行，不写记录），所以会一路走到最后的
-        // 「未找到安装记录」报错，正好；它的启用/停用/卸载都归 /databus/connector/defs 那几个接口管
+        // 连接器也写个人安装记录，和组件一样是 SHARED：卸载只删记录，不停用连接器
+        // （停用/卸载连接器本体走 /databus/connector/defs 那几个治理接口）
         DatabusInstall record = installMapper.selectOne(Wrappers.<DatabusInstall>lambdaQuery()
             .eq(DatabusInstall::getOwnerId, userId)
             .eq(DatabusInstall::getLocalResourceId, resourceId)
@@ -555,6 +570,16 @@ public class MarketInstallService {
         Map<Long, DatabusComponent> componentMap = localIds.isEmpty() ? Map.of()
             : componentMapper.selectByIds(localIds).stream()
                 .collect(Collectors.toMap(DatabusComponent::getId, component -> component, (a, b) -> a));
+        Map<Long, DatabusConnectorDef> defMap = localIds.isEmpty() ? Map.of()
+            : connectorDefMapper.selectByIds(localIds).stream()
+                .collect(Collectors.toMap(DatabusConnectorDef::getId, def -> def, (a, b) -> a));
+        // 链路运行健康：一次批量取每条链的最近一次执行状态（无记录不放进 map，前端按「未跑过」处理）
+        Map<Long, String> chainHealthMap = new HashMap<>();
+        if (!chainMap.isEmpty()) {
+            for (DatabusExecution execution : executionMapper.selectLatestByChainIds(chainMap.keySet())) {
+                chainHealthMap.put(execution.getChainId(), execution.getStatus());
+            }
+        }
 
         List<DatabusMarketInstallVo> result = new ArrayList<>(records.size());
         for (DatabusInstall record : records) {
@@ -562,7 +587,8 @@ public class MarketInstallService {
             DatabusChain chain = chainMap.get(record.getLocalResourceId());
             DatabusComponent component = componentMap.get(record.getLocalResourceId());
             String resourceType = item != null ? item.getResourceType()
-                : (chain != null ? TYPE_CHAIN : (component != null ? TYPE_COMPONENT : null));
+                : (chain != null ? TYPE_CHAIN : (component != null ? TYPE_COMPONENT
+                    : (defMap.containsKey(record.getLocalResourceId()) ? TYPE_CONNECTOR : null)));
 
             DatabusMarketInstallVo vo = new DatabusMarketInstallVo();
             vo.setId(record.getId());
@@ -580,11 +606,15 @@ public class MarketInstallService {
             String color = null;
             String summary = null;
             Boolean enabled = null;
+            // 连接器编码：物料行被作者删掉时用它兜底显示，避免已装列表出现一行空白
+            String connectorType = null;
             if (TYPE_CHAIN.equals(resourceType)) {
                 if (chain != null) {
                     name = chain.getChainName();
                     summary = chain.getRemark();
                     enabled = ChainStatusEnum.ENABLED.getCode().equals(chain.getStatus());
+                    vo.setStatus(chain.getStatus());
+                    vo.setHealth(chainHealthMap.get(chain.getId()));
                 }
             } else if (TYPE_COMPONENT.equals(resourceType)) {
                 if (component != null) {
@@ -593,8 +623,17 @@ public class MarketInstallService {
                     color = component.getColor();
                     summary = component.getDescription();
                     enabled = ComponentStatusEnum.ENABLED.getCode().equals(component.getStatus());
+                    vo.setStatus(component.getStatus());
                     // 组件（SHARED）在链里被引用时：前端拿编码反查安装记录行，好显示打开按钮
                     vo.setComponentCode(component.getComponentCode());
+                }
+            } else if (TYPE_CONNECTOR.equals(resourceType)) {
+                // 连接器本体全局共享，启用状态看 def 行；名称/图标/简介统一在下面从物料行补
+                DatabusConnectorDef def = defMap.get(record.getLocalResourceId());
+                if (def != null) {
+                    enabled = ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus());
+                    vo.setStatus(def.getStatus());
+                    connectorType = def.getType();
                 }
             }
             if (item != null) {
@@ -612,6 +651,9 @@ public class MarketInstallService {
                 }
                 // 上架者登录名：管理页行上渲染 @作者（宁缺勿滥，物料行没了就不显示）
                 vo.setOwnerCode(item.getOwnerCode());
+            }
+            if (StringUtils.isBlank(name) && connectorType != null) {
+                name = connectorType;
             }
             vo.setName(name);
             vo.setIcon(icon);

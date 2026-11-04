@@ -8,14 +8,18 @@ import org.dromara.common.core.utils.StringUtils;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.DatabusComponent;
 import org.dromara.databus.domain.DatabusConnectorDef;
+import org.dromara.databus.domain.DatabusInstall;
+import org.dromara.databus.enums.ConnectorDefStatusEnum;
 import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.domain.bo.MarketPublishBatchBo;
 import org.dromara.databus.domain.bo.MarketPublishBo;
 import org.dromara.databus.domain.bo.MarketReviewBo;
+import org.dromara.databus.domain.vo.DatabusConnectorDefVo;
 import org.dromara.databus.domain.vo.DatabusMarketReviewDetailVo;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
+import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.market.support.ChainForkRedirector;
 import org.dromara.databus.market.support.MarketClosure;
@@ -24,7 +28,9 @@ import org.dromara.databus.market.support.MarketResourceTypes;
 import org.dromara.databus.market.support.MarketStates;
 import org.dromara.databus.market.support.MarketVoAssembler;
 import org.dromara.databus.service.IDatabusChainService;
+import org.dromara.databus.service.IDatabusConnectorService;
 import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -70,7 +76,7 @@ public class MarketPublishService {
     private static final String TYPE_CONNECTOR = MarketResourceTypes.CONNECTOR;
 
     /**
-     * 连接器来源：dev 目录装载（这类行没有确定的包内容，不给提交上架）
+     * 连接器来源：dev 目录装载（跑的是编译输出目录，没有落地的 zip，不放开提交上架）
      */
     private static final String CONNECTOR_SOURCE_DEV = "DEV";
 
@@ -90,6 +96,11 @@ public class MarketPublishService {
     private final DatabusConnectorDefMapper connectorDefMapper;
 
     /**
+     * 安装台账：删上架行时判断连接器是否已被人装走（有安装记录就不随删除撤回 def）
+     */
+    private final DatabusInstallMapper installMapper;
+
+    /**
      * manifest 快照解析用的 Jackson3 mapper（构造注入容器里的 bean：平台是 Spring Boot4/Jackson3，
      * 容器提供的是 tools.jackson 的 ObjectMapper/JsonMapper，带着全局的序列化设置）
      */
@@ -101,6 +112,11 @@ public class MarketPublishService {
     private final IDatabusChainService chainService;
 
     /**
+     * 连接器运行层服务：连接器包上架时「先落包建 def，再建市场物料」在同一事务里完成
+     */
+    private final IDatabusConnectorService connectorService;
+
+    /**
      * 查依赖清单：顺带补审核单、通过审核前查依赖、审核详情依赖树，三处共用同一份清单
      */
     private final MarketClosureLoader closureLoader;
@@ -110,10 +126,16 @@ public class MarketPublishService {
     /**
      * 提交上架：新建一条待审物料行；如果这个资源以前上架过，就把原来那行的展示信息改掉、
      * 状态回到待审。提交链路时还会顺带给同一个人的依赖补审核单。
+     *
+     * @return 物料行 id（新建或复用的同源行），供调用方定位「刚提交的是哪一条」
      */
     @Transactional(rollbackFor = Exception.class)
-    public Boolean publish(MarketPublishBo bo, Long userId, String ownerCode) {
+    public Long publish(MarketPublishBo bo, Long userId, String ownerCode) {
         String resourceType = bo.getResourceType();
+        // 连接器包上传上架时 sourceId 由 publishConnector 回填；走到这里还为空说明调用方没给源资源
+        if (bo.getSourceId() == null) {
+            throw new ServiceException("源资源id不能为空");
+        }
         String sourceCode;
         String name;
         String icon = null;
@@ -147,12 +169,12 @@ public class MarketPublishService {
             if (source == null) {
                 throw new ServiceException("源连接器不存在或已卸载");
             }
-            // dev 目录装载的连接器不能上架：version 固定是 dev，不对应一份确定的包内容，
+            // dev 目录装载的连接器不能上架：它跑的是编译输出目录，package_path 下没有对应的 zip，
             // 审核人没有可核对的对象（下载原包 / 包内清单这两个入口对它也是拒的）
             if (CONNECTOR_SOURCE_DEV.equals(source.getSource())) {
                 throw new ServiceException("连接器 " + source.getType()
-                    + " 是 dev 目录装载的，不能提交上架（它没有确定的包版本，审核人无从核对）；"
-                    + "请先 mvn package 后从上传通道装一次，再提交上架");
+                    + " 是 dev 目录装载的，不能提交上架（它没有落地的包文件，审核人无从核对）；"
+                    + "请先 mvn package，再在「上架物料」里选择连接器并上传该 zip");
             }
             sourceCode = source.getType();
             JsonNode manifest = readManifest(source.getManifestSnapshot());
@@ -188,6 +210,7 @@ public class MarketPublishService {
             .eq(DatabusMarketItem::getResourceType, resourceType)
             .eq(DatabusMarketItem::getSourceId, bo.getSourceId())
             .last("limit 1"));
+        Long itemId;
         boolean published;
         if (existing != null) {
             // 同一个资源重复提交：改掉展示信息、状态回到待审，顺便清掉上一次的驳回理由和审核记录
@@ -203,6 +226,7 @@ public class MarketPublishService {
             existing.setRemark("");
             existing.setUpdateTime(now);
             published = marketItemMapper.updateById(existing) > 0;
+            itemId = existing.getId();
             // updateById 默认忽略 null 字段，没法把 review_by/review_time 置空 → 单独发一条 update 清空
             marketItemMapper.update(null, Wrappers.<DatabusMarketItem>lambdaUpdate()
                 .eq(DatabusMarketItem::getId, existing.getId())
@@ -228,12 +252,36 @@ public class MarketPublishService {
             add.setCreateTime(now);
             add.setUpdateTime(now);
             published = marketItemMapper.insert(add) > 0;
+            itemId = add.getId();
         }
         // 顺带补审核单（2026-10-24 定的）：主链的审核单写库后，再按依赖清单补其他审核单
         if (published && chainSource != null) {
             autoPublishClosureDeps(chainSource, userId, ownerCode, now);
         }
-        return published;
+        if (!published) {
+            throw new ServiceException("上架失败，请重试");
+        }
+        return itemId;
+    }
+
+    /**
+     * 连接器包上架：上传即提交，上传不再是独立动作。
+     * <p>
+     * 落包 + 建/更新 def（PENDING）+ 建/重置市场物料（PENDING）在同一个事务里完成：
+     * 提交人只面对「上架」这一件事，失败时 DB 一起回滚；磁盘上的包目录是事务外产物，
+     * 失败时可能留下一个无 def 行的目录，下次同 type/version 重新上传会覆盖它，不影响正确性。
+     * <p>
+     * def 的 create_by 由 {@link IDatabusConnectorService#upload} 写成当前用户，
+     * 因此后面的归属校验（只能上架自己的资源）天然通过，也保证「提交人 ≠ 审批人」成立。
+     * @param ownerCode 当前用户账号
+     * @return 新物料行 id（前端据此跳到「我的上架」并高亮该行）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Long publishConnector(MultipartFile file, MarketPublishBo bo, Long userId, String ownerCode) {
+        DatabusConnectorDefVo def = connectorService.upload(file, userId);
+        bo.setResourceType(TYPE_CONNECTOR);
+        bo.setSourceId(def.getId());
+        return publish(bo, userId, ownerCode);
     }
 
     /**
@@ -338,7 +386,9 @@ public class MarketPublishService {
     /**
      * 审核：通过就置为上线，驳回就置为驳回并记下理由。不许审自己上架的物料；
      * 通过一条链路前还要先查它的依赖是否都已上线。
+     * 驳回连接器时连未审核的 def 和包一起撤回——驳回＝这份提交作废，不能继续占着全局唯一的 type。
      */
+    @Transactional(rollbackFor = Exception.class)
     public Boolean review(Long id, MarketReviewBo bo, Long reviewerId) {
         DatabusMarketItem item = marketItemMapper.selectById(id);
         if (item == null) {
@@ -359,6 +409,21 @@ public class MarketPublishService {
         if (Boolean.TRUE.equals(bo.getApproved()) && TYPE_CHAIN.equals(item.getResourceType())) {
             validateClosureOnlineForReview(item);
         }
+        // 连接器通过审核 = 首次启用：启用即审核（verified 勾选、提交人 ≠ 审批人）由 enable 内部校验，
+        // 不再要求治理员先去别的页面手动启用。已启用的直接放行；已停用/已废弃是治理侧的运行态决定，
+        // 审核不能绕过，必须先恢复启用。
+        if (Boolean.TRUE.equals(bo.getApproved()) && TYPE_CONNECTOR.equals(item.getResourceType())) {
+            DatabusConnectorDef def = connectorDefMapper.selectById(item.getSourceId());
+            if (def == null) {
+                throw new ServiceException("源连接器不存在或已卸载，无法通过审核");
+            }
+            if (ConnectorDefStatusEnum.PENDING.getCode().equals(def.getStatus())) {
+                connectorService.enable(def.getType(), reviewerId, Boolean.TRUE);
+            } else if (!ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus())) {
+                throw new ServiceException("连接器 " + def.getType() + " 当前为 " + def.getStatus()
+                    + "，不能通过审核；请先在物料治理里启用或恢复");
+            }
+        }
         LocalDateTime now = LocalDateTime.now();
         DatabusMarketItem update = new DatabusMarketItem();
         update.setId(id);
@@ -376,6 +441,10 @@ public class MarketPublishService {
             }
             update.setStatus(STATUS_REJECTED);
             update.setRemark(bo.getReason());
+            // 记录留、包不留：物料行保留驳回理由给作者看，def 与 zip 撤回以释放 type/version
+            if (TYPE_CONNECTOR.equals(item.getResourceType())) {
+                discardUnreviewedConnector(item, null);
+            }
         }
         return marketItemMapper.updateById(update) > 0;
     }
@@ -384,6 +453,7 @@ public class MarketPublishService {
      * 删除上架行：只有作者本人能删，直接物理删（这张表没有逻辑删除）。
      * 别人已经装走的副本和安装记录都不动。
      */
+    @Transactional(rollbackFor = Exception.class)
     public Boolean deleteItem(Long id, Long userId) {
         DatabusMarketItem item = marketItemMapper.selectById(id);
         if (item == null) {
@@ -392,9 +462,38 @@ public class MarketPublishService {
         if (!Objects.equals(item.getOwnerId(), userId)) {
             throw new ServiceException("只能删除自己上架的物料");
         }
+        // 连接器的 def 行与包是上传时建的，删上架行不会跟着消失；未审核的整次提交要连 def 和包一起撤回
+        if (TYPE_CONNECTOR.equals(item.getResourceType())) {
+            discardUnreviewedConnector(item, userId);
+        }
         // 已装副本不受影响：安装时存的是内容快照，不依赖市场这一行。
         // 安装记录行也不删，市场上架行查不到时由 queryInstalled 按「已下架」显示。
         return marketItemMapper.deleteById(id) > 0;
+    }
+
+    /**
+     * 撤回未审核的连接器提交：def 仍是 PENDING，且没有其它市场行、也没人装过，
+     * 就连同 def 行与磁盘包一起删（复用卸载的四步清扫）。
+     * authorId 非空时要求 def 也属于该作者（作者删自己的提交）；审核驳回时传 null（治理动作，不校验作者）。
+     * 已启用 / 停用 / 废弃的 def 是平台级资产，删上架行只下架展示，不动它。
+     */
+    private void discardUnreviewedConnector(DatabusMarketItem item, Long authorId) {
+        DatabusConnectorDef def = connectorDefMapper.selectById(item.getSourceId());
+        if (def == null
+            || !ConnectorDefStatusEnum.PENDING.getCode().equals(def.getStatus())
+            || (authorId != null && !Objects.equals(def.getCreateBy(), authorId))) {
+            return;
+        }
+        Long siblingItems = marketItemMapper.selectCount(Wrappers.<DatabusMarketItem>lambdaQuery()
+            .eq(DatabusMarketItem::getResourceType, TYPE_CONNECTOR)
+            .eq(DatabusMarketItem::getSourceId, item.getSourceId())
+            .ne(DatabusMarketItem::getId, item.getId()));
+        Long installs = installMapper.selectCount(Wrappers.<DatabusInstall>lambdaQuery()
+            .eq(DatabusInstall::getMarketItemId, item.getId()));
+        if ((siblingItems != null && siblingItems > 0) || (installs != null && installs > 0)) {
+            return;
+        }
+        connectorService.uninstall(def.getType(), true);
     }
 
     /**
@@ -467,6 +566,7 @@ public class MarketPublishService {
             preview.setAuthor(item.getOwnerCode());
             preview.setCode(def.getType());
             preview.setVersion(def.getVersion());
+            preview.setConnectorStatus(def.getStatus());
         }
         return preview;
     }

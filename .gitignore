@@ -58,5 +58,5 @@ application-ga.yml
 .node_instance_id/
 
 # 数据总线连接器包落盘目录（application.yml 的 databus.connector.package-dir）
-# 里面是上传/装载产生的 connector-package.zip、manifest.json 与驱动 jar，属运行时产物，不入库
+# 里面是上传/装载产生的 {artifact}-{version}.zip、manifest.json 与驱动 jar，属运行时产物，不入库
 /plugins/

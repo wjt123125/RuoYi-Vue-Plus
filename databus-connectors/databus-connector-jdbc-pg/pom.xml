@@ -16,7 +16,7 @@
     <packaging>jar</packaging>
 
     <description>
-        PostgreSQL JDBC 连接器（type=jdbc-postgresql）：一库一包（方案 §2.4），产物 connector-package.zip。
+        PostgreSQL JDBC 连接器（type=jdbc-postgresql）：一库一包（方案 §2.4），产物 databus-connector-jdbc-pg-1.0.0.zip。
         lib/ 三样：本体 jar + databus-connector-jdbc-common jar + postgresql 驱动 jar。
         驱动不进 maven 依赖树（红线二）：由 maven-dependency-plugin 的 copy goal 拉到 target/lib/，
         这样 Spring Boot 依赖管理碰不到驱动版本，包里那份才是生效的（child-first，§4.2）。
@@ -53,6 +53,13 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- manifest.json 注入 artifactId：包文件名 = artifact-version.zip，与运行时落盘/解包/下载同一规则 -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
             <!-- 把 lib/ 里「非本体」的两样拉到 target/lib/（红线二 §2.4：驱动不进 maven 依赖树）。
                  放同一处的另一个理由是 dev 通道：DevConnectorLoader 从 target/classes + target/lib/*.jar
@@ -100,7 +107,8 @@
                 <artifactId>maven-assembly-plugin</artifactId>
                 <version>3.7.1</version>
                 <configuration>
-                    <finalName>connector-package</finalName>
+                    <!-- 产物名 = artifactId-version.zip（如 databus-connector-jdbc-pg-1.0.0.zip），与 manifest 推导规则一致 -->
+                    <finalName>${project.artifactId}-${project.version}</finalName>
                     <appendAssemblyId>false</appendAssemblyId>
                     <descriptors>
                         <descriptor>src/assembly/connector-zip.xml</descriptor>

@@ -1,7 +1,6 @@
 package org.dromara.databus.domain.bo;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -30,8 +29,11 @@ public class MarketPublishBo implements Serializable {
 
     /**
      * 源资源 id（链路主键 / 组件 DB 行 id / 连接器 def 行 id）
+     * <p>
+     * 直传上架（组件 / 链路 / 已入库连接器）必须由调用方给出；连接器包上传上架时前端还没有 id，
+     * 由 {@code MarketPublishService#publishConnector} 落包建 def 后回填，故此处不做必填校验，
+     * 非空由 publish 统一把守。
      */
-    @NotNull(message = "源资源id不能为空")
     private Long sourceId;
 
     /**

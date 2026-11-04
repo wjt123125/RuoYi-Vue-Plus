@@ -21,7 +21,7 @@ public interface IDatabusConnectorService {
      * 上传连接器包（zip＝manifest.json + lib/）。
      * <p>
      * 流程：解包校验 manifest（必填/命名/engine 枚举）→ type 冲突检测
-     * （同 type 同 version 报错；升版本＝热更新 def 行，status 保持）→
+     * （同 type 同 version 报错；升版本＝新内容，清 verified 并回 PENDING，旧实例卸下）→
      * 落盘 plugins/{type}/{version}/ → 入库（新 type 默认 PENDING，enable 为显式治理动作）。
      *
      * @param file   连接器包（zip）
@@ -36,6 +36,12 @@ public interface IDatabusConnectorService {
      * 驱动连接管理页 CONNECTOR_OPTIONS 动态化（取代前端硬编码 bpmHttp）。
      */
     List<DatabusConnectorDefVo> listDefs();
+
+    /**
+     * 我的已装连接器（当前用户有安装记录且已启用）。
+     * 已装管理列表和建链选连接器用，没装过的不会出现。
+     */
+    List<DatabusConnectorDefVo> listMyDefs();
 
     /**
      * 审核启用（ENABLED，§1.3）：提交人 ≠ 审批人，勾 verified 才可启用；
@@ -70,12 +76,20 @@ public interface IDatabusConnectorService {
     Boolean uninstall(String type, boolean force);
 
     /**
-     * 下载原包（审核「看得见」§2.3）：返回 plugins/{type}/{version}/connector-package.zip 字节。
+     * 下载原包（审核「看得见」§2.3）：返回 plugins/{type}/{version}/{artifact}-{version}.zip 字节。
      *
      * @param type    连接器类型键
      * @param version 包版本号
      */
     byte[] readPackage(String type, String version);
+
+    /**
+     * 包文件名（{@code {artifact}-{version}.zip}），下载附件的文件名与落盘/构建产物同一规则。
+     *
+     * @param type    连接器类型键
+     * @param version 包版本号
+     */
+    String packageFileName(String type, String version);
 
     /**
      * 包内清单 + 关键实现类反编译预览（审核「看得见」§2.3）。

@@ -1,4 +1,5 @@
 {
+  "artifact": "${project.artifactId}",
   "type": "jdbc-mysql",
   "label": "MySQL JDBC 连接器",
   "icon": "ph:database",

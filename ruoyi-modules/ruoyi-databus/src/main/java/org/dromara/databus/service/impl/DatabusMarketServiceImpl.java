@@ -18,6 +18,7 @@ import org.dromara.databus.market.MarketPublishService;
 import org.dromara.databus.market.MarketQueryService;
 import org.dromara.databus.service.IDatabusMarketService;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -83,8 +84,13 @@ public class DatabusMarketServiceImpl implements IDatabusMarketService {
     }
 
     @Override
-    public Boolean publish(MarketPublishBo bo, Long userId, String ownerCode) {
+    public Long publish(MarketPublishBo bo, Long userId, String ownerCode) {
         return publishService.publish(bo, userId, ownerCode);
+    }
+
+    @Override
+    public Long publishConnector(MultipartFile file, MarketPublishBo bo, Long userId, String ownerCode) {
+        return publishService.publishConnector(file, bo, userId, ownerCode);
     }
 
     @Override

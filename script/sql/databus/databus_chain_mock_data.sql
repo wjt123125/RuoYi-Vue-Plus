@@ -218,7 +218,7 @@ values
 --   2) databus_connection.sql 的 1762000000000020003 行已灌入（jdbc-mysql-demo，enabled=Y）；
 --   3) jdbc-mysql 连接器已装载：dev 走 application-dev.yml 的 dev-plugin-dir（需先
 --      mvn -pl databus-connectors/databus-connector-jdbc-mysql -am package -DskipTests
---      把驱动放进 target/lib），生产走物料市场上传 connector-package.zip 并启用。
+--      把驱动放进 target/lib），生产走物料市场上传 {artifact}-{version}.zip 包并启用。
 -- 六条都是草稿（status=DRAFT），发布走前端/接口 publish。归属 test（同大多数种子链）。
 -- 验收看执行记录的数据空间，不用另配 setValue：
 --   dbQuery   → 按 resultMode 只有一组：rows → $.<tag>.rows/.rowCount/.columns；

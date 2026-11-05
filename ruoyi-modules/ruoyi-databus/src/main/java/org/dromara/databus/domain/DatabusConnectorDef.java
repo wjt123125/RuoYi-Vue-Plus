@@ -69,6 +69,12 @@ public class DatabusConnectorDef {
     private String source;
 
     /**
+     * 归属类型（SYSTEM 系统资源 / USER 用户资源；上架权限判据，2026-11-05 增）。
+     * 连接器零内置，UPLOAD 行恒为 USER；DEV 行亦为 USER（归属开发者）。
+     */
+    private String ownerType;
+
+    /**
      * 信任档（审批人审核时勾选，§1.3；true 放开试连异常回显与私网豁免）
      */
     private Boolean verified;

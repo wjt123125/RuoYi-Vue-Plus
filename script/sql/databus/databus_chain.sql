@@ -24,6 +24,7 @@ create table databus_chain (
     is_template       char(1)         default '0'                comment '是否精选模板（0否 1是，2026-09-30 增；模板恒为草稿，不可发布）',
     template_desc     varchar(500)    default null               comment '模板说明（适用场景/前置条件，模板库卡片展示，标记模板时必填）',
     template_sort     int(11)         default 0                  comment '模板排序（升序，值小在前，默认 0；同值按 update_time desc）',
+    owner_type        varchar(16)     not null default 'USER'    comment '归属类型（SYSTEM 系统资源/USER 用户资源；上架权限判据，2026-11-05 增）',
     create_dept       bigint(20)      default null               comment '创建部门',
     create_by         bigint(20)      default null              comment '创建者',
     create_time       datetime        default null              comment '创建时间',

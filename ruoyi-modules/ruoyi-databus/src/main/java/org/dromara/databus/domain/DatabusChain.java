@@ -119,6 +119,12 @@ public class DatabusChain extends BaseEntity {
     private Integer templateSort;
 
     /**
+     * 归属类型（SYSTEM 系统资源 / USER 用户资源；上架权限判据，2026-11-05 增）。
+     * 平台内置模板为 SYSTEM，用户创建的链路为 USER。
+     */
+    private String ownerType;
+
+    /**
      * 删除标志（0存在 1删除）
      */
     @TableLogic

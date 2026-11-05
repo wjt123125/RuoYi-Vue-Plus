@@ -18,6 +18,7 @@ import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.domain.SysDatabusConnection;
 import org.dromara.databus.domain.vo.DatabusConnectorDefVo;
 import org.dromara.databus.enums.ConnectorDefStatusEnum;
+import org.dromara.databus.enums.OwnerTypeEnum;
 import org.dromara.databus.market.support.MarketStates;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
@@ -242,6 +243,7 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             // 审核即信任（§15.11）：新包默认未启用，enable 是治理者显式动作
             row.setStatus(ConnectorDefStatusEnum.PENDING.getCode());
             row.setSource(SOURCE_UPLOAD);
+            row.setOwnerType(OwnerTypeEnum.USER.getCode());
             row.setCreateBy(userId);
             row.setCreateTime(now);
             row.setUpdateTime(now);
@@ -257,9 +259,15 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             existing.setPackagePath(packagePath);
             // 接管 DEV 行：来源改回 UPLOAD，否则查看包仍按 dev 行拒绝、下次重启 dev 目录又会把它抢回去
             existing.setSource(SOURCE_UPLOAD);
+            existing.setOwnerType(OwnerTypeEnum.USER.getCode());
             existing.setVerified(Boolean.FALSE);
             existing.setStatus(ConnectorDefStatusEnum.PENDING.getCode());
             existing.setUpdateTime(now);
+            // DEV 行由启动时自动登记，create_by 为空；接管后上传人即所有者，
+            // 必须写入 create_by，否则 publish 的「只能上架属于自己的资源」校验过不了
+            if (existing.getCreateBy() == null) {
+                existing.setCreateBy(userId);
+            }
             defMapper.updateById(existing);
             offlineMarketItems(existing);
             pluginManager.broadcastSuspend(existing.getType());

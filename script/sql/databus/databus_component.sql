@@ -46,6 +46,7 @@ create table databus_component (
     deprecated        char(1)         default '0'               comment '废弃标记（0正常 1废弃；废弃件老链路可见、面板置灰）【治理】',
     deprecate_note    varchar(200)    default null              comment '废弃提示文案（引导替代组件）【治理】',
     doc_url           varchar(255)    default null              comment '文档链接（wiki 锚点或外部 URL）【治理】',
+    owner_type        varchar(16)     not null default 'USER'   comment '归属类型（SYSTEM 系统资源/USER 用户资源；上架权限判据，2026-11-05 增）',
     create_dept       bigint(20)      default null              comment '创建部门',
     create_by         bigint(20)      default null              comment '创建者',
     create_time       datetime        default null              comment '创建时间',

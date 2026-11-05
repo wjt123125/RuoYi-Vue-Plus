@@ -15,6 +15,9 @@
 -- manifest_snapshot 存 zip 内 manifest.json 原文（text）：type/label/icon/version/engine/
 --   configSchema/operations（字段对齐 ConnectorDescriptor + engine/version，§15.1）。
 -- source：UPLOAD（市场 tab 内上传入口）/ MARKET（enable 型安装分支）/ AI / ADMIN / DEV（dev 目录装载）。
+-- owner_type：SYSTEM（系统资源，仅治理角色可上架）/ USER（用户资源，仅作者可上架）。
+--   连接器零内置，UPLOAD 行恒为 USER；DEV 行虽由启动时装载，但归属开发者，亦为 USER。
+--   上架权限以 owner_type 为准，不依赖 create_by（审计字段仅作审计用途）。
 -- 精简列：create_by + create_time/update_time，无 update_by、无逻辑删除（卸载即物理删行+删包）。
 -- ----------------------------
 drop table if exists databus_connector_def;
@@ -27,6 +30,7 @@ create table databus_connector_def (
     package_path        varchar(255) default null              comment 'zip 落盘目录（plugins/{type}/{version}）',
     status              varchar(16)  not null                  comment '运行层状态（PENDING / ENABLED / DISABLED / DEPRECATED）',
     source              varchar(16)  not null                  comment '来源（MARKET / UPLOAD / AI / ADMIN / DEV）',
+    owner_type          varchar(16)  not null default 'USER'   comment '归属类型（SYSTEM 系统资源/USER 用户资源；上架权限判据，2026-11-05 增）',
     verified            tinyint(1)   not null default 0        comment '信任档（审批人审核时勾选，§1.3；true 放开试连异常回显与私网豁免）',
     create_by           bigint(20)   default null              comment '上传者id',
     create_time         datetime     default null              comment '创建时间',

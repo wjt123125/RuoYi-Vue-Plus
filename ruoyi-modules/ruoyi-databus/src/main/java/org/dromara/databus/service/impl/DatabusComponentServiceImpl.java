@@ -25,6 +25,7 @@ import org.dromara.databus.domain.DatabusComponentVersion;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
 import org.dromara.databus.enums.ComponentStatusEnum;
+import org.dromara.databus.enums.OwnerTypeEnum;
 import org.dromara.databus.domain.bo.ScriptSaveBo;
 import org.dromara.databus.domain.vo.ComponentDomainVo;
 import org.dromara.databus.domain.vo.ComponentGroupVo;
@@ -232,6 +233,7 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
         if (StringUtils.isBlank(add.getDeprecated())) {
             add.setDeprecated(DEPRECATED_NO);
         }
+        add.setOwnerType(OwnerTypeEnum.USER.getCode());
         boolean flag = componentMapper.insert(add) > 0;
         if (flag) {
             bo.setId(add.getId());

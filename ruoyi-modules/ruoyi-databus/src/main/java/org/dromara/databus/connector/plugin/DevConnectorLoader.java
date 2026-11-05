@@ -10,6 +10,7 @@ import org.dromara.databus.connector.ConnectorManifest;
 import org.dromara.databus.connector.ConnectorRegistry;
 import org.dromara.databus.domain.DatabusConnectorDef;
 import org.dromara.databus.enums.ConnectorDefStatusEnum;
+import org.dromara.databus.enums.OwnerTypeEnum;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -315,6 +316,7 @@ public class DevConnectorLoader {
             row.setPackagePath(packagePath);
             row.setStatus(ConnectorDefStatusEnum.ENABLED.getCode());
             row.setSource(SOURCE_DEV);
+            row.setOwnerType(OwnerTypeEnum.USER.getCode());
             row.setCreateTime(now);
             row.setUpdateTime(now);
             defMapper.insert(row);
@@ -326,6 +328,7 @@ public class DevConnectorLoader {
         existing.setPackagePath(packagePath);
         existing.setStatus(ConnectorDefStatusEnum.ENABLED.getCode());
         existing.setSource(SOURCE_DEV);
+        existing.setOwnerType(OwnerTypeEnum.USER.getCode());
         existing.setUpdateTime(now);
         defMapper.updateById(existing);
     }

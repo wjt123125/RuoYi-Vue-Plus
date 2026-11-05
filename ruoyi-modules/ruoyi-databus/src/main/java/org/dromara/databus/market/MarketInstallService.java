@@ -18,6 +18,7 @@ import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.enums.ChainStatusEnum;
 import org.dromara.databus.enums.ComponentStatusEnum;
 import org.dromara.databus.enums.ConnectorDefStatusEnum;
+import org.dromara.databus.enums.OwnerTypeEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
@@ -314,6 +315,7 @@ public class MarketInstallService {
         copy.setInputParams(sourceChain.getInputParams());
         copy.setDirectoryId(targetDirectoryId);
         copy.setIsTemplate(TEMPLATE_FLAG_NO);
+        copy.setOwnerType(OwnerTypeEnum.USER.getCode());
         copy.setRemark(sourceChain.getRemark());
         // 记下是从哪条源链复制来的（decisions §十四-2/5）：主链副本和跟着复制的子链副本
         // 都填 source_chain_id（靠编码认不出来的老数据就靠这个字段认）

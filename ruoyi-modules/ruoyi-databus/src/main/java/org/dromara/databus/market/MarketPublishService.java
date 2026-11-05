@@ -10,6 +10,7 @@ import org.dromara.databus.domain.DatabusComponent;
 import org.dromara.databus.domain.DatabusConnectorDef;
 import org.dromara.databus.domain.DatabusInstall;
 import org.dromara.databus.enums.ConnectorDefStatusEnum;
+import org.dromara.databus.enums.OwnerTypeEnum;
 import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.domain.bo.MarketPublishBatchBo;
 import org.dromara.databus.domain.bo.MarketPublishBo;
@@ -141,6 +142,8 @@ public class MarketPublishService {
         String icon = null;
         String color = null;
         Long sourceCreateBy;
+        // 归属类型（SYSTEM/USER）：上架权限判据（系统/用户归属由显式字段决定，不借用审计字段 create_by）
+        String sourceOwnerType;
         // 主链的源行（只有 CHAIN 才不为空）：方法末尾要按它查依赖清单补审核单，先存下来
         DatabusChain chainSource = null;
         if (TYPE_CHAIN.equals(resourceType)) {
@@ -151,6 +154,7 @@ public class MarketPublishService {
             sourceCode = source.getChainCode();
             name = source.getChainName();
             sourceCreateBy = source.getCreateBy();
+            sourceOwnerType = source.getOwnerType();
             chainSource = source;
         } else if (TYPE_COMPONENT.equals(resourceType)) {
             DatabusComponent source = componentMapper.selectById(bo.getSourceId());
@@ -162,6 +166,7 @@ public class MarketPublishService {
             icon = source.getIcon();
             color = source.getColor();
             sourceCreateBy = source.getCreateBy();
+            sourceOwnerType = source.getOwnerType();
         } else if (TYPE_CONNECTOR.equals(resourceType)) {
             // 连接器（§15.7）：sourceId 就是 databus_connector_def 的行 id；编码用它全局唯一的 type，
             // 名字和图标从 def 行存的 manifest 快照里取（上传的时候已经校验过不为空）
@@ -184,12 +189,15 @@ public class MarketPublishService {
             }
             icon = blankToNull(manifest.path("icon").asText(null));
             sourceCreateBy = source.getCreateBy();
+            sourceOwnerType = source.getOwnerType();
         } else {
             throw new ServiceException("不支持的物料类型：" + resourceType);
         }
-        // 检查有没有权限上架（§七 7.1）：系统资源（create_by 为空）只有带审核权限的人能上架，
-        // 其余资源只有作者本人能上架
-        if (sourceCreateBy == null) {
+        // 上架权限（§七 7.1）：
+        //   ① owner_type=SYSTEM 的系统资源，只有带 databus:market:review 权限的治理角色能上架；
+        //   ② 其余资源（owner_type=USER）只有 create_by 指向的作者本人能上架。
+        // 系统/用户归属由显式 owner_type 字段决定，不借用审计字段 create_by。
+        if (OwnerTypeEnum.SYSTEM.getCode().equals(sourceOwnerType)) {
             if (!StpUtil.hasPermission("databus:market:review")) {
                 throw new ServiceException("系统组件仅治理角色可上架");
             }
@@ -292,8 +300,8 @@ public class MarketPublishService {
      * （collectChainClosure ＋ ChainForkRedirector.collectComponentCodes）。
      * <p>
      * 两种情况跳过不补：① 市场里已经有这个资源的审核单了（不管是谁的、什么状态）——
-     * 不重复生成，谁的单子谁自己审；② 不是本人的资源（create_by 为空＝系统资源，或者属于别人）——
-     * 不替别人上架，这种依赖到审核通过那一步会照常报错并说出具体名字。
+     * 不重复生成，谁的单子谁自己审；② 不是本人的资源（系统资源 owner_type=SYSTEM，
+     * 或 create_by 属于别人）——不替别人上架，这种依赖到审核通过那一步会照常报错并说出具体名字。
      * 自动补的单子 summary/category/tags 留空（作者没填过），作者可以在「我的上架」里补完再重新提交。
      */
     private void autoPublishClosureDeps(DatabusChain root, Long userId, String ownerCode, LocalDateTime now) {
@@ -402,7 +410,7 @@ public class MarketPublishService {
             throw new ServiceException("不能审核自己上架的物料");
         }
         // 通过审核前先查依赖（decisions §十四-7）：approved 且是 CHAIN 时，依赖清单里全部依赖
-        // （链和组件，系统组件也算——全部都查，create_by 为空的系统资源不例外）市场状态必须是 ONLINE。
+        // （链和组件，owner_type=SYSTEM 的系统资源也算——全部都查，一个不放过）市场状态必须是 ONLINE。
         // 不满足就不给通过：主链上架以后，如果子物料被别人下架或驳回、变得查不到了，
         // 审核人这时候点通过就等于确认了一个「装出去必然坏」的物料（别人安装时会被依赖检查拒掉）。
         // 驳回、以及不是 CHAIN 的物料，都不做这个检查
@@ -703,7 +711,7 @@ public class MarketPublishService {
 
     /**
      * 通过审核前先查依赖（decisions §十四-7）：一条链路要审核通过，它依赖清单里的
-     * 全部依赖（链和组件都算，create_by 为空的系统资源也算，一个都不放过）
+     * 全部依赖（链和组件都算，owner_type=SYSTEM 的系统资源也算，一个都不放过）
      * 市场状态必须都是 ONLINE。
      * <p>
      * 和安装侧的 {@link MarketInstallService#validateClosureOnMarket} 分工不同：

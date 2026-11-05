@@ -3,6 +3,7 @@ package org.dromara.databus.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import cn.dev33.satoken.stp.StpUtil;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
@@ -27,6 +28,7 @@ import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.context.InputParamValidator;
 import org.dromara.databus.enums.ChainStatusEnum;
 import org.dromara.databus.enums.LogLevelEnum;
+import org.dromara.databus.enums.OwnerTypeEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
@@ -225,6 +227,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         add.setStatus(ChainStatusEnum.DRAFT.getCode());
         // 新建即普通链路：模板标记只能经模板专用端点打在已有链路上
         add.setIsTemplate(TEMPLATE_FLAG_NO);
+        add.setOwnerType(OwnerTypeEnum.USER.getCode());
         add.setElExpression(generateEl(bo));
         // cmpProperty 由 MapstructUtils 按同名同类型直接拷贝；持久化时 TypeHandler 转 JSON
         boolean flag = chainMapper.insert(add) > 0;
@@ -241,9 +244,14 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
             throw new ServiceException("链路不存在或已删除");
         }
         // 编辑归属校验（P1 看得见配套）：审核者可从审核详情打开他人链路画布查看，
-        // 只读态由前端禁保存，保存的硬拦截在服务端——create_by 非空且非本人拒改；
-        // 系统行（create_by 空）不拦，避免误伤系统数据维护
-        if (existing.getCreateBy() != null && !Objects.equals(existing.getCreateBy(), userId)) {
+        // 只读态由前端禁保存，保存的硬拦截在服务端——
+        //   ① 系统资源（owner_type=SYSTEM）仅带 databus:market:review 权限的治理角色可改；
+        //   ② 用户资源仅 create_by 指向的作者本人可改。
+        if (OwnerTypeEnum.SYSTEM.getCode().equals(existing.getOwnerType())) {
+            if (!StpUtil.hasPermission("databus:market:review")) {
+                throw new ServiceException("系统链路仅治理角色可修改");
+            }
+        } else if (!Objects.equals(existing.getCreateBy(), userId)) {
             throw new ServiceException("只能修改自己创建的链路");
         }
         validateChainCodeUnique(bo);
@@ -803,6 +811,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         add.setRemark(source.getRemark());
         // 有意剥离模板身份：副本一律普通链路（说明/排序不继承，new 实体为 null，标记显式置 0）
         add.setIsTemplate(TEMPLATE_FLAG_NO);
+        add.setOwnerType(OwnerTypeEnum.USER.getCode());
         // 草稿不推 Rule-DB；与新增草稿同口径，EL 由组件树实时生成而非复制源 EL 文本
         add.setElExpression(generateEl(source.getCmpProperty()));
         chainMapper.insert(add);

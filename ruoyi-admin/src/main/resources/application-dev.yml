@@ -330,11 +330,11 @@ justauth:
 # 逗号分隔多个 target/classes：启动直接从编译输出装载，改代码后调 POST /databus/connector/dev/reload?type=xxx 生效。
 # 仅 dev profile 生效；路径必须是仓库根下级（启动目录也得是仓库根）；首次需先 mvn package 生成 target/lib 里的驱动 jar。
 #
-# 要测上传的 zip 包：注释本行，删记录，重启，上传，再换管理员账号勾「已审核」启用。删记录二选一：
-#   ① 调删除接口 DELETE /databus/connector/defs/{type}（type 为 bpmHttp / jdbc-mysql / jdbc-postgresql），
-#      需带登录 token 与 databus:connector:remove 权限；界面上 dev 行只显示「重载」，没有卸载按钮；
-#   ② 停后端后执行 delete from databus_connector_def where type in ('bpmHttp','jdbc-mysql','jdbc-postgresql');
-# 顺序反了的话，重启会把记录改回 dev，包等于没装。
+# 台账由启动时的对账自动维护：配置里的目录和 databus_connector_def 的 DEV 行严格一致，
+#   配置里没有的 DEV 行会自动删除，不需要手工执行 delete；加回目录并重启即自动登记。
+# 要测上传的 zip 包：把本行注释掉（留空）后重启，DEV 台账自动清空，再上传、
+#   换管理员账号勾「已审核」启用。顺序反了的话（配置还开着就上传），重启会把记录改回 dev，包等于没装。
 databus:
   connector:
-    dev-plugin-dir: databus-connectors/databus-connector-bpm-http/target/classes,databus-connectors/databus-connector-jdbc-pg/target/classes,databus-connectors/databus-connector-jdbc-mysql/target/classes
+    # dev-plugin-dir: databus-connectors/databus-connector-bpm-http/target/classes,databus-connectors/databus-connector-jdbc-pg/target/classes,databus-connectors/databus-connector-jdbc-mysql/target/classes
+    dev-plugin-dir: 

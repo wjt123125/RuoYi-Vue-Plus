@@ -2,7 +2,7 @@
   "artifact": "${project.artifactId}",
   "type": "jdbc-postgresql",
   "label": "PostgreSQL JDBC 连接器",
-  "icon": "ph:database",
+  "icon": "logos:postgresql",
   "version": "1.0.0",
   "engine": "jvm",
   "mainClass": "org.dromara.databus.connector.jdbc.postgresql.PostgresJdbcConnector",

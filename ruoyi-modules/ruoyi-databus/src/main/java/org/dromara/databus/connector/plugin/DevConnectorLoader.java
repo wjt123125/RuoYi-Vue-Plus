@@ -10,9 +10,7 @@ import org.dromara.databus.connector.ConnectorManifest;
 import org.dromara.databus.connector.ConnectorRegistry;
 import org.dromara.databus.domain.DatabusConnectorDef;
 import org.dromara.databus.enums.ConnectorDefStatusEnum;
-import org.dromara.databus.enums.OwnerTypeEnum;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Profile;
 import org.springframework.context.event.EventListener;
@@ -20,7 +18,6 @@ import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -28,11 +25,11 @@ import java.net.URL;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -49,9 +46,12 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>建 {@link PluginClassLoader}，URL 是 {@code target/classes} 加同级 {@code target/lib/*.jar}
  *       （与 §2.4 红线二用同一目录，不另设一套；IDE 编译不生成 lib，故可选）；</li>
  *   <li>{@code Class.forName(manifest.mainClass)} 实例化，注册进 {@link ConnectorRegistry}；</li>
- *   <li>往 {@code databus_connector_def} 写一行 {@code source=DEV / status=ENABLED}，
- *       {@code version} 取 manifest 里的真实版本（DEV 只由来源角标表达，版本列不再写占位值）。
+ *   <li>往 {@code databus_connector_def} 写一行 {@code source=DEV / status=ENABLED}（由
+ *       {@link DevConnectorDefLedger} 承担），
+ *       {@code version} 取 manifest 里的真实版本（DEV 只由来源角标表达）。
  *       <b>不写</b> {@code databus_market_item}——只改运行层，市场层不受影响。</li>
+ *   <li>启动装载完按配置目录对账：配置里已移除的 type 自动删 DEV 行（配置留空即全清），
+ *       保证台账与 {@code dev-plugin-dir} 严格一致，不需要人工清 SQL。</li>
  * </ol>
  *
  * <p>安全边界（§5.3 四条）：
@@ -112,10 +112,14 @@ public class DevConnectorLoader {
     private final ObjectMapper objectMapper;
 
     /**
-     * dev 装载目录（逗号分隔多个 {@code target/classes}）；留空即静默 no-op
+     * 装载目录的配置解析与路径安全校验
      */
-    @Value("${databus.connector.dev-plugin-dir:}")
-    private String devPluginDir;
+    private final DevPluginDirResolver dirResolver;
+
+    /**
+     * DEV 台账写入与对账
+     */
+    private final DevConnectorDefLedger defLedger;
 
     /**
      * type → 装载来源目录，供 reload 反查（只在内存，重启即丢，重启走 loadAll）
@@ -123,24 +127,38 @@ public class DevConnectorLoader {
     private final Map<String, Path> loadedDirs = new ConcurrentHashMap<>();
 
     /**
-     * 启动装载：未配置即静默返回；单个目录装载失败只记 error，不阻断启动
-     * （路径非法属配置错误，按 §5.3 第 3 条直接抛出使启动失败）。
+     * 启动装载：按配置目录装载，装载完成后对账 DEV 台账——
+     * 配置里已经没有的 type 直接删掉 def 行，不需要人工清 SQL。
+     * 单个目录装载失败只记 error，不阻断启动（路径非法属配置错误，按 §5.3 第 3 条直接抛出使启动失败）。
+     *
+     * <p>「配置里有、但装载失败」的行不删：目录和 manifest 都在，说明这个 type 仍是开发中的对象，
+     * 修好后重启即可恢复；只清那些目录已被移出配置的 type（含 {@code dev-plugin-dir} 留空＝清空全部 DEV 行）。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void loadAll() {
-        List<String> dirs = configuredDirs();
+        List<String> dirs = dirResolver.configuredDirs();
+        Set<String> configuredTypes = new LinkedHashSet<>();
         if (dirs.isEmpty()) {
-            return;
+            log.warn("DEV 模式：连接器目录装载未开启（databus.connector.dev-plugin-dir 为空），"
+                + "本次启动会清理残留的 DEV 台账记录");
+        } else {
+            log.warn("DEV 模式：连接器目录装载已开启，配置目录 {} 个（此模式不可用于生产）", dirs.size());
         }
-        log.warn("DEV 模式：连接器目录装载已开启，配置目录 {} 个（此模式不可用于生产）", dirs.size());
         for (String dir : dirs) {
-            Path path = resolveSafeDir(dir);
+            Path path = dirResolver.resolveSafeDir(dir);
+            // 先认 type 再装载：装载失败（驱动缺失、mainClass 报错）时也保留它的台账行，
+            // 否则失败一次就把行删了，列表页连失败原因都看不到
+            String manifestType = defLedger.readManifestTypeQuietly(path);
+            if (manifestType != null) {
+                configuredTypes.add(manifestType);
+            }
             try {
                 loadFrom(path);
             } catch (Exception e) {
                 log.error("DEV 模式：连接器目录装载失败（{}）：{}", path, e.getMessage());
             }
         }
+        defLedger.reconcileDevRows(configuredTypes);
     }
 
     /**
@@ -151,13 +169,13 @@ public class DevConnectorLoader {
      */
     public List<String> reload(String type) {
         if (type == null || type.isBlank()) {
-            List<String> dirs = configuredDirs();
+            List<String> dirs = dirResolver.configuredDirs();
             if (dirs.isEmpty()) {
                 throw new ServiceException("未配置 databus.connector.dev-plugin-dir，无可重载的连接器目录");
             }
             List<String> reloaded = new ArrayList<>();
             for (String dir : dirs) {
-                String loadedType = loadFrom(resolveSafeDir(dir));
+                String loadedType = loadFrom(dirResolver.resolveSafeDir(dir));
                 if (loadedType != null) {
                     reloaded.add(loadedType);
                 }
@@ -182,7 +200,7 @@ public class DevConnectorLoader {
             // 这份清单是进程启动时读 yml 的快照，刚改过配置不重启，看到的永远是旧的，
             // 用户会得出「明明配了却说没配」的错误结论。
             throw new ServiceException("连接器 " + key + " 没从开发目录装载成功，没法重载。"
-                + "本进程认的开发装载目录：" + configuredDirNames() + "。"
+                + "本进程认的开发装载目录：" + dirResolver.configuredDirNames() + "。"
                 + "如果刚改过 application-dev.yml 的 databus.connector.dev-plugin-dir，要先重启后端才会生效；"
                 + "配置没问题就是该连接器上一次装载失败了，原因见连接器市场里它那一行的状态提示。");
         }
@@ -286,114 +304,11 @@ public class DevConnectorLoader {
             throw e;
         }
 
-        upsertDef(existing, type, manifest, manifestJson, classesDir);
+        defLedger.upsertDef(existing, type, manifest, manifestJson, classesDir);
         loadedDirs.put(type, classesDir);
         log.warn("DEV 模式：连接器 {} 已从目录装载（{}，classpath 条目 {} 个），此模式不可用于生产",
             type, classesDir, urls.size());
         return type;
-    }
-
-    /**
-     * 写运行层台账：新增行不设 {@code verified}（走 DB 默认 0）与 {@code createBy}；
-     * 更新已有行只刷 version/engine/manifest/package_path/status/source，
-     * <b>不触碰 verified</b>（§1.3：信任档由审批人勾选，不由 source 自动推导）。
-     *
-     * <p>{@code package_path} 写 class 目录的父目录（{@code target}），与列定义一致
-     * （该列是「zip 落盘目录」，{@code mvn package} 产出的 {artifact}-{version}.zip 就在这一层）。
-     * dev 装载自己不读这一列（目录来自配置项 dev-plugin-dir），写对它是为了让
-     * 「package_path + manifest 推导出的文件名 = zip 全路径」这条算法对全表都成立，不必按来源分支。
-     */
-    private void upsertDef(DatabusConnectorDef existing, String type, ConnectorManifest manifest,
-                           String manifestJson, Path classesDir) {
-        LocalDateTime now = LocalDateTime.now();
-        String packagePath = classesDir.getParent().toString().replace('\\', '/');
-        if (existing == null) {
-            DatabusConnectorDef row = new DatabusConnectorDef();
-            row.setType(type);
-            row.setVersion(manifest.getVersion());
-            row.setEngine(manifest.getEngine());
-            row.setManifestSnapshot(manifestJson);
-            row.setPackagePath(packagePath);
-            row.setStatus(ConnectorDefStatusEnum.ENABLED.getCode());
-            row.setSource(SOURCE_DEV);
-            row.setOwnerType(OwnerTypeEnum.USER.getCode());
-            row.setCreateTime(now);
-            row.setUpdateTime(now);
-            defMapper.insert(row);
-            return;
-        }
-        existing.setVersion(manifest.getVersion());
-        existing.setEngine(manifest.getEngine());
-        existing.setManifestSnapshot(manifestJson);
-        existing.setPackagePath(packagePath);
-        existing.setStatus(ConnectorDefStatusEnum.ENABLED.getCode());
-        existing.setSource(SOURCE_DEV);
-        existing.setOwnerType(OwnerTypeEnum.USER.getCode());
-        existing.setUpdateTime(now);
-        defMapper.updateById(existing);
-    }
-
-    /**
-     * 路径安全校验（§5.3 第 3 条）：拒绝 {@code ..}、UNC、跨盘符，
-     * canonical 后必须是项目根（{@code user.dir}）的下级路径。
-     */
-    private Path resolveSafeDir(String raw) {
-        String text = raw == null ? "" : raw.trim();
-        if (text.contains("..")) {
-            throw new ServiceException("dev 装载目录不允许含 ..：" + text);
-        }
-        String canonical;
-        String rootCanonical;
-        try {
-            canonical = Paths.get(text).toAbsolutePath().toFile().getCanonicalPath();
-            rootCanonical = new File(System.getProperty("user.dir")).getCanonicalPath();
-        } catch (IOException | RuntimeException e) {
-            throw new ServiceException("dev 装载目录路径解析失败（" + text + "）：" + e.getMessage());
-        }
-        if (canonical.startsWith("\\\\")) {
-            throw new ServiceException("dev 装载目录不允许 UNC 路径：" + text);
-        }
-        if (!canonical.startsWith(rootCanonical + File.separator)) {
-            throw new ServiceException("dev 装载目录必须是项目根的下级路径（§5.3 路径限制）：目录 "
-                + canonical + "，项目根 " + rootCanonical);
-        }
-        return new File(canonical).toPath();
-    }
-
-    /**
-     * 配置值切目录列表（逗号分隔，忽略空白项）。
-     */
-    private List<String> configuredDirs() {
-        List<String> dirs = new ArrayList<>();
-        if (devPluginDir == null || devPluginDir.isBlank()) {
-            return dirs;
-        }
-        for (String item : devPluginDir.split(",")) {
-            if (!item.isBlank()) {
-                dirs.add(item.trim());
-            }
-        }
-        return dirs;
-    }
-
-    /**
-     * 配置目录的可读名（给人看的报错用）：从 {@code .../databus-connector-jdbc-pg/target/classes}
-     * 里取 {@code target} 的上一级，即 maven 模块名；取不到 target 就退化成末段目录名。
-     */
-    private String configuredDirNames() {
-        List<String> names = new ArrayList<>();
-        for (String dir : configuredDirs()) {
-            String[] segs = dir.trim().replace('\\', '/').split("/");
-            String name = segs[segs.length - 1];
-            for (int i = 1; i < segs.length - 1; i++) {
-                if ("target".equals(segs[i])) {
-                    name = segs[i - 1];
-                    break;
-                }
-            }
-            names.add(name);
-        }
-        return names.isEmpty() ? "（未配置）" : String.join("、", names);
     }
 
     /**

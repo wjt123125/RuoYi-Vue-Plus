@@ -2,7 +2,7 @@
   "artifact": "${project.artifactId}",
   "type": "jdbc-mysql",
   "label": "MySQL JDBC 连接器",
-  "icon": "ph:database",
+  "icon": "logos:mysql",
   "version": "1.0.0",
   "engine": "jvm",
   "mainClass": "org.dromara.databus.connector.jdbc.mysql.MysqlJdbcConnector",

@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * 市场分类视图对象（多级平表，前端组树）
@@ -37,7 +38,17 @@ public class DatabusMarketCategoryVo implements Serializable {
     private Integer sort;
 
     /**
-     * 分类下物料数（在线物料统计，chips 用）
+     * 适用物料类型（COMPONENT / CHAIN / CONNECTOR；空串＝通用）
+     */
+    private String resourceType;
+
+    /**
+     * 推荐标签（发布页标签候选池的分类侧补充值）
+     */
+    private List<String> defaultTags;
+
+    /**
+     * 分类下物料数（不限状态：治理侧据此判断能否直接删 / 只能合并）
      */
     private Long itemCount;
 

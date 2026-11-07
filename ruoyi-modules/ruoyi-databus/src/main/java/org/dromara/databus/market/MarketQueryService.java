@@ -116,17 +116,17 @@ public class MarketQueryService {
     }
 
     /**
-     * 分类列表，每个分类带上「在线物料有多少个」（前端分类标签上的数字角标要用）。
+     * 分类列表，每个分类带上「挂在这个分类下的物料有多少个」。
+     * 计数含下线物料：治理侧靠它判断「能否直接删 / 只能合并」，挂了下线物料同样算占用。
      */
     public List<DatabusMarketCategoryVo> queryCategories() {
         List<DatabusMarketCategory> categories = marketCategoryMapper.selectList(Wrappers.<DatabusMarketCategory>lambdaQuery()
             .orderByAsc(DatabusMarketCategory::getSort).orderByAsc(DatabusMarketCategory::getId));
-        // 查在线物料，按分类数一数各有多少个（给前端分类标签上的数字角标用）
-        List<DatabusMarketItem> online = marketItemMapper.selectList(Wrappers.<DatabusMarketItem>lambdaQuery()
+        // 按分类数一数各有多少个（不限状态——下线物料仍占用分类归属）
+        List<DatabusMarketItem> all = marketItemMapper.selectList(Wrappers.<DatabusMarketItem>lambdaQuery()
             .select(DatabusMarketItem::getCategoryId)
-            .eq(DatabusMarketItem::getStatus, STATUS_ONLINE)
             .isNotNull(DatabusMarketItem::getCategoryId));
-        Map<Long, Long> countMap = online.stream()
+        Map<Long, Long> countMap = all.stream()
             .map(DatabusMarketItem::getCategoryId)
             .filter(Objects::nonNull)
             .collect(Collectors.groupingBy(id -> id, Collectors.counting()));
@@ -136,6 +136,8 @@ public class MarketQueryService {
             vo.setParentId(category.getParentId());
             vo.setName(category.getName());
             vo.setSort(category.getSort());
+            vo.setResourceType(category.getResourceType());
+            vo.setDefaultTags(category.getDefaultTags());
             vo.setItemCount(countMap.getOrDefault(category.getId(), 0L));
             return vo;
         }).toList();

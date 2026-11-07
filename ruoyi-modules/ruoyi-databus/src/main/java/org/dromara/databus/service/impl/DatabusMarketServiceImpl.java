@@ -3,6 +3,8 @@ package org.dromara.databus.service.impl;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.dromara.databus.domain.bo.MarketCategoryBo;
+import org.dromara.databus.domain.bo.MarketCategoryMergeBo;
 import org.dromara.databus.domain.bo.MarketInstallMoveBo;
 import org.dromara.databus.domain.bo.MarketPublishBatchBo;
 import org.dromara.databus.domain.bo.MarketPublishBo;
@@ -13,6 +15,7 @@ import org.dromara.databus.domain.vo.DatabusMarketInstallVo;
 import org.dromara.databus.domain.vo.DatabusMarketItemVo;
 import org.dromara.databus.domain.vo.DatabusMarketPreviewVo;
 import org.dromara.databus.domain.vo.DatabusMarketReviewDetailVo;
+import org.dromara.databus.market.MarketCategoryService;
 import org.dromara.databus.market.MarketInstallService;
 import org.dromara.databus.market.MarketPublishService;
 import org.dromara.databus.market.MarketQueryService;
@@ -48,6 +51,8 @@ public class DatabusMarketServiceImpl implements IDatabusMarketService {
 
     private final MarketPublishService publishService;
 
+    private final MarketCategoryService categoryService;
+
     @Override
     public PageResult<DatabusMarketItemVo> queryPageList(MarketQueryBo bo, PageQuery pageQuery, Long userId) {
         return queryService.queryPageList(bo, pageQuery, userId);
@@ -56,6 +61,26 @@ public class DatabusMarketServiceImpl implements IDatabusMarketService {
     @Override
     public List<DatabusMarketCategoryVo> queryCategories() {
         return queryService.queryCategories();
+    }
+
+    @Override
+    public Long createCategory(MarketCategoryBo bo) {
+        return categoryService.create(bo);
+    }
+
+    @Override
+    public Boolean updateCategory(Long id, MarketCategoryBo bo) {
+        return categoryService.update(id, bo);
+    }
+
+    @Override
+    public Boolean deleteCategory(Long id) {
+        return categoryService.delete(id);
+    }
+
+    @Override
+    public Boolean mergeCategory(Long id, MarketCategoryMergeBo bo) {
+        return categoryService.merge(id, bo);
     }
 
     @Override

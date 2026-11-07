@@ -2,6 +2,8 @@ package org.dromara.databus.service;
 
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.dromara.databus.domain.bo.MarketCategoryBo;
+import org.dromara.databus.domain.bo.MarketCategoryMergeBo;
 import org.dromara.databus.domain.bo.MarketInstallMoveBo;
 import org.dromara.databus.domain.bo.MarketPublishBatchBo;
 import org.dromara.databus.domain.bo.MarketPublishBo;
@@ -32,9 +34,29 @@ public interface IDatabusMarketService {
     PageResult<DatabusMarketItemVo> queryPageList(MarketQueryBo bo, PageQuery pageQuery, Long userId);
 
     /**
-     * 分类列表（多级平表，含在线物料计数）
+     * 分类列表（多级平表，带物料计数：不限状态，治理侧据此判断能否直接删）
      */
     List<DatabusMarketCategoryVo> queryCategories();
+
+    /**
+     * 新增分类（治理动作）
+     */
+    Long createCategory(MarketCategoryBo bo);
+
+    /**
+     * 改名 / 排序（适用类型不改）
+     */
+    Boolean updateCategory(Long id, MarketCategoryBo bo);
+
+    /**
+     * 删除分类（仅限没有物料挂在它下面的分类）
+     */
+    Boolean deleteCategory(Long id);
+
+    /**
+     * 合并分类：物料整批迁到目标分类（目标为空＝未分类）后删源分类
+     */
+    Boolean mergeCategory(Long id, MarketCategoryMergeBo bo);
 
     /**
      * 物料详情（在线或本人可见；回填是否已装）

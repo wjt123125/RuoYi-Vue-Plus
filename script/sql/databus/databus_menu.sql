@@ -114,6 +114,7 @@ insert into sys_menu values (1761400000000020020, '市场卸载', 17614000000000
 insert into sys_menu values (1761400000000020021, '市场上架', 1761400000000020000, 43, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:publish', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '提交上架（进待审）+ 下架');
 insert into sys_menu values (1761400000000020022, '市场审核', 1761400000000020000, 44, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:review', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '审核（通过→上线 / 驳回→驳回态）');
 insert into sys_menu values (1761400000000020023, '市场删除', 1761400000000020000, 45, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:remove', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '删市场原件（作者主权；与卸载分离）');
+insert into sys_menu values (1761400000000020031, '物料分类治理', 1761400000000020000, 50, '', '', '', 'N', 'Y', 'F', '0', '0', 'databus:market:category', '#', '', '', NULL, NULL, sysdate(), NULL, NULL, '分类增删改与合并（POST/PUT/DELETE /databus/market/categories；物料管理 tab「物料分类」视角）');
 
 -- ----------------------------
 -- ⑦+ 连接器（order 46~49；万物皆包 §十五，databus_connector.sql 配套）

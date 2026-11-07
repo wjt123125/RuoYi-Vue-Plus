@@ -1,7 +1,7 @@
 -- ----------------------------
 -- 物料市场脚本 databus_market.sql（2026-10-18 物料市场，databus-material-market.md §十/§十一/§十三）
 -- 承载工作台内「市场」tab 的唯一后端三表（市场菜单 F 行正本见 script/sql/databus_menu.sql）：
---   ① databus_market_item      集市货架（一行＝一个已上架的组件/链路 + 展示信息 + 状态机 + 三计数缓存）
+--   ① databus_market_item      集市货架（一行＝一个已上架的组件/链路/连接器 + 展示信息 + 状态机 + 三计数缓存）
 --   ② databus_market_category  分类目录（多级平表，parent_id 自引用，前端组树）
 --   ③ databus_install  owner→source 引用记录（安装＝fork 血缘；同构承载收藏星标）
 -- 执行顺序：本脚本（DDL+种子）与 databus_menu.sql（菜单全量重建）相互独立，任意先后。
@@ -17,6 +17,9 @@
 --      仅 create_time/update_time；删原件即物理删（作者主权，§八）。
 --   ④ databus_market_item 增 review_by bigint / review_time datetime：承载审核人与审核时间（正本 §七 7.1
 --      审核可追溯 + 禁自审；来源资源归属校验在服务层做，不落表）。
+--   ⑤ databus_market_category 增 resource_type varchar(16)：分类按物料类型隔离，空串＝通用（三类分段都出现）。
+--   ⑥ databus_market_category 增 default_tags varchar(500)：分类的推荐标签（JSON 数组），
+--      发布页标签候选池＝分类下物料 tags ∪ default_tags，空分类（尤其连接器）也能给出候选值。
 -- ----------------------------
 
 -- ----------------------------
@@ -30,7 +33,7 @@ create table databus_market_item (
     id                  bigint(20)   not null                  comment '主键id',
     owner_id            bigint(20)   not null                  comment '上架者id（命名空间键）',
     owner_code          varchar(64)  not null                  comment '上架者展示码（登录名，code_display 前缀）',
-    resource_type       varchar(16)  not null                  comment '物料类型（COMPONENT / CHAIN）',
+    resource_type       varchar(16)  not null                  comment '物料类型（COMPONENT / CHAIN / CONNECTOR）',
     source_id           bigint(20)   not null                  comment '源资源id（链路主键 / 组件DB行id）',
     code_display        varchar(164) not null                  comment '展示码 {ownerCode}/{sourceCode}（人看）',
     name                varchar(100) not null                  comment '名称（上架时取自源资源）',
@@ -65,8 +68,11 @@ create table databus_market_category (
     parent_id   bigint(20)   default 0                 comment '父分类id（0=根，自引用多级）',
     name        varchar(100) not null                  comment '分类名称',
     sort        int(11)      default 0                 comment '排序（升序，值小在前，默认 0）',
+    resource_type varchar(16) default ''               comment '适用物料类型（COMPONENT / CHAIN / CONNECTOR；空＝通用）',
+    default_tags  varchar(500) default null            comment '推荐标签（JSON 数组文本；发布页标签候选池的分类侧补充值）',
     primary key (id),
-    key idx_market_category_parent (parent_id)
+    key idx_market_category_parent (parent_id),
+    key idx_market_category_type (resource_type, sort)
 ) engine=innodb comment='物料市场分类（多级平表，前端组树）';
 
 -- ----------------------------
@@ -76,6 +82,9 @@ create table databus_market_category (
 -- 唯一键 uk_install 兜底幂等：同用户同物料至多一条安装记录（install 前置校验的护栏）。
 -- directory_id 承载组件 SHARED 安装的目录归属（引用挂树，§十二-7）：仅组织视角，与副本所有权解耦；
 --   null=未归组（落 ungrouped）；挪动引用叶子＝更新本列，绝不动源组件行的 directory_id。
+-- local_resource_type 是 (local_resource_type, local_resource_id) 多态引用标识的判别列（decisions §十七-1）：
+--   类型由安装动作写入，不再靠 market_item 反查、也不靠「id 落在哪张表」来猜——
+--   物料被作者删、本地资源被删都不影响卸载与列表判定。表为 drop+全量重建，无历史数据，故直接 not null。
 -- ----------------------------
 drop table if exists databus_install;
 create table databus_install (
@@ -83,6 +92,7 @@ create table databus_install (
     owner_id            bigint(20)   not null                  comment '安装者id（owner）',
     market_item_id      bigint(20)   default null              comment '市场物料id（source；FAVORITE 语义可空）',
     local_resource_id   bigint(20)   not null                  comment '本地副本id（链路主键 / 组件DB行id）',
+    local_resource_type varchar(16)  not null                  comment '本地资源类型（COMPONENT / CHAIN / CONNECTOR；与 local_resource_id 组成多态引用完整标识）',
     mode                varchar(16)  not null                  comment '安装模式（FORK / SHARED / FAVORITE）',
     directory_id        bigint(20)   default null              comment '目录归属（组件SHARED引用挂树的组织视角，null=未归组）',
     content_hash        varchar(64)  default null              comment '落快照时的逻辑源码指纹（md5）',
@@ -120,7 +130,7 @@ select
     @mi_owner, 'admin', 'COMPONENT', c.id,
     concat('admin/', c.component_code),
     c.component_name, c.description, substr(c.icon, 1, 64), c.color,
-    null, null, 'ONLINE', 0, 0, 0, sysdate(), sysdate(), null
+    null, c.tags, 'ONLINE', 0, 0, 0, sysdate(), sysdate(), null
 from databus_component c
 where c.status = 'ENABLED' and c.deprecated = '0' and c.del_flag = '0'
   and not exists (select 1 from databus_market_item m
@@ -156,17 +166,31 @@ order by ch.id;
 
 -- ----------------------------
 -- 种子数据：市场分类 databus_market_category（分类口径＝B：由本表承载，运营可增删改名；§四）
--- 冷启动先播组件五分类（与 databus_component.category 枚举一一对应，经运营在后台扩展）。
+-- resource_type 决定分类在哪个分段出现：组件分类只在「组件」分段、链路分类只在「链路」分段，
+-- 空串＝通用（组件 / 链路 / 连接器三类分段都出现）。分类治理落在物料管理 tab 的「物料分类」视角（增删改与合并）。
 -- 固定 id 段 1761400000000040001~40099，先清后插，幂等可重复执行。
--- 链路货源已由上方精选 6 条示例链路提供（分类暂留空），待运营按需增补链路业务域分类。
+-- 组件五分类与 databus_component.category 枚举一一对应；链路按业务域、连接器按接入面播种。
+-- 组件种子 tags 直接取源表 c.tags；链路 tags 由文末按 code_display 逐条回填。
+-- default_tags＝该分类的推荐标签：发布页标签候选池＝分类下物料 tags ∪ default_tags，
+-- 空分类（尤其连接器，市场里没有可安装的种子物料）也能给出候选值，且可在「物料分类」里治理。
 -- ----------------------------
 delete from databus_market_category where id between 1761400000000040001 and 1761400000000040099;
 
-insert into databus_market_category values (1761400000000040001, 0, '协议类（HTTP 等）', 1);
-insert into databus_market_category values (1761400000000040002, 0, '数据处理', 2);
-insert into databus_market_category values (1761400000000040003, 0, '流程控制', 3);
-insert into databus_market_category values (1761400000000040004, 0, '人工智能', 4);
-insert into databus_market_category values (1761400000000040005, 0, '平台对接（BPM 等）', 5);
+insert into databus_market_category values (1761400000000040001, 0, '协议类（HTTP 等）', 1, 'COMPONENT', '["HTTP","REST","协议"]');
+insert into databus_market_category values (1761400000000040002, 0, '数据处理', 2, 'COMPONENT', '["数据处理","ETL","转换"]');
+insert into databus_market_category values (1761400000000040003, 0, '流程控制', 3, 'COMPONENT', '["流程控制","分支","循环"]');
+insert into databus_market_category values (1761400000000040004, 0, '人工智能', 4, 'COMPONENT', '["AI","LLM","智能体"]');
+insert into databus_market_category values (1761400000000040005, 0, '平台对接（BPM 等）', 5, 'COMPONENT', '["BPM","集成","对接"]');
+insert into databus_market_category values (1761400000000040006, 0, '流程编排', 1, 'CHAIN', '["编排","流程"]');
+insert into databus_market_category values (1761400000000040007, 0, '数据同步', 2, 'CHAIN', '["同步","数据"]');
+insert into databus_market_category values (1761400000000040008, 0, '系统集成', 3, 'CHAIN', '["集成","接口"]');
+insert into databus_market_category values (1761400000000040009, 0, '定时调度', 4, 'CHAIN', '["定时","调度"]');
+insert into databus_market_category values (1761400000000040010, 0, '消息通知', 5, 'CHAIN', '["消息","通知"]');
+insert into databus_market_category values (1761400000000040011, 0, '数据库', 1, 'CONNECTOR', '["数据库","JDBC","SQL"]');
+insert into databus_market_category values (1761400000000040012, 0, '消息队列', 2, 'CONNECTOR', '["MQ","Kafka","异步"]');
+insert into databus_market_category values (1761400000000040013, 0, '文件存储', 3, 'CONNECTOR', '["文件","OSS","FTP"]');
+insert into databus_market_category values (1761400000000040014, 0, 'HTTP 接口', 4, 'CONNECTOR', '["HTTP","API"]');
+insert into databus_market_category values (1761400000000040015, 0, '其它', 5, 'CONNECTOR', '["其它"]');
 
 -- 已上架组件的分类回填：按源表 category 枚举映射到上面五个分类 id（无中文常量）
 update databus_market_item m
@@ -180,3 +204,27 @@ set m.category_id = case c.category
         else m.category_id
     end
 where m.resource_type = 'COMPONENT' and m.category_id is null;
+
+-- 已上架组件的标签回填：源表 c.tags 为空时按台账分类给一组默认标签（与分类 default_tags 同口径）
+-- 单行语句 + 只动空值，避免覆盖组件自带标签；连接器没有种子物料，标签候选全部来自分类 default_tags。
+update databus_market_item m join databus_component c on m.source_id = c.id set m.tags = '["HTTP","REST","协议"]' where m.resource_type = 'COMPONENT' and m.tags is null and c.category = 'PROTOCOL';
+update databus_market_item m join databus_component c on m.source_id = c.id set m.tags = '["数据处理","ETL","转换"]' where m.resource_type = 'COMPONENT' and m.tags is null and c.category = 'DATA';
+update databus_market_item m join databus_component c on m.source_id = c.id set m.tags = '["流程控制","分支","循环"]' where m.resource_type = 'COMPONENT' and m.tags is null and c.category = 'FLOW_CONTROL';
+update databus_market_item m join databus_component c on m.source_id = c.id set m.tags = '["AI","LLM","智能体"]' where m.resource_type = 'COMPONENT' and m.tags is null and c.category = 'AI';
+update databus_market_item m join databus_component c on m.source_id = c.id set m.tags = '["BPM","集成","对接"]' where m.resource_type = 'COMPONENT' and m.tags is null and c.category = 'PLATFORM';
+
+-- 已上架链路的分类回填：冷启动精选的都是纯本地逻辑示例，统一归到「流程编排」
+update databus_market_item m
+    join databus_chain ch on m.source_id = ch.id
+set m.category_id = 1761400000000040006
+where m.resource_type = 'CHAIN' and m.category_id is null;
+
+-- 已上架链路的标签回填（databus_chain 无 tags 列，只能按 code_display 打标；单行语句规避客户端多行中文 1264）
+-- 标签是 tags 列的 JSON 数组文本，后端 JacksonTypeHandler 直接反序列化成 List<String>，与发布页写入同格式。
+-- 只动 admin 的种子行，人工上架的同源物料不被覆盖。
+update databus_market_item set tags = '["流程编排","串行"]' where owner_code = 'admin' and resource_type = 'CHAIN' and code_display = 'admin/serial-all';
+update databus_market_item set tags = '["条件分支","判空"]' where owner_code = 'admin' and resource_type = 'CHAIN' and code_display = 'admin/if-empty-false';
+update databus_market_item set tags = '["循环","流程控制"]' where owner_code = 'admin' and resource_type = 'CHAIN' and code_display = 'admin/while-loop';
+update databus_market_item set tags = '["循环","迭代器"]' where owner_code = 'admin' and resource_type = 'CHAIN' and code_display = 'admin/iterator-nested';
+update databus_market_item set tags = '["逻辑运算","AND"]' where owner_code = 'admin' and resource_type = 'CHAIN' and code_display = 'admin/and-logic';
+update databus_market_item set tags = '["逻辑运算","OR"]' where owner_code = 'admin' and resource_type = 'CHAIN' and code_display = 'admin/or-logic';

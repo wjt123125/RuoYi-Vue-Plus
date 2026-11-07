@@ -46,6 +46,7 @@ where m.menu_id = 1761400000000020000
 --     · databus:component:toggle 组件启停（与「组件修改」拆开，edit 不含启停）
 --     · databus:connector:edit   连接器启停与废弃（enable / disable / deprecate）
 --     · databus:connector:remove 连接器卸载（删包删行）
+--     · databus:market:category  市场分类治理（增删改与合并）
 insert into sys_role_menu (role_id, menu_id)
 select 1761300000000000010, m.menu_id
 from sys_menu m
@@ -57,7 +58,8 @@ where (m.menu_id = 1761400000000020000
       'databus:market:uninstall',
       'databus:component:toggle',
       'databus:connector:edit',
-      'databus:connector:remove');
+      'databus:connector:remove',
+      'databus:market:category');
 
 -- ----------------------------
 -- 3、绑定用户（按 user_name 查 user_id；先删本角色绑定再插）

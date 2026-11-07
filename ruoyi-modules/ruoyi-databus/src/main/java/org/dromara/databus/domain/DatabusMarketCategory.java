@@ -1,8 +1,12 @@
 package org.dromara.databus.domain;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
+
+import java.util.List;
 
 /**
  * 市场分类对象 databus_market_category
@@ -13,7 +17,7 @@ import lombok.Data;
  * @author databus
  */
 @Data
-@TableName("databus_market_category")
+@TableName(value = "databus_market_category", autoResultMap = true)
 public class DatabusMarketCategory {
 
     /**
@@ -37,4 +41,15 @@ public class DatabusMarketCategory {
      */
     private Integer sort;
 
+    /**
+     * 适用物料类型（COMPONENT / CHAIN / CONNECTOR；空串＝通用）
+     */
+    private String resourceType;
+
+    /**
+     * 推荐标签（default_tags 列 JSON 数组自动互转）。
+     * 发布页的标签候选池＝该分类下已有物料的 tags ∪ 本列，空分类（尤其连接器）也有推荐值。
+     */
+    @TableField(value = "default_tags", typeHandler = JacksonTypeHandler.class)
+    private List<String> defaultTags;
 }

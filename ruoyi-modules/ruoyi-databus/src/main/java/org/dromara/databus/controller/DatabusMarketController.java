@@ -11,6 +11,8 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.core.BaseController;
+import org.dromara.databus.domain.bo.MarketCategoryBo;
+import org.dromara.databus.domain.bo.MarketCategoryMergeBo;
 import org.dromara.databus.domain.bo.MarketInstallBo;
 import org.dromara.databus.domain.bo.MarketInstallMoveBo;
 import org.dromara.databus.domain.bo.MarketPublishBatchBo;
@@ -62,12 +64,61 @@ public class DatabusMarketController extends BaseController {
     }
 
     /**
-     * 分类列表（多级平表，含在线物料计数）。
+     * 分类列表（多级平表，带物料计数：不限状态，供治理侧判断能否直接删）。
      */
     @SaCheckPermission("databus:market:list")
     @GetMapping("/categories")
     public R<List<DatabusMarketCategoryVo>> categories() {
         return R.ok(marketService.queryCategories());
+    }
+
+    /**
+     * 新增分类（治理动作，物料管理 tab「物料分类」视角）。
+     */
+    @SaCheckPermission("databus:market:category")
+    @Log(title = "物料分类新增", businessType = BusinessType.INSERT)
+    @RepeatSubmit
+    @PostMapping("/categories")
+    public R<Long> addCategory(@Validated @RequestBody MarketCategoryBo bo) {
+        return R.ok(marketService.createCategory(bo));
+    }
+
+    /**
+     * 改名 / 排序（适用类型创建后不再变更）。
+     */
+    @SaCheckPermission("databus:market:category")
+    @Log(title = "物料分类修改", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @PutMapping("/categories/{id}")
+    public R<Void> updateCategory(@NotNull(message = "主键不能为空")
+                                  @PathVariable("id") Long id,
+                                  @Validated @RequestBody MarketCategoryBo bo) {
+        return toAjax(marketService.updateCategory(id, bo));
+    }
+
+    /**
+     * 删除分类（仅限没有物料挂在它下面的分类；有物料时改走「合并」）。
+     */
+    @SaCheckPermission("databus:market:category")
+    @Log(title = "物料分类删除", businessType = BusinessType.DELETE)
+    @RepeatSubmit
+    @DeleteMapping("/categories/{id}")
+    public R<Void> deleteCategory(@NotNull(message = "主键不能为空")
+                                  @PathVariable("id") Long id) {
+        return toAjax(marketService.deleteCategory(id));
+    }
+
+    /**
+     * 合并分类：源分类下的物料整批迁到目标分类（目标为空＝未分类）后删源分类。
+     */
+    @SaCheckPermission("databus:market:category")
+    @Log(title = "物料分类合并", businessType = BusinessType.UPDATE)
+    @RepeatSubmit
+    @PostMapping("/categories/{id}/merge")
+    public R<Void> mergeCategory(@NotNull(message = "主键不能为空")
+                                 @PathVariable("id") Long id,
+                                 @RequestBody(required = false) MarketCategoryMergeBo bo) {
+        return toAjax(marketService.mergeCategory(id, bo));
     }
 
     /**

@@ -5,6 +5,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.connector.ConnectorManifest;
 import org.dromara.databus.connector.ConnectorRegistry;
 import org.dromara.databus.connector.plugin.PluginManager;
@@ -20,6 +21,7 @@ import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.mapper.SysDatabusConnectionMapper;
 import org.dromara.databus.service.IDatabusConnectorService;
+import org.dromara.system.api.model.LoginUser;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,6 +79,17 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
      * 来源：市场 tab 内上传
      */
     private static final String SOURCE_UPLOAD = "UPLOAD";
+
+    /**
+     * 来源：官方件角标（上传人拥有审核权限 {@code databus:market:review}）。只是来路标记，
+     * 不是特权：官方件照常进 PENDING、照常由另一名治理员审核启用
+     */
+    private static final String SOURCE_ADMIN = "ADMIN";
+
+    /**
+     * 治理员标志权限：能审别人上架的物料即为治理员（与「提交人 ≠ 审批人」用的是同一套权限）
+     */
+    private static final String PERM_MARKET_REVIEW = "databus:market:review";
 
     /**
      * 来源：dev 目录装载（方案 §五）。启动回装跳过这类行，由 DevConnectorLoader 接管
@@ -215,6 +228,9 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         }
 
         LocalDateTime now = LocalDateTime.now();
+        // 来源角标按本次上传人判定（方案 §2.5）：治理员上传＝官方，其他人＝手动上传。
+        // 升版本与接管 DEV 行走同一判定，不继承旧 source
+        String source = isGovernanceUploader() ? SOURCE_ADMIN : SOURCE_UPLOAD;
         DatabusConnectorDef row;
         if (existing == null) {
             row = new DatabusConnectorDef();
@@ -225,7 +241,7 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             row.setPackagePath(packagePath);
             // 审核即信任（§15.11）：新包默认未启用，enable 是治理者显式动作
             row.setStatus(ConnectorDefStatusEnum.PENDING.getCode());
-            row.setSource(SOURCE_UPLOAD);
+            row.setSource(source);
             row.setOwnerType(OwnerTypeEnum.USER.getCode());
             row.setCreateBy(userId);
             row.setCreateTime(now);
@@ -240,8 +256,9 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             existing.setEngine(manifest.getEngine());
             existing.setManifestSnapshot(manifestJson);
             existing.setPackagePath(packagePath);
-            // 接管 DEV 行：来源改回 UPLOAD，否则查看包仍按 dev 行拒绝、下次重启 dev 目录又会把它抢回去
-            existing.setSource(SOURCE_UPLOAD);
+            // 接管 DEV 行：来源改回正式来源（治理员 ADMIN / 其他人 UPLOAD），否则查看包仍按 dev 行拒绝、
+            // 下次重启 dev 目录又会把它抢回去
+            existing.setSource(source);
             existing.setOwnerType(OwnerTypeEnum.USER.getCode());
             existing.setVerified(Boolean.FALSE);
             existing.setStatus(ConnectorDefStatusEnum.PENDING.getCode());
@@ -442,6 +459,16 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             throw new ServiceException("连接器 " + def.getType() + " 是 dev 目录装载的，" + reason
                 + "；改代码后调「重新加载」即可生效。需要走审核、启停、下载包的完整流程，请 mvn package 后在「上架物料」里选择连接器并上传该 zip");
         }
+    }
+
+    /**
+     * 上传人是否治理员：以审核权限 {@code databus:market:review} 判定，与「能否审别人」同源。
+     * 只决定来源角标，不影响审核链路——官方件同样进 PENDING，同样受「提交人 ≠ 审批人」约束。
+     */
+    private boolean isGovernanceUploader() {
+        LoginUser loginUser = LoginHelper.getLoginUser();
+        return loginUser != null && loginUser.getMenuPermission() != null
+            && loginUser.getMenuPermission().contains(PERM_MARKET_REVIEW);
     }
 
     /**

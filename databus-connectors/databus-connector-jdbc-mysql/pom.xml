@@ -11,12 +11,13 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>databus-connector-jdbc-mysql</artifactId>
-    <!-- 连接器包版本：与 manifest.json 的 version 一致，独立于平台 revision -->
-    <version>1.0.0</version>
+    <!-- 连接器包版本：与 manifest.json 的 version 一致，独立于平台 revision。
+         取驱动版本（下方 mysql.driver.version），包版本随驱动升级自动对齐 -->
+    <version>${mysql.driver.version}</version>
     <packaging>jar</packaging>
 
     <description>
-        MySQL JDBC 连接器（type=jdbc-mysql）：一库一包（方案 §2.4），产物 databus-connector-jdbc-mysql-1.0.0.zip。
+        MySQL JDBC 连接器（type=jdbc-mysql）：一库一包（方案 §2.4），产物 databus-connector-jdbc-mysql-9.7.0.zip。
         lib/ 三样：本体 jar + databus-connector-jdbc-common jar + mysql-connector-j 驱动 jar。
         驱动不进 maven 依赖树（红线二）：由 maven-dependency-plugin 的 copy goal 拉到 target/lib/，
         这样 Spring Boot 依赖管理碰不到驱动版本，包里那份才是生效的（child-first，§4.2）。
@@ -25,7 +26,7 @@
     </description>
 
     <properties>
-        <!-- 驱动版本单点声明：assembly / dependency-plugin / manifest.json 三处都对齐它 -->
+        <!-- 驱动版本单点声明：project.version / assembly / dependency-plugin / manifest.json 都对齐它 -->
         <mysql.driver.version>9.7.0</mysql.driver.version>
     </properties>
 

@@ -3,13 +3,13 @@
   "type": "jdbc-mysql",
   "label": "MySQL JDBC 连接器",
   "icon": "logos:mysql",
-  "version": "1.0.0",
+  "version": "${mysql.driver.version}",
   "engine": "jvm",
   "mainClass": "org.dromara.databus.connector.jdbc.mysql.MysqlJdbcConnector",
   "dbType": "mysql",
   "driver": {
     "name": "com.mysql:mysql-connector-j",
-    "version": "9.7.0",
+    "version": "${mysql.driver.version}",
     "license": "GPL-2.0-only WITH Universal-FOSS-Exception"
   }
 }

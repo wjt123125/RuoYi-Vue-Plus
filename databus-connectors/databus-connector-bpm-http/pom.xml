@@ -11,14 +11,20 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>databus-connector-bpm-http</artifactId>
-    <!-- 连接器包版本：与 manifest.json 的 version 一致，独立于平台 revision -->
-    <version>1.0.0</version>
+    <!-- 连接器包版本：与 manifest.json 的 version 一致，独立于平台 revision。
+         取对接的 AWS PaaS BPM 版本（下方 bpm.version），包版本随 BPM 版本对齐 -->
+    <version>${bpm.version}</version>
     <packaging>jar</packaging>
 
     <description>
-        BPM HTTP 连接器（type=bpmHttp）：从平台拆出的独立 maven 模块，产物 databus-connector-bpm-http-1.0.0.zip（manifest.json + lib/本体 jar）。
+        BPM HTTP 连接器（type=bpmHttp）：从平台拆出的独立 maven 模块，产物 databus-connector-bpm-http-6.3GA.zip（manifest.json + lib/本体 jar）。
         连接器不引平台业务类；Json 序列化自理（Jackson 3 tools.jackson，provided 由父加载器提供）。
     </description>
+
+    <properties>
+        <!-- BPM 版本单点声明：project.version / manifest.json 都对齐它 -->
+        <bpm.version>6.3GA</bpm.version>
+    </properties>
 
     <dependencies>
         <!-- 连接器契约 api：provided 编译用，打包不带（父加载器只有一份，红线 §2.2） -->

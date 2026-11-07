@@ -34,6 +34,7 @@ import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.market.support.ChainForkRedirector;
+import org.dromara.databus.market.support.MarketResourceTypes;
 import org.dromara.databus.service.IDatabusChainService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -342,6 +343,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
      */
     private void cleanupInstallRecords(Collection<Long> ids) {
         List<DatabusInstall> installs = installMapper.selectList(Wrappers.<DatabusInstall>lambdaQuery()
+            .eq(DatabusInstall::getLocalResourceType, MarketResourceTypes.CHAIN)
             .in(DatabusInstall::getLocalResourceId, ids));
         if (installs.isEmpty()) {
             return;

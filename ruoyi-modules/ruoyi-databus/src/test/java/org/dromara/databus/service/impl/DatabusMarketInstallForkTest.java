@@ -231,6 +231,7 @@ class DatabusMarketInstallForkTest {
         // 台账仅记主链（decisions §十四-5：级联副本不写 databus_install）
         assertEquals(1, insertedInstalls.size(), "台账应仅记主链一条");
         assertEquals(insertedChains.get(2).getId(), insertedInstalls.get(0).getLocalResourceId());
+        assertEquals("CHAIN", insertedInstalls.get(0).getLocalResourceType(), "安装记录要自持类型判别列");
         assertEquals("FORK", insertedInstalls.get(0).getMode());
         assertEquals(insertedChains.get(2).getId(), vo.getLocalResourceId());
         assertEquals("FORK", vo.getMode());
@@ -272,6 +273,7 @@ class DatabusMarketInstallForkTest {
         // 台账主链指向复用的既有行
         assertEquals(1, insertedInstalls.size());
         assertEquals(Long.valueOf(99L), insertedInstalls.get(0).getLocalResourceId());
+        assertEquals("CHAIN", insertedInstalls.get(0).getLocalResourceType());
         assertEquals(Long.valueOf(99L), vo.getLocalResourceId());
 
         // 级联清单：C NEW、B REUSED（newCode 即既有副本编码）

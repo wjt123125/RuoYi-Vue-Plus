@@ -12,7 +12,9 @@ import java.time.LocalDateTime;
  * 「owner→source 引用记录」（设计正本 §十）：一行＝某用户安装了某市场物料一次。
  * 同构承载：收藏（星标引用）与安装未改在这一层同构，产品语义分开。
  * <p>
- * local_resource_id 指向本地资源（链路 fork 副本主键 / 组件共享注册时直接指向源组件 id）；
+ * {@code (local_resource_type, local_resource_id)} 是一条多态引用的完整标识：前者是判别列，
+ * 由安装动作写入，卸载与列表一律读它，不再反查物料、也不靠 id 落在哪张表来猜；
+ * 后者指向本地资源（链路 fork 副本主键 / 组件共享注册时直接指向源组件 id）；
  * uninstall 仅对 FORK 记录删本地副本，SHARED 只删安装记录；
  * content_hash 记录落快照时的逻辑源码指纹（未改快照与原件同 hash → 复用源 bean）。
  *
@@ -42,6 +44,14 @@ public class DatabusInstall {
      * 本地资源 id（链路 fork 副本主键 / SHARED 时直接指向源组件 id）
      */
     private Long localResourceId;
+
+    /**
+     * 本地资源类型（COMPONENT / CHAIN / CONNECTOR）
+     * <p>
+     * 多态引用的判别列，与 localResourceId 一起定位本地资源；安装时写入，之后不再随物料行变化
+     * （物料上架后类型不可变，改类型等于重新上架）。
+     */
+    private String localResourceType;
 
     /**
      * 安装模式（FORK 链路快照落地 / SHARED 组件共享注册不落副本 / FAVORITE 星标）

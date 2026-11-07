@@ -176,7 +176,8 @@ public class MarketInstallService {
      * install 各分支的产物：链路复制副本和组件共用同一个源，两条路要写库的字段一次性都放在这里，
      * {@link #saveInstallRecord} 和 {@link #toInstallVo} 共用（连接器不写安装记录，不走这里）
      *
-     * @param localResourceId  本地资源 id——链路＝主链副本的行 id，组件＝源组件 id
+     * @param localResourceId   本地资源 id——链路＝主链副本的行 id，组件＝源组件 id
+     * @param localResourceType 本地资源类型（多态引用判别列，与 localResourceId 一起标识本地资源）
      * @param mode             FORK / SHARED
      * @param contentHash      安装时按源内容算出的一个标识值，卸载和改版时用它比对内容有没有变
      * @param directoryId      安装记录行放在哪个目录，只有组件安装填（链路的目录记在副本行上）
@@ -184,8 +185,8 @@ public class MarketInstallService {
      * @param componentEnabled 源组件现在是不是启用状态，只有装组件时填
      * @param cascade          链路跟着复制出来的清单，只有装链路时填
      */
-    private record InstallOutcome(Long localResourceId, String mode, String contentHash, Long directoryId,
-                                  String componentCode, Boolean componentEnabled,
+    private record InstallOutcome(Long localResourceId, String localResourceType, String mode, String contentHash,
+                                  Long directoryId, String componentCode, Boolean componentEnabled,
                                   List<DatabusMarketInstallVo.CascadeItemVo> cascade) {
     }
 
@@ -207,6 +208,7 @@ public class MarketInstallService {
         record.setOwnerId(userId);
         record.setMarketItemId(item.getId());
         record.setLocalResourceId(def.getId());
+        record.setLocalResourceType(TYPE_CONNECTOR);
         record.setMode(MODE_SHARED);
         record.setCreateTime(LocalDateTime.now());
         installMapper.insert(record);
@@ -293,7 +295,7 @@ public class MarketInstallService {
             cascade.add(cascadeItem(sourceChain, newCode, cascadeStatus));
         }
         // 主链一定在清单的最后一个（collectChainClosure 就是这么排的），所以 mainCopyId 一定有值
-        return new InstallOutcome(mainCopyId, MODE_FORK, chainHash(source), null, null, null, cascade);
+        return new InstallOutcome(mainCopyId, TYPE_CHAIN, MODE_FORK, chainHash(source), null, null, null, cascade);
     }
 
     /**
@@ -349,7 +351,7 @@ public class MarketInstallService {
         if (source == null) {
             throw new ServiceException("源组件不存在或已删除");
         }
-        return new InstallOutcome(source.getId(), MODE_SHARED, componentHash(source),
+        return new InstallOutcome(source.getId(), TYPE_COMPONENT, MODE_SHARED, componentHash(source),
             normalizeDirectoryId(directoryId), source.getComponentCode(),
             ComponentStatusEnum.ENABLED.getCode().equals(source.getStatus()), null);
     }
@@ -363,6 +365,7 @@ public class MarketInstallService {
         record.setOwnerId(userId);
         record.setMarketItemId(itemId);
         record.setLocalResourceId(outcome.localResourceId());
+        record.setLocalResourceType(outcome.localResourceType());
         record.setMode(outcome.mode());
         // 组件：目录记在安装记录行上。链路这一列留 null——链路的目录记在副本行上，
         // 两边都记就说不清以哪个为准了
@@ -425,18 +428,12 @@ public class MarketInstallService {
             }
             throw new ServiceException("未找到对应的安装记录");
         }
-        // 判断类型：先查市场物料；源已经被删了就看本地副本落在哪张表里
-        DatabusMarketItem item = null;
-        String resourceType = null;
-        if (record.getMarketItemId() != null) {
-            item = marketItemMapper.selectById(record.getMarketItemId());
-            if (item != null) {
-                resourceType = item.getResourceType();
-            }
-        }
-        if (resourceType == null) {
-            resourceType = inferLocalType(resourceId);
-        }
+        // 类型直接读安装记录自己的判别列，不再反查物料、也不靠「id 落在哪张表」来猜：
+        // 物料被作者删掉、本地资源被删掉都不影响卸载走哪条分支。
+        // 物料行仍要查一次——级联清子链副本需要它拿源链 id
+        DatabusMarketItem item = record.getMarketItemId() == null ? null
+            : marketItemMapper.selectById(record.getMarketItemId());
+        String resourceType = record.getLocalResourceType();
         // 按 mode 分开处理（§十二-5）：只有 FORK（链路副本，或早期装组件时复制的副本）才删本地资源；
         // SHARED 只删安装记录——组件本体是作者和其他装过的人共用的，卸载不能动它
         if (MODE_FORK.equals(record.getMode())) {
@@ -508,6 +505,7 @@ public class MarketInstallService {
         List<Long> copyIds = copies.stream().map(DatabusChain::getId).filter(Objects::nonNull).toList();
         Set<Long> installedCopyIds = copyIds.isEmpty() ? Set.of()
             : installMapper.selectList(Wrappers.<DatabusInstall>lambdaQuery()
+                    .eq(DatabusInstall::getLocalResourceType, TYPE_CHAIN)
                     .in(DatabusInstall::getLocalResourceId, copyIds)).stream()
                 .map(DatabusInstall::getLocalResourceId).collect(Collectors.toSet());
         List<Long> deletable = new ArrayList<>();
@@ -585,12 +583,11 @@ public class MarketInstallService {
 
         List<DatabusMarketInstallVo> result = new ArrayList<>(records.size());
         for (DatabusInstall record : records) {
+            // 类型读记录上的判别列；下面三张表只是为了取展示字段，不再参与类型判定
+            String resourceType = record.getLocalResourceType();
             DatabusMarketItem item = itemMap.get(record.getMarketItemId());
             DatabusChain chain = chainMap.get(record.getLocalResourceId());
             DatabusComponent component = componentMap.get(record.getLocalResourceId());
-            String resourceType = item != null ? item.getResourceType()
-                : (chain != null ? TYPE_CHAIN : (component != null ? TYPE_COMPONENT
-                    : (defMap.containsKey(record.getLocalResourceId()) ? TYPE_CONNECTOR : null)));
 
             DatabusMarketInstallVo vo = new DatabusMarketInstallVo();
             vo.setId(record.getId());
@@ -854,19 +851,6 @@ public class MarketInstallService {
                 .or().ne(DatabusChain::getIsTemplate, TEMPLATE_FLAG_YES))
             .orderByAsc(DatabusChain::getId));
         return candidates.isEmpty() ? null : candidates.get(0);
-    }
-
-    /**
-     * 源已被删时，靠本地副本落在哪张表来判断资源类型。
-     */
-    private String inferLocalType(Long localResourceId) {
-        if (chainMapper.selectById(localResourceId) != null) {
-            return TYPE_CHAIN;
-        }
-        if (componentMapper.selectById(localResourceId) != null) {
-            return TYPE_COMPONENT;
-        }
-        return null;
     }
 
     /**

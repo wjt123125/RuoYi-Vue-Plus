@@ -114,6 +114,13 @@ public class DatabusMarketInstallVo implements Serializable {
     private String ownerCode;
 
     /**
+     * 市场物料展示码（{ownerCode}/{code}；物料行已删时为空）。
+     * 安装记录本身不带展示码，查询已装列表时从物料行回填——
+     * 行副标题靠它显示「这份物料是谁的哪一个」，不依赖连接器 defs 的读权限。
+     */
+    private String codeDisplay;
+
+    /**
      * 链路闭包级联清单（decisions §十四-1/2：全 fork，每条独立成行；仅 CHAIN 安装返回）。
      * <p>
      * 含主链与全部级联子链（post-order 序，主链居末）：NEW＝本次新复制；REUSED＝命中既有同源

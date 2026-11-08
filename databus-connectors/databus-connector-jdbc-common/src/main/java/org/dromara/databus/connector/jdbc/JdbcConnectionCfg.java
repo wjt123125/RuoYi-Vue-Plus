@@ -96,12 +96,6 @@ public record JdbcConnectionCfg(String host,
     private static final Set<String> COLUMN_NAME_CASES = Set.of("AS_IS", "LOWER", "UPPER");
 
     /**
-     * configSchema 里 {@code urlMode} 单选的「按主机拼装」档（另一档 {@code "override"} 纯 UI 用，
-     * 连接器只关心 basic：显式 basic 时忽略 urlOverride，见 {@link #urlOverride(Map)}）。
-     */
-    public static final String URL_MODE_BASIC = "basic";
-
-    /**
      * 从 {@code Connection.config} 构造。config 为 null 视为空表（后续必填校验在
      * {@link #requireConnectable()} 里统一报）。
      *
@@ -116,7 +110,7 @@ public record JdbcConnectionCfg(String host,
             str(c, "database", null),
             str(c, "username", null),
             str(c, "password", null),
-            urlOverride(c),
+            str(c, "urlOverride", null),
             stringMap(c, "driverProps"),
             intVal(c, "connectTimeoutMs", DEFAULT_CONNECT_TIMEOUT_MS, 1, 600_000, "connectTimeoutMs"),
             intVal(c, "queryTimeoutSec", DEFAULT_QUERY_TIMEOUT_SEC, 1, MAX_QUERY_TIMEOUT_SEC, "queryTimeoutSec"),
@@ -128,20 +122,6 @@ public record JdbcConnectionCfg(String host,
             columnNameCase(c),
             bool(c, "decimalAsString", true),
             bool(c, "logSql", false));
-    }
-
-    /**
-     * 读 urlOverride，并尊重 configSchema 里的模式开关 {@code urlMode}。
-     *
-     * <p>host/port/database 与 urlOverride 是两条互斥路径，前端用 urlMode 单选切换显示。
-     * 切换后旧值仍留在 config 里（表单不会替用户删数据），若不看这个键就会出现
-     * 「界面填的是主机、实际连的是另一条 URL」的静默错位。
-     *
-     * <p>只在<b>显式</b> basic 时丢弃：本次改造前存的 config 没有 urlMode 键，
-     * 保持原行为（urlOverride 非空即优先），避免升级后老连接突然连不上。
-     */
-    private static String urlOverride(Map<String, Object> c) {
-        return URL_MODE_BASIC.equals(str(c, "urlMode", null)) ? null : str(c, "urlOverride", null);
     }
 
     /**
@@ -185,7 +165,7 @@ public record JdbcConnectionCfg(String host,
     public void requireConnectable() {
         if (isBlank(urlOverride)) {
             if (isBlank(host)) {
-                throw new ConnectorException("JDBC_CONFIG_MISSING", "缺少必填配置 host（或改用高级项「自定义 JDBC URL」）");
+                throw new ConnectorException("JDBC_CONFIG_MISSING", "缺少必填配置 host（或改用「连接串」页的自定义 JDBC URL）");
             }
             if (isBlank(database)) {
                 throw new ConnectorException("JDBC_CONFIG_MISSING", "缺少必填配置 database");

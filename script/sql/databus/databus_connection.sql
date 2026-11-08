@@ -61,9 +61,8 @@ values
 --   三件的 data_example 引用对齐（同 bpm-default 与 mock-presets 对齐的口径）。
 -- connector_type 存**具体 type**（jdbc-postgresql），不是能力族 jdbc——族在连接器包的
 --   ConnectorDescriptor.family 里，连接行只认 type，运行时由 type 找实例（正本 §8.3）。
--- config 键名与 AbstractJdbcConnector.configSchema() 对齐；urlMode 必须显式写 basic：
---   host/port/database 的 showWhen 是 ne override，键缺失时 String(null) != "override" 仍成立，
---   但显式写出可让「连接串来源」下拉在编辑态直接落到正确选项。
+-- config 键名与 AbstractJdbcConnector.configSchema() 对齐；不写 urlMode：
+--   host/port/database 的 showWhen 是「urlOverride 为空才显示」，旧 urlMode 键已从契约里删除。
 -- enabled = 'N'：默认停用。JDBC 连接一旦启用就会真建池出网，示例值指向 localhost:5432
 --   多半连不上；改成实际库地址、并在连接管理页重存一次（转 AES）后再手工启用。
 -- 安全提醒：password 属敏感字段（describe 标 sensitive），落 credentials 列；
@@ -76,7 +75,7 @@ insert into sys_databus_connection
   (id, connection_id, connection_name, connector_type, config, credentials, enabled, create_time, del_flag, remark)
 values
   (1762000000000020002, 'jdbc-default', 'PostgreSQL 示例库', 'jdbc-postgresql',
-   '{"urlMode":"basic","host":"localhost","port":5432,"database":"databus","username":"databus"}',
+   '{"host":"localhost","port":5432,"database":"databus","username":"databus"}',
    '{"password":"databus"}',
    'N', sysdate(), '0', 'JDBC 示例连接（默认停用）；依赖已上传并启用的 jdbc-postgresql 连接器包，库地址/账号按实际环境修改后在页面重存一次');
 
@@ -102,6 +101,6 @@ insert into sys_databus_connection
   (id, connection_id, connection_name, connector_type, config, credentials, enabled, create_time, del_flag, remark)
 values
   (1762000000000020003, 'jdbc-mysql-demo', 'MySQL 实测靶库', 'jdbc-mysql',
-   '{"urlMode":"basic","host":"localhost","port":3306,"database":"databus_jdbc_demo","username":"databus_demo","driverProps":{"characterEncoding":"UTF-8","connectionTimeZone":"Asia/Shanghai"},"maxRows":500,"decimalAsString":true,"logSql":true}',
+   '{"host":"localhost","port":3306,"database":"databus_jdbc_demo","username":"databus_demo","driverProps":{"characterEncoding":"UTF-8","connectionTimeZone":"Asia/Shanghai"},"maxRows":500,"decimalAsString":true,"logSql":true}',
    '{"password":"Databus@Demo1"}',
    'Y', sysdate(), '0', 'JDBC 实测靶连接：先执行 script/sql/databus_jdbc_demo_mysql.sql 建库建账号，再跑本行；依赖 jdbc-mysql 连接器包（dev 走 dev-plugin-dir，生产走市场上传）');

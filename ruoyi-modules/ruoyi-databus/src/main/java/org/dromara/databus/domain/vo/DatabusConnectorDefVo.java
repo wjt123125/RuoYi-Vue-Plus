@@ -104,6 +104,11 @@ public class DatabusConnectorDefVo implements Serializable {
     private Map<String, ConnectorDescriptor.ConfigField> configSchema;
 
     /**
+     * 连接表单分组元数据（tab 顺序与主组声明）；老包为空，前端按字段 group 自动分组
+     */
+    private List<ConnectorDescriptor.ConfigGroup> groups;
+
+    /**
      * 上传者 id
      */
     private Long createBy;

@@ -51,6 +51,65 @@ public class ConnectorDescriptor {
     private Map<String, ConfigField> configSchema = new LinkedHashMap<>();
 
     /**
+     * 连接表单的分组元数据：列表顺序即 tab 顺序，主组恒第一个 tab。
+     *
+     * <p>留空表示连接器不分 tab，前端退化为「按字段 group 首次出现顺序」自动分组。
+     * 平台侧（连接名称 / 连接器类型 / 启用 / 连接ID）与备注一律不进这份声明。
+     */
+    private List<ConfigGroup> groups = new ArrayList<>();
+
+    /**
+     * 表单分组定义（一个组＝一个 tab）。
+     */
+    @Data
+    public static class ConfigGroup {
+
+        /** 分组键（与 {@link ConfigField#getGroup()} 对应） */
+        private String key;
+
+        /** tab 标题；缺省取 key */
+        private String label;
+
+        /** 主组：渲染为第一个 tab */
+        private boolean primary;
+
+        /**
+         * 组内栅格列数（正整数，缺省 2）。
+         *
+         * <p>这是组内布局的<b>总份数</b>，字段用 {@link ConfigField#getSpan()} 声明自己占几份：
+         * columns=1 即单列（field.span 无意义），columns=2 是常规双列，
+         * columns=4 才能表达「主机 3 份 + 端口 1 份」这类一行内不等宽的搭配。
+         * 前端据此生成 {@code repeat(columns, minmax(0, 1fr))}，不写死任何具体字段。
+         */
+        private Integer columns;
+
+        /** 主组（常规）：单列 */
+        public static ConfigGroup primary(String key, String label) {
+            ConfigGroup group = new ConfigGroup();
+            group.setKey(key);
+            group.setLabel(label);
+            group.setPrimary(true);
+            group.setColumns(1);
+            return group;
+        }
+
+        /** 普通组：双列 */
+        public static ConfigGroup of(String key, String label) {
+            ConfigGroup group = new ConfigGroup();
+            group.setKey(key);
+            group.setLabel(label);
+            group.setColumns(2);
+            return group;
+        }
+
+        /** 覆盖组内栅格份数（配合 field.span 表达不等宽搭配） */
+        public ConfigGroup columns(int columns) {
+            this.columns = columns;
+            return this;
+        }
+    }
+
+    /**
      * 操作定义：一个业务操作的元数据。
      */
     @Data
@@ -108,11 +167,58 @@ public class ConnectorDescriptor {
         /** 条件显示规则（满足才显示该字段） */
         private ShowWhen showWhen;
 
-        /** 分组（"基础" / "高级"，连接管理页表单折叠分组用） */
+        /** 分组键（对应 {@link ConnectorDescriptor#groups} 里的 key；留空归 default 组） */
         private String group;
+
+        /**
+         * 组内栅格占位份数（1..所属分组 columns；组只有 1 列时无意义）。
+         *
+         * <p>以分组 columns 为总份数：columns=2 时 1=半列、2=整列；
+         * columns=4 时可用 3+1 表达「宽字段：窄字段」这种不等宽同行。
+         */
+        private int span = 1;
+
+        /**
+         * 数值单位后缀（如 "毫秒" / "秒" / "行"）。
+         *
+         * <p>只影响展示：前端把它渲染在数值输入框右侧（{@code #append}），
+         * 标签里就不必再写「（毫秒）」这类单位后缀。留空表示无单位。
+         */
+        private String unit;
+
+        /**
+         * 说明呈现方式：INLINE=常显在字段下方；留空=收进 ⓘ 提示（description 作为提示内容）。
+         * 面向「填的时候要反复看」的短提示才声明 INLINE，长解释默认进提示。
+         */
+        private String help;
 
         public ConfigField sensitive() {
             this.sensitive = true;
+            return this;
+        }
+
+        public ConfigField inGroup(String group) {
+            this.group = group;
+            return this;
+        }
+
+        public ConfigField description(String description) {
+            this.description = description;
+            return this;
+        }
+
+        public ConfigField span(int span) {
+            this.span = span;
+            return this;
+        }
+
+        public ConfigField unit(String unit) {
+            this.unit = unit;
+            return this;
+        }
+
+        public ConfigField help(String help) {
+            this.help = help;
             return this;
         }
 
@@ -161,13 +267,15 @@ public class ConnectorDescriptor {
      * @param ne    不等条件，null 表示不启用
      * @param in    属于集合，null 表示不启用
      * @param notIn 不属于集合，null 表示不启用
+     * @param empty 空值条件：true=依据字段为空才显示，false=依据字段已填才显示，null 表示不启用
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ShowWhen(String field,
                            String eq,
                            String ne,
                            List<String> in,
-                           List<String> notIn) {
+                           List<String> notIn,
+                           Boolean empty) {
 
         public ShowWhen {
             if (in != null) {
@@ -176,6 +284,16 @@ public class ConnectorDescriptor {
             if (notIn != null) {
                 notIn = List.copyOf(notIn);
             }
+        }
+
+        /** 依据字段为空（null / 空串 / 空数组 / 空对象）时才显示本字段 */
+        public static ShowWhen visibleWhenBlank(String field) {
+            return new ShowWhen(field, null, null, null, null, true);
+        }
+
+        /** 依据字段已填时才显示本字段 */
+        public static ShowWhen visibleWhenFilled(String field) {
+            return new ShowWhen(field, null, null, null, null, false);
         }
     }
 }

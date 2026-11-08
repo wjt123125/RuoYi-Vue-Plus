@@ -31,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -127,6 +128,10 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
 
     @Override
     public Boolean insertByBo(SysDatabusConnectionBo bo) {
+        // 连接ID 不在表单里填：后端按「类型-随机串」生成，保证可读且全局唯一
+        if (StringUtils.isBlank(bo.getConnectionId())) {
+            bo.setConnectionId(generateConnectionId(bo.getConnectorType()));
+        }
         validateConnectionIdUnique(bo);
         validateConnectorTypeExists(bo.getConnectorType());
         validateRequiredSensitive(bo.getConnectorType(), normalizeConfig(bo));
@@ -217,6 +222,26 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
                 SysDatabusConnection::getEnabled, bo.getEnabled());
         }
         return lqw;
+    }
+
+    /**
+     * 生成连接ID：{@code connectorType-8位随机串}（如 jdbc-mysql-3f9a1c07）。
+     *
+     * <p>连接ID 是组件层引用键，不让人手填（手填必然出现「jdbc-prod」「jdbc_prod」这类分叉）。
+     * 前保留类型名是为了在链路配置与日志里一眼看出这是哪类连接；随机串兜住同名冲突，
+     * 万一撞了（概率极低）重试几次，仍失败才报错。
+     */
+    private String generateConnectionId(String connectorType) {
+        String prefix = StringUtils.isBlank(connectorType) ? "conn" : connectorType.trim();
+        for (int i = 0; i < 5; i++) {
+            String candidate = prefix + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+            Long count = connectionMapper.selectCount(Wrappers.<SysDatabusConnection>lambdaQuery()
+                .eq(SysDatabusConnection::getConnectionId, candidate));
+            if (count == null || count == 0) {
+                return candidate;
+            }
+        }
+        throw new ServiceException("连接ID生成失败，请重试");
     }
 
     /**

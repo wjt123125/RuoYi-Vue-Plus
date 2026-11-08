@@ -96,18 +96,33 @@ public class BpmHttpConnector implements Connector {
 
         // 连接配置 schema（驱动连接管理页表单动态渲染）
         desc.getConfigSchema().put("endpoint",
-                ConnectorDescriptor.ConfigField.ofString("BPM 容器地址", true, null));
+            ConnectorDescriptor.ConfigField.ofString("BPM 容器地址", true, null)
+                .inGroup("default")
+                .description("容器根地址，如 http://bpm-host:8088（不要以 / 结尾；连接器自行拼 /portal/openapi）"));
         desc.getConfigSchema().put("accessKey",
-                ConnectorDescriptor.ConfigField.ofString(
-                        "OpenAPI access_key（CC 身份策略访问凭证）", true, null));
+            ConnectorDescriptor.ConfigField.ofString("OpenAPI access_key", true, null)
+                .inGroup("default")
+                .description("CC 身份策略的访问凭证，随请求做 HmacMD5 签名"));
         // apiSecret 标记敏感：连接管理服务据此拆入 credentials 加密列，不落明文 config
         desc.getConfigSchema().put("apiSecret",
-                ConnectorDescriptor.ConfigField.ofString(
-                        "OpenAPI secret（CC 身份策略私钥）", true, null).sensitive());
+            ConnectorDescriptor.ConfigField.ofString("OpenAPI secret", true, null)
+                .sensitive()
+                .inGroup("default")
+                .description("CC 身份策略私钥；编辑时留空表示沿用原值"));
         desc.getConfigSchema().put("timeoutMs",
-                ConnectorDescriptor.ConfigField.ofInt("HTTP 超时（毫秒）", false, 30000));
+            ConnectorDescriptor.ConfigField.ofInt("HTTP 超时", false, 30000)
+                .inGroup("advanced")
+                .unit("毫秒")
+                .description("单次 HTTP 调用的连接与读取超时"));
         desc.getConfigSchema().put("retryCount",
-                ConnectorDescriptor.ConfigField.ofInt("失败重试次数（1D-P0 未实现，保留字段）", false, 0));
+            ConnectorDescriptor.ConfigField.ofInt("失败重试次数", false, 0)
+                .inGroup("advanced")
+                .unit("次")
+                .description("1D-P0 未实现，保留字段"));
+
+        desc.setGroups(List.of(
+            ConnectorDescriptor.ConfigGroup.primary("default", "常规"),
+            ConnectorDescriptor.ConfigGroup.of("advanced", "高级")));
 
         // 10 个操作定义
         desc.getOperations().add(buildOperation("createSession", "创建会话",

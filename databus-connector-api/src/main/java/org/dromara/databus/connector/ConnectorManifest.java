@@ -3,9 +3,12 @@ package org.dromara.databus.connector;
 import lombok.Data;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -76,6 +79,9 @@ public class ConnectorManifest {
     /** Connection 配置 schema（驱动连接管理页表单动态渲染） */
     private Map<String, ConnectorDescriptor.ConfigField> configSchema = new LinkedHashMap<>();
 
+    /** 连接表单分组元数据（tab 顺序）；留空则由前端按字段 group 自动分组 */
+    private List<ConnectorDescriptor.ConfigGroup> groups = new ArrayList<>();
+
     /**
      * 上传校验：artifact / type / label / version / engine 必填，engine 取值合法，artifact/type 命名规范。
      *
@@ -113,6 +119,61 @@ public class ConnectorManifest {
         if ("jvm".equals(engine) && (mainClass == null || mainClass.isBlank())) {
             throw new ConnectorException("MANIFEST_INVALID",
                     "engine=jvm 时 manifest.json 必须提供 mainClass（反射实例化的 Connector 实现类全限定名）");
+        }
+        validateGroups();
+    }
+
+    /**
+     * 分组声明自检：key 不重复、主组至多一个、字段的 group 必须在声明内、
+     * span 不得超过所属分组的 columns。
+     *
+     * <p>没声明 groups 的老包跳过（前端会按字段 group 自动分组）；声明了就必须自洽，
+     * 否则界面上会出现「tab 里一个字段都没有」或「字段落在不存在的 tab」这类静默错位。
+     */
+    private void validateGroups() {
+        if (groups == null || groups.isEmpty()) {
+            return;
+        }
+        Set<String> keys = new HashSet<>();
+        Map<String, Integer> groupColumns = new HashMap<>();
+        int primaries = 0;
+        for (ConnectorDescriptor.ConfigGroup group : groups) {
+            if (group.getKey() == null || group.getKey().isBlank()) {
+                throw new ConnectorException("MANIFEST_INVALID", "groups 中存在空 key 的分组");
+            }
+            if (!keys.add(group.getKey())) {
+                throw new ConnectorException("MANIFEST_INVALID", "groups 中分组 key 重复：" + group.getKey());
+            }
+            if (group.isPrimary()) {
+                primaries++;
+            }
+            int columns = group.getColumns() == null ? 2 : group.getColumns();
+            if (columns < 1 || columns > 12) {
+                throw new ConnectorException("MANIFEST_INVALID",
+                        "分组 " + group.getKey() + " 的 columns 必须在 1..12：" + columns);
+            }
+            groupColumns.put(group.getKey(), columns);
+        }
+        if (primaries > 1) {
+            throw new ConnectorException("MANIFEST_INVALID", "groups 中主组（primary）最多只能声明一个");
+        }
+        for (Map.Entry<String, ConnectorDescriptor.ConfigField> entry : configSchema.entrySet()) {
+            String groupKey = entry.getValue().getGroup();
+            if (groupKey != null && !groupKey.isBlank() && !keys.contains(groupKey)) {
+                throw new ConnectorException("MANIFEST_INVALID",
+                        "字段 " + entry.getKey() + " 声明的 group=" + groupKey + " 不在 groups 列表内");
+            }
+            int span = entry.getValue().getSpan();
+            if (span < 1 || span > 12) {
+                throw new ConnectorException("MANIFEST_INVALID",
+                        "字段 " + entry.getKey() + " 的 span 必须在 1..12：" + span);
+            }
+            Integer columns = groupKey == null ? null : groupColumns.get(groupKey);
+            if (columns != null && span > columns) {
+                throw new ConnectorException("MANIFEST_INVALID",
+                        "字段 " + entry.getKey() + " 的 span=" + span + " 超过分组 " + groupKey
+                                + " 的 columns=" + columns);
+            }
         }
     }
 

@@ -132,6 +132,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
         descriptor.setIcon(ICON);
         descriptor.setFamily(FAMILY);
         descriptor.setConfigSchema(configSchema(type));
+        descriptor.setGroups(configGroups());
 
         descriptor.getOperations().add(queryOperation());
         descriptor.getOperations().add(executeOperation());
@@ -139,73 +140,91 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
         return descriptor;
     }
 
-    /** §3.2 configSchema 全清单：基础 6 项 + 高级 12 项，前端按 group 分 tab */
+    /** 分组键：常规（主组）/ 连接串 / 高级 */
+    private static final String GROUP_MAIN = "default";
+    private static final String GROUP_URL = "url";
+    private static final String GROUP_ADVANCED = "advanced";
+
+    /**
+     * tab 顺序：常规 → 连接串 → 高级。
+     * 连接串单独成组，是因为「填了自定义 URL 就不要再填主机」这条互斥关系值得一个独立的落点，
+     * 而不是把它塞进高级项的末尾让人翻两页才发现。
+     *
+     * <p>常规组用 4 份栅格：主机占 3 份 + 端口占 1 份同行（端口只需几位数字），
+     * 用户名/密码各占 2 份同行，库名占满 4 份。份数由字段的 span 声明，前端不认识这些字段名。
+     */
+    private List<ConnectorDescriptor.ConfigGroup> configGroups() {
+        return List.of(
+            ConnectorDescriptor.ConfigGroup.primary(GROUP_MAIN, "常规").columns(4),
+            ConnectorDescriptor.ConfigGroup.of(GROUP_URL, "连接串"),
+            ConnectorDescriptor.ConfigGroup.of(GROUP_ADVANCED, "高级"));
+    }
+
+    /** §3.2 configSchema 全清单：常规 5 项 + 连接串 1 项 + 高级 11 项 */
     private Map<String, ConfigField> configSchema(JdbcDbType type) {
         Map<String, ConfigField> schema = new LinkedHashMap<>();
 
-        // 模式开关：host/port/database 与 urlOverride 是两条互斥路径。不显式表达这个选择，
-        // host 的 required=true 就会把 urlOverride 这条文档化的逃生舱直接拦死（前端照 schema 硬校验）。
-        ConfigField urlMode = text("连接串来源", false, JdbcConnectionCfg.URL_MODE_BASIC, "基础", "SELECT", null,
-            "「按主机拼装」填下方主机/端口/库名；「自定义 JDBC URL」改填高级项里的完整连接串");
-        urlMode.setOptions(List.of(new Option("按主机拼装", JdbcConnectionCfg.URL_MODE_BASIC),
-            new Option("自定义 JDBC URL", "override")));
-        schema.put("urlMode", urlMode);
-
-        // 必须用 ne（而非 eq basic）：本次改造前存的 config 里没有 urlMode 键，
-        // eq 会把 String(null) != "basic" 判成不满足，三个字段凭空消失、老连接改不了。
-        ShowWhen notOverride = new ShowWhen("urlMode", null, "override", null, null);
-        ConfigField host = text("主机", true, null, "基础", "TEXT", null, "数据库主机名或 IP");
-        host.setShowWhen(notOverride);
+        // 两条互斥路径：host/port/database 只在「自定义 URL 留空」时可见。
+        // 用 empty 条件而不是下拉开关：少一个要用户理解的选项，也免了「界面选按主机拼装、实际却连了 URL」的静默错位。
+        ShowWhen byHost = ShowWhen.visibleWhenBlank("urlOverride");
+        ConfigField host = text("主机", true, null, GROUP_MAIN, "TEXT", null, "数据库主机名或 IP");
+        host.setShowWhen(byHost);
+        host.span(3);
         schema.put("host", host);
-        ConfigField port = number("端口", true, type.getDefaultPort(), "基础", null, null);
-        port.setShowWhen(notOverride);
+        ConfigField port = number("端口", true, type.getDefaultPort(), GROUP_MAIN, null, null);
+        port.setShowWhen(byHost);
         schema.put("port", port);
-        ConfigField database = text(type.getDatabaseLabel(), true, null, "基础", "TEXT", null,
-            type == JdbcDbType.ORACLE ? "Oracle 填服务名（serviceName），不是 SID" : null);
-        database.setShowWhen(notOverride);
+        ConfigField database = text(type.getDatabaseLabel(), true, null, GROUP_MAIN, "TEXT", null,
+            type == JdbcDbType.ORACLE ? "Oracle 填服务名（serviceName），不是 SID" : "库名 / 模式名");
+        database.setShowWhen(byHost);
+        database.span(4);
         schema.put("database", database);
-        schema.put("username", text("用户名", true, null, "基础", "TEXT", null,
-            "建议使用只读数据库账号：连接开启「只读」只是弱防线，账号权限才是主防线"));
-        ConfigField password = text("密码", true, null, "基础", "PASSWORD", null, null);
+        schema.put("username", text("用户名", true, null, GROUP_MAIN, "TEXT", null,
+            "建议使用只读数据库账号：连接开启「只读」只是弱防线，账号权限才是主防线").span(2));
+        ConfigField password = text("密码", true, null, GROUP_MAIN, "PASSWORD", null,
+            "编辑时留空表示沿用原密码");
         password.setType("string");
         password.sensitive();
+        password.span(2);
         schema.put("password", password);
 
-        // urlOverride 的 required 只在它可见（urlMode=override）时才被前端生成校验规则，
-        // 隐藏字段的必填由通用适配层跳过，这里不需要为两种模式各写一份 schema。
-        ConfigField urlOverride = text("自定义 JDBC URL", true, null, "高级", "TEXTAREA", null,
-            "仅在「连接串来源＝自定义 JDBC URL」时使用；仍会过参数黑名单（禁 socketFactory / autoDeserialize 等高危参数），"
+        // 连接串：填了就跳过 host/port/database 拼装，必填由连接器在执行期按「二选一」判定，
+        // 因此这里 required=false——它不是必填项，是替代项。
+        ConfigField urlOverride = text("自定义 JDBC URL", false, null, GROUP_URL, "TEXTAREA",
+            "jdbc:mysql://host:3306/db?useSSL=false",
+            "填了即忽略「常规」页的主机 / 端口 / 库名；仍会过参数黑名单（禁 socketFactory / autoDeserialize 等高危参数），"
                 + "超时类参数由平台统一控制，填了会被丢弃");
-        urlOverride.setShowWhen(new ShowWhen("urlMode", "override", null, null, null));
+        urlOverride.span(2);
         schema.put("urlOverride", urlOverride);
-        ConfigField driverProps = text("驱动属性", false, Map.of(), "高级", "KEY_VALUE_MAP", null,
-            "逃生舱：直接传给驱动的键值对。禁填 user / password（凭证只从上方基础项注入）");
+        ConfigField driverProps = text("驱动属性", false, Map.of(), GROUP_ADVANCED, "KEY_VALUE_MAP", null,
+            "逃生舱：直接传给驱动的键值对。禁填 user / password（凭证只从「常规」页注入）");
         driverProps.setType("object");
+        driverProps.span(2);
         schema.put("driverProps", driverProps);
 
-        schema.put("connectTimeoutMs", number("连接超时（毫秒）", false,
-            JdbcConnectionCfg.DEFAULT_CONNECT_TIMEOUT_MS, "高级", null,
-            "翻译成各库自己的连接串参数（不用 DriverManager.setLoginTimeout，那是 JVM 全局开关）；测试连接时强制压到 3000"));
-        schema.put("queryTimeoutSec", number("查询超时（秒）", false,
-            JdbcConnectionCfg.DEFAULT_QUERY_TIMEOUT_SEC, "高级", null, "硬上限 300，防慢查询占满连接池"));
-        schema.put("maxPoolSize", number("连接池上限", false, JdbcConnectionCfg.DEFAULT_MAX_POOL_SIZE, "高级", null,
+        schema.put("connectTimeoutMs", number("连接超时", false,
+            JdbcConnectionCfg.DEFAULT_CONNECT_TIMEOUT_MS, GROUP_ADVANCED, null,
+            "翻译成各库自己的连接串参数（不用 DriverManager.setLoginTimeout，那是 JVM 全局开关）；测试连接时强制压到 3000").unit("毫秒"));
+        schema.put("queryTimeoutSec", number("查询超时", false,
+            JdbcConnectionCfg.DEFAULT_QUERY_TIMEOUT_SEC, GROUP_ADVANCED, null, "硬上限 300，防慢查询占满连接池").unit("秒"));
+        schema.put("maxPoolSize", number("连接池上限", false, JdbcConnectionCfg.DEFAULT_MAX_POOL_SIZE, GROUP_ADVANCED, null,
             "硬上限 50"));
-        schema.put("minIdle", number("最小空闲连接", false, 1, "高级", null, null));
-        schema.put("maxRows", number("单次查询行数上限", false, JdbcConnectionCfg.DEFAULT_MAX_ROWS, "高级", null,
-            "硬上限 10000，防 select * from 大表把数据空间打爆"));
-        schema.put("fetchSize", number("抓取大小", false, JdbcConnectionCfg.DEFAULT_FETCH_SIZE, "高级", null,
-            "PostgreSQL 系需临时关闭 autoCommit 才生效，连接器已自动处理"));
-        ConfigField readOnly = bool("只读连接", false, false, "高级",
+        schema.put("minIdle", number("最小空闲连接", false, 1, GROUP_ADVANCED, null, null));
+        schema.put("maxRows", number("单次查询行数上限", false, JdbcConnectionCfg.DEFAULT_MAX_ROWS, GROUP_ADVANCED, null,
+            "硬上限 10000，防 select * from 大表把数据空间打爆").unit("行"));
+        schema.put("fetchSize", number("抓取大小", false, JdbcConnectionCfg.DEFAULT_FETCH_SIZE, GROUP_ADVANCED, null,
+            "PostgreSQL 系需临时关闭 autoCommit 才生效，连接器已自动处理").unit("条"));
+        ConfigField readOnly = bool("只读连接", false, false, GROUP_ADVANCED,
             "开启后拒绝执行非 SELECT 语句（弱防线，建议同时使用只读数据库账号）");
         schema.put("readOnly", readOnly);
-        ConfigField columnNameCase = text("列名大小写", false, "AS_IS", "高级", "SELECT", null,
+        ConfigField columnNameCase = text("列名大小写", false, "AS_IS", GROUP_ADVANCED, "SELECT", null,
             "Oracle、达梦默认返回大写列名，换库会断链路；LOWER / UPPER 可统一");
         columnNameCase.setOptions(List.of(new Option("原样", "AS_IS"), new Option("全小写", "LOWER"),
             new Option("全大写", "UPPER")));
         schema.put("columnNameCase", columnNameCase);
-        schema.put("decimalAsString", bool("高精度数转字符串", false, true, "高级",
+        schema.put("decimalAsString", bool("高精度数转字符串", false, true, GROUP_ADVANCED,
             "NUMERIC / DECIMAL 转字符串输出，防前端 JSON 解析丢精度"));
-        schema.put("logSql", bool("记录 SQL 原文", false, false, "高级",
+        schema.put("logSql", bool("记录 SQL 原文", false, false, GROUP_ADVANCED,
             "默认关闭：args 可能含身份证等敏感数据。开启后也只回显每个参数的前 8 个字符"));
         return schema;
     }
@@ -229,10 +248,10 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
             "仅 resultMode=scalar 时生效");
         scalarType.setOptions(List.of(new Option("字符串", "string"), new Option("整数", "int"),
             new Option("长整数", "long"), new Option("浮点数", "double")));
-        scalarType.setShowWhen(new ShowWhen("resultMode", "scalar", null, null, null));
+        scalarType.setShowWhen(new ShowWhen("resultMode", "scalar", null, null, null, null));
         op.getParams().put("scalarType", scalarType);
-        op.getParams().put("maxRows", number("行数上限", false, null, null, null, "留空则用连接配置的值"));
-        op.getParams().put("fetchSize", number("抓取大小", false, null, null, null, "留空则用连接配置的值"));
+        op.getParams().put("maxRows", number("行数上限", false, null, null, null, "留空则用连接配置的值").unit("行"));
+        op.getParams().put("fetchSize", number("抓取大小", false, null, null, null, "留空则用连接配置的值").unit("条"));
         return op;
     }
 
@@ -262,7 +281,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
         argsList.setDescription("数组的数组，每个内层数组是一组 ? 绑定参数");
         op.getParams().put("argsList", argsList);
         op.getParams().put("batchSize", number("批大小", false, DEFAULT_BATCH_SIZE, null, null,
-            "每攒够这么多组 executeBatch 一次"));
+            "每攒够这么多组 executeBatch 一次").unit("组"));
         return op;
     }
 

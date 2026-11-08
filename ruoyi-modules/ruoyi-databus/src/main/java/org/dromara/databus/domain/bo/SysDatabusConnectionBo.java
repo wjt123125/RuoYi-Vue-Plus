@@ -36,9 +36,11 @@ public class SysDatabusConnectionBo implements Serializable {
     private Long id;
 
     /**
-     * 连接 ID（全局唯一，组件层引用此值）
+     * 连接 ID（全局唯一，组件层引用此值）。
+     * <p>新增时由后端按 {@code connectorType-随机串} 生成，不要求用户填写；
+     * 编辑时原值回传（用于唯一性校验与组件引用稳定性）。
      */
-    @NotBlank(message = "连接ID不能为空", groups = {AddGroup.class, EditGroup.class})
+    @NotBlank(message = "连接ID不能为空", groups = {EditGroup.class})
     @Size(max = 64, message = "连接ID长度不能超过{max}", groups = {AddGroup.class, EditGroup.class})
     private String connectionId;
 

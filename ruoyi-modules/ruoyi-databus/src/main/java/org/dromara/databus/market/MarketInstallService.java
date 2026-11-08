@@ -226,6 +226,7 @@ public class MarketInstallService {
         vo.setSummary(item.getSummary());
         vo.setIcon(item.getIcon());
         vo.setColor(item.getColor());
+        vo.setCodeDisplay(item.getCodeDisplay());
         vo.setCreateTime(record.getCreateTime());
         return vo;
     }
@@ -398,6 +399,7 @@ public class MarketInstallService {
         vo.setSummary(item.getSummary());
         vo.setIcon(item.getIcon());
         vo.setColor(item.getColor());
+        vo.setCodeDisplay(item.getCodeDisplay());
         // 组件直接看本体现在是启用还是停用；链路复制出来是草稿（没发布），没有开关
         vo.setEnabled(TYPE_COMPONENT.equals(item.getResourceType()) && Boolean.TRUE.equals(outcome.componentEnabled()));
         return vo;
@@ -650,6 +652,8 @@ public class MarketInstallService {
                 }
                 // 上架者登录名：管理页行上渲染 @作者（宁缺勿滥，物料行没了就不显示）
                 vo.setOwnerCode(item.getOwnerCode());
+                // 展示码：安装记录表没有这一列，行副标题的「谁的哪一个」从物料行回填
+                vo.setCodeDisplay(item.getCodeDisplay());
             }
             if (StringUtils.isBlank(name) && connectorType != null) {
                 name = connectorType;

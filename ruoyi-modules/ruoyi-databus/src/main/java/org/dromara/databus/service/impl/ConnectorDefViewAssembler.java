@@ -180,15 +180,17 @@ public class ConnectorDefViewAssembler {
             vo.setIcon(manifest.getIcon());
             vo.setOperations(manifest.getOperations());
             vo.setConfigSchema(manifest.getConfigSchema());
+            vo.setGroups(manifest.getGroups());
         } catch (Exception ignored) {
             // 快照异常不阻断列表；上传链路已保证落库快照合法
         }
-        // 已装载时用运行态 describe() 覆盖 operations/configSchema（代码是活的，manifest 是构建期快照，§2.3）
+        // 已装载时用运行态 describe() 覆盖 operations/configSchema/groups（代码是活的，manifest 是构建期快照，§2.3）
         Connector connector = connectorRegistry.get(def.getType());
         if (connector != null) {
             ConnectorDescriptor descriptor = connector.describe();
             vo.setOperations(descriptor.getOperations());
             vo.setConfigSchema(descriptor.getConfigSchema());
+            vo.setGroups(descriptor.getGroups());
         }
         // 运行态健康（§4.2.1）：内存现算不落库，与组件的 GET /component/script/runtime 同一口径
         PluginManager.ConnectorHealth health = pluginManager.healthOf(def.getType());

@@ -37,10 +37,11 @@ import java.util.Map;
  * 提交即进待审，走「审核启用 → 上架 → 安装使用」闭环。
  * <ul>
  *   <li>视图：GET /databus/connector/defs（连接器零内置，只查 def 行；连接管理页 CONNECTOR_OPTIONS 动态化）</li>
- *   <li>启停：POST /databus/connector/defs/{type}/enable | /disable（运行层状态机）</li>
- *   <li>废弃：POST /databus/connector/defs/{type}/deprecate（DEPRECATED 终态，不可逆）</li>
- *   <li>卸载：DELETE /databus/connector/defs/{type}（默认拒绝在用连接；?force=true 强制）</li>
+ *   <li>启停：POST /databus/connector/defs/{type}/{version}/enable | /disable（运行层状态机，版本级）</li>
+ *   <li>废弃：POST /databus/connector/defs/{type}/{version}/deprecate（DEPRECATED 终态，不可逆）</li>
+ *   <li>卸载：DELETE /databus/connector/defs/{type}/{version}（默认拒绝在用连接；?force=true 强制）</li>
  * </ul>
+ * 身份键是 (type, version)：不同 version 是不同连接器，同 type 多版本可并存，治理动作一律带 version。
  * 上传者身份从登录态取，前端不传。
  *
  * @author databus
@@ -79,10 +80,11 @@ public class DatabusConnectorController extends BaseController {
     @SaCheckPermission("databus:connector:edit")
     @Log(title = "连接器启用", businessType = BusinessType.UPDATE)
     @RepeatSubmit
-    @PostMapping("/defs/{type}/enable")
+    @PostMapping("/defs/{type}/{version}/enable")
     public R<Void> enable(@NotBlank(message = "类型不能为空") @PathVariable("type") String type,
+                          @NotBlank(message = "版本不能为空") @PathVariable("version") String version,
                           @RequestParam("verified") Boolean verified) {
-        return toAjax(connectorService.enable(type, LoginHelper.getUserId(), verified));
+        return toAjax(connectorService.enable(type, version, LoginHelper.getUserId(), verified));
     }
 
     /**
@@ -91,9 +93,10 @@ public class DatabusConnectorController extends BaseController {
     @SaCheckPermission("databus:connector:edit")
     @Log(title = "连接器禁用", businessType = BusinessType.UPDATE)
     @RepeatSubmit
-    @PostMapping("/defs/{type}/disable")
-    public R<Void> disable(@NotBlank(message = "类型不能为空") @PathVariable("type") String type) {
-        return toAjax(connectorService.disable(type));
+    @PostMapping("/defs/{type}/{version}/disable")
+    public R<Void> disable(@NotBlank(message = "类型不能为空") @PathVariable("type") String type,
+                           @NotBlank(message = "版本不能为空") @PathVariable("version") String version) {
+        return toAjax(connectorService.disable(type, version));
     }
 
     /**
@@ -103,18 +106,20 @@ public class DatabusConnectorController extends BaseController {
     @SaCheckPermission("databus:connector:edit")
     @Log(title = "连接器废弃", businessType = BusinessType.UPDATE)
     @RepeatSubmit
-    @PostMapping("/defs/{type}/deprecate")
-    public R<Void> deprecate(@NotBlank(message = "类型不能为空") @PathVariable("type") String type) {
-        return toAjax(connectorService.deprecate(type));
+    @PostMapping("/defs/{type}/{version}/deprecate")
+    public R<Void> deprecate(@NotBlank(message = "类型不能为空") @PathVariable("type") String type,
+                             @NotBlank(message = "版本不能为空") @PathVariable("version") String version) {
+        return toAjax(connectorService.deprecate(type, version));
     }
 
     /**
      * 运行时信息：实际加载器与生效驱动清单（§4.2.1）。
      */
     @SaCheckPermission("databus:connector:list")
-    @GetMapping("/{type}/runtime-info")
-    public R<Map<String, Object>> runtimeInfo(@NotBlank(message = "类型不能为空") @PathVariable("type") String type) {
-        return R.ok(pluginManager.runtimeInfo(type));
+    @GetMapping("/{type}/{version}/runtime-info")
+    public R<Map<String, Object>> runtimeInfo(@NotBlank(message = "类型不能为空") @PathVariable("type") String type,
+                                              @NotBlank(message = "版本不能为空") @PathVariable("version") String version) {
+        return R.ok(pluginManager.runtimeInfo(type, version));
     }
 
     /**
@@ -123,10 +128,11 @@ public class DatabusConnectorController extends BaseController {
     @SaCheckPermission("databus:connector:remove")
     @Log(title = "连接器卸载", businessType = BusinessType.DELETE)
     @RepeatSubmit
-    @DeleteMapping("/defs/{type}")
+    @DeleteMapping("/defs/{type}/{version}")
     public R<Void> uninstall(@NotBlank(message = "类型不能为空") @PathVariable("type") String type,
+                             @NotBlank(message = "版本不能为空") @PathVariable("version") String version,
                              @RequestParam(value = "force", required = false, defaultValue = "false") Boolean force) {
-        return toAjax(connectorService.uninstall(type, Boolean.TRUE.equals(force)));
+        return toAjax(connectorService.uninstall(type, version, Boolean.TRUE.equals(force)));
     }
 
     /**

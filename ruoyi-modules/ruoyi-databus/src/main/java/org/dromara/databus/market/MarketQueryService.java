@@ -158,6 +158,8 @@ public class MarketQueryService {
         DatabusMarketItemVo vo = assembler.toItemVo(item);
         Map<Long, Long> installedMap = buildInstalledMap(userId, List.of(item));
         fillInstalled(vo, item, userId, installedMap);
+        // 连接器详情要显示版本与构建号（def 行才有这两列）
+        fillConnectorVersion(vo, item);
         return vo;
     }
 
@@ -290,5 +292,20 @@ public class MarketQueryService {
         vo.setInstalled(localResourceId != null);
         vo.setLocalResourceId(localResourceId);
         vo.setMine(Objects.equals(item.getOwnerId(), userId));
+    }
+
+    /**
+     * 连接器物料的版本与构建号取源 def 行（物料行只存 sourceId＝def.id）；
+     * 其他类型不回填，前端按有无显示。
+     */
+    private void fillConnectorVersion(DatabusMarketItemVo vo, DatabusMarketItem item) {
+        if (!TYPE_CONNECTOR.equals(item.getResourceType()) || item.getSourceId() == null) {
+            return;
+        }
+        DatabusConnectorDef def = connectorDefMapper.selectById(item.getSourceId());
+        if (def != null) {
+            vo.setVersion(def.getVersion());
+            vo.setBuildNo(def.getBuildNo());
+        }
     }
 }

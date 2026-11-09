@@ -9,13 +9,11 @@ import java.time.LocalDateTime;
 /**
  * 连接器运行层台账对象 databus_connector_def（万物皆包，databus-material-market.md §15.6）
  *
- * <p>一行＝一个连接器类型（type 全局唯一）。与市场层 databus_market_item 解耦：
- * 市场管买卖（PENDING/ONLINE...），本表管运行（PENDING / ENABLED / DISABLED / DEPRECATED）；
- * 市场下线只挡新安装，存量 def 照常运行（§15.4）。
- *
- * <p>type 唯一键承载「冲突检测」：不存在＝新插入；同 type 同 version＝报错；
- * 同 type 升版本＝热更新本行（status 保持，不停机）。jvm 档双版本并存是
- * PluginClassLoader 加载层行为（§15.5），数据层 v1 单行承载。
+ * <p>一行＝一个连接器（身份键 = type + version）。不同 version 是不同连接器，各自独立
+ * 审核 / 启用 / 上架 / 安装 / 卸载，同 type 多版本可并存互不影响；只有 type 与 version
+ * 都相同、而 {@code buildNo} 更大时才是「同一连接器的升级」（原地替换包内容）。
+ * 与市场层 databus_market_item 解耦：市场管买卖（PENDING/ONLINE...），本表管运行
+ * （PENDING / ENABLED / DISABLED / DEPRECATED）；市场下线只挡新安装，存量 def 照常运行（§15.4）。
  *
  * <p>连接器零内置（方案 §1.2）：本表是唯一的连接器台账，defs 接口只查本表，
  * 装载后的运行态从 {@code ConnectorRegistry} 取。
@@ -34,14 +32,19 @@ public class DatabusConnectorDef {
     private Long id;
 
     /**
-     * 类型键（全局唯一；与 Connector#getType 对齐，卸载保护范围）
+     * 类型键（与 Connector#getType 对齐；与 version 一起构成连接器身份）
      */
     private String type;
 
     /**
-     * 版本号（manifest 声明；同 type 升版本＝热更新）
+     * 版本号（manifest 声明；不同 version＝不同连接器）
      */
     private String version;
+
+    /**
+     * 构建号（同 type+version 下更大＝同版本升级；不填视为 0）
+     */
+    private Integer buildNo;
 
     /**
      * 引擎档（http / jvm / native，§15.2 光谱）

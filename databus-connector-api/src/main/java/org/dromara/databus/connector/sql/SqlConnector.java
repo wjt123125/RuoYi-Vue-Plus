@@ -10,7 +10,7 @@ import java.util.Map;
  *
  * <p>与通用 {@code Connector.invoke()} 逃生舱并存：SQL 是高频、同类能力有多个连接器实现
  * （jdbc-postgresql / jdbc-oracle / …），抽成能力接口换取编译期类型检查与返回值校验。
- * 脚本里 {@code (SqlConnector) ConnectorRegistry.ofType(conn.getConnectorType())} 强转成立，
+ * 脚本里 {@code (SqlConnector) ConnectorRegistry.ofType(conn.getConnectorType(), conn.getConnectorVersion())} 强转成立，
  * 因为本接口与三个 record 都在 api 模块 = 父加载器只有一份。
  *
  * <p>方法名取 Spring {@code JdbcTemplate} 词汇（Java 圈事实标准），<b>但单行语义与 Spring 不同</b>，

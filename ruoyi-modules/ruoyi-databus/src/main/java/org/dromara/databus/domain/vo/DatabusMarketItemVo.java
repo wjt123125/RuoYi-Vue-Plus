@@ -52,6 +52,16 @@ public class DatabusMarketItemVo implements Serializable {
     private String codeDisplay;
 
     /**
+     * 连接器版本（仅 CONNECTOR，取源 def 行；其他类型为空）
+     */
+    private String version;
+
+    /**
+     * 连接器构建号（仅 CONNECTOR，缺省 0）：同一 type+version 下越大越新
+     */
+    private Integer buildNo;
+
+    /**
      * 名称
      */
     private String name;

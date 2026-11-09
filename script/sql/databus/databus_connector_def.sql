@@ -9,9 +9,9 @@
 
 -- ----------------------------
 -- 连接器运行层台账 databus_connector_def
--- type 全局唯一（卸载保护范围）：同 type 传新版本＝热更新本行（version/package_path/manifest_snapshot
---   刷新，status 保持）；jvm 档「双版本并存」是 PluginClassLoader 加载层行为（§15.5），
---   数据层 v1 单行承载（15.9 落地顺序第 4 步再演进）。
+-- 身份键 = (type, version)：不同 version 是不同连接器，各自独立审核/启用/上架/安装/卸载，
+--   同 type 多版本并存互不影响；只有 (type, version) 相同且 build_no 更大才是「同版本升级」。
+--   build_no：同版本升级（替换包内容）的唯一判据，不填＝0。
 -- manifest_snapshot 存 zip 内 manifest.json 原文（text）：type/label/icon/version/engine/
 --   configSchema/operations（字段对齐 ConnectorDescriptor + engine/version，§15.1）。
 -- source：UPLOAD（市场 tab 内上传入口）/ MARKET（enable 型安装分支）/ AI / ADMIN / DEV（dev 目录装载）。
@@ -23,8 +23,9 @@
 drop table if exists databus_connector_def;
 create table databus_connector_def (
     id                  bigint(20)   not null                  comment '主键id',
-    type                varchar(64)  not null                  comment '类型键（全局唯一；Connector#getType 对齐，卸载保护范围）',
-    version             varchar(32)  not null                  comment '版本号（manifest 声明；同 type 升版本＝热更新）',
+    type                varchar(64)  not null                  comment '类型键（Connector#getType 对齐；与 version 一起构成身份）',
+    version             varchar(32)  not null                  comment '版本号（manifest 声明；不同 version＝不同连接器）',
+    build_no            int(11)      not null default 0        comment '构建号（同 type+version 下更大＝同版本升级）',
     engine              varchar(16)  not null                  comment '引擎档（http / jvm / native，§15.2 光谱）',
     manifest_snapshot   text                                   comment 'manifest.json 原文快照（驱动表单动态渲染与物料生成）',
     package_path        varchar(255) default null              comment 'zip 落盘目录（plugins/{type}/{version}）',
@@ -36,6 +37,7 @@ create table databus_connector_def (
     create_time         datetime     default null              comment '创建时间',
     update_time         datetime     default null              comment '更新时间',
     primary key (id),
-    unique key uk_connector_type (type),
+    unique key uk_connector_type_version (type, version),
+    key idx_connector_type (type),
     key idx_connector_status (status)
 ) engine=innodb comment='连接器运行层台账（万物皆包：管 PENDING/ENABLED/DISABLED/DEPRECATED，与市场层状态机解耦）';

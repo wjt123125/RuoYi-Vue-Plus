@@ -4,6 +4,7 @@
   "label": "MySQL JDBC 连接器",
   "icon": "logos:mysql",
   "version": "${mysql.driver.version}",
+  "buildNo": 0,
   "engine": "jvm",
   "mainClass": "org.dromara.databus.connector.jdbc.mysql.MysqlJdbcConnector",
   "dbType": "mysql",

@@ -59,6 +59,13 @@ public class SysDatabusConnectionBo implements Serializable {
     private String connectorType;
 
     /**
+     * 锁定的连接器版本（databus_connector_def.id）。
+     * <p>同 type 多版本共存时由它决定用哪一版；不传则由后端按该 type 最新启用版本回填，
+     * 保证新连接一定有明确版本、不会被将来上传的新版本静默接管。
+     */
+    private Long connectorDefId;
+
+    /**
      * 是否启用（Y启用 N禁用）
      */
     private String enabled;

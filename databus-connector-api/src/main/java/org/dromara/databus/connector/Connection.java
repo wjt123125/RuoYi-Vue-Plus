@@ -37,6 +37,15 @@ public class Connection {
     private String connectorType;
 
     /**
+     * 锁定的连接器版本：创建连接时绑定的 def 行版本号。
+     * <p>
+     * 组件取 Connector 时用 {@code ofType(connectorType, connectorVersion)} 精确命中，
+     * 保证同 type 多版本共存时连接不会被「最新版本」静默接管；null 表示未锁定，
+     * 由注册表按该 type 最新启用版本兜底（历史连接兼容）。
+     */
+    private String connectorVersion;
+
+    /**
      * 连接配置：Map 形式存储，key 由 {@link ConnectorDescriptor#getConfigSchema()} 定义。
      */
     private Map<String, Object> config = new LinkedHashMap<>();
@@ -49,6 +58,9 @@ public class Connection {
 
     public String getConnectorType() { return connectorType; }
     public void setConnectorType(String connectorType) { this.connectorType = connectorType; }
+
+    public String getConnectorVersion() { return connectorVersion; }
+    public void setConnectorVersion(String connectorVersion) { this.connectorVersion = connectorVersion; }
 
     public Map<String, Object> getConfig() { return config; }
     public void setConfig(Map<String, Object> config) { this.config = config; }

@@ -47,9 +47,9 @@ import java.util.zip.ZipInputStream;
  * 连接器运行层 Service 实现（万物皆包，databus-material-market.md §15.5/§15.7）。
  *
  * <p>上传链路：zip 校验（根级 manifest.json + 路径防穿越）→ manifest 必填/命名/engine
- * 校验 → type 冲突检测（同 type 同 version 报错；升版本＝热更新 def 行）→
- * 落盘 {@code plugins/{type}/{version}/{artifact}-{version}.zip} → 新类型装载预检 → 入库。新 type 默认 PENDING（待审核）：
- * 审核即信任（§15.11），enable 是治理者的显式动作。
+ * 校验 → 身份键判定（不同 version＝新增一个连接器，互不影响；同 type+version 只有 buildNo
+ * 更大才算升级）→ 落盘 {@code plugins/{type}/{version}/{artifact}-{version}.zip} → 装载预检 → 入库。
+ * 新连接器与同版本升级都回 PENDING（待审核）：审核即信任（§15.11），enable 是治理者的显式动作。
  *
  * <p>defs 视图：连接器零内置（方案 §1.2），只查 def 行；装载后运行态从
  * {@link ConnectorRegistry} 取。运行层装载/卸载由 {@link PluginManager} 承担，
@@ -154,19 +154,21 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         try {
             for (DatabusConnectorDef def : defMapper.selectList(Wrappers.<DatabusConnectorDef>lambdaQuery())) {
                 String type = def.getType();
+                String version = def.getVersion();
                 if (SOURCE_DEV.equals(def.getSource())) {
-                    log.info("跳过 dev 装载连接器 type={}（由 DevConnectorLoader 从目录装载，仅 dev profile 生效）", type);
+                    log.info("跳过 dev 装载连接器 type={} version={}（由 DevConnectorLoader 从目录装载，仅 dev profile 生效）",
+                        type, version);
                 } else if (ConnectorDefStatusEnum.PENDING.getCode().equals(def.getStatus())) {
-                    connectorRegistry.markPending(type);
+                    connectorRegistry.markPending(type, version);
                 } else if (ConnectorDefStatusEnum.DISABLED.getCode().equals(def.getStatus())) {
-                    connectorRegistry.markDisabled(type);
+                    connectorRegistry.markDisabled(type, version);
                 } else if (ConnectorDefStatusEnum.DEPRECATED.getCode().equals(def.getStatus())) {
-                    connectorRegistry.markDeprecated(type);
+                    connectorRegistry.markDeprecated(type, version);
                 } else if (ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus()) && ENGINE_JVM.equals(def.getEngine())) {
                     try {
                         loadConnector(def);
                     } catch (Exception e) {
-                        log.warn("启动装载连接器失败 type={}：{}", type, e.getMessage());
+                        log.warn("启动装载连接器失败 type={} version={}：{}", type, version, e.getMessage());
                     }
                 }
             }
@@ -188,21 +190,26 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         ConnectorManifest manifest = parseManifest(manifestJson);
         manifest.validate();
 
-        // type 冲突检测（§15.5 上传行）：同 type 同 version 报错；升版本＝热更新。
+        // 身份键=(type, version)（决策 18）：不同 version 是不同连接器，直接新增一行、互不影响；
+        // 只有 type 与 version 都相同、且 buildNo 更大时才是「同一连接器的升级」（原地替换包内容）。
         // DEV 行例外：它是 dev-plugin-dir 启动时临时登记的，不算正式版本占用，允许上传直接接管，
         // 否则同一个 type 会永远被本地开发目录挡住，测试用户无法验证自己的包。
         DatabusConnectorDef existing = defMapper.selectOne(Wrappers.<DatabusConnectorDef>lambdaQuery()
             .eq(DatabusConnectorDef::getType, manifest.getType())
+            .eq(DatabusConnectorDef::getVersion, manifest.getVersion())
             .last("limit 1"));
         boolean devRow = existing != null && SOURCE_DEV.equals(existing.getSource());
-        if (existing != null && !devRow && manifest.getVersion().equals(existing.getVersion())) {
-            throw new ServiceException("连接器 " + manifest.getType() + " 版本 " + manifest.getVersion()
-                + " 已存在，请升级版本号后重新上传（同 type 升版本＝热更新）");
-        }
-        // 废弃是终态（不可逆）：不给「升版本热更新」这条复活后门，需先卸载再重新上传
+        // 废弃是终态（不可逆）：同一个版本不允许再上传替换，需先卸载再重新上传
         if (existing != null && ConnectorDefStatusEnum.DEPRECATED.getCode().equals(existing.getStatus())) {
-            throw new ServiceException("连接器 " + manifest.getType()
-                + " 已废弃（终态不可逆），不能升版本热更新；如确需继续使用，请先卸载再重新上传");
+            throw new ServiceException("连接器 " + manifest.getType() + " 版本 " + manifest.getVersion()
+                + " 已废弃（终态不可逆），不能覆盖上传；如确需继续使用，请先卸载再重新上传");
+        }
+        int buildNo = manifest.getBuildNo() == null ? 0 : manifest.getBuildNo();
+        int existingBuildNo = existing == null || existing.getBuildNo() == null ? 0 : existing.getBuildNo();
+        if (existing != null && !devRow && buildNo <= existingBuildNo) {
+            throw new ServiceException("连接器 " + manifest.getType() + " 版本 " + manifest.getVersion()
+                + " 构建号 " + buildNo + " 未大于现有构建号 " + existingBuildNo
+                + "；同版本只有 buildNo 更大才算升级，不同版本请改 version 后再上传");
         }
 
         // 落盘 plugins/{type}/{version}/{artifact}-{version}.zip（type/version 已正则约束，无穿越面）
@@ -215,12 +222,12 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
         }
         String packagePath = dir.toString().replace('\\', '/');
 
-        // 新类型装载预检（§10.1）：engine=jvm 上传即试装载，失败立刻报错不留到运行时；
-        // 接管 DEV 行同样要预检——此时跑的还是 dev 目录的实例，正式包能不能起来必须先在这次验收
-        if ((existing == null || devRow) && ENGINE_JVM.equals(manifest.getEngine())) {
+        // 装载预检（§10.1）：engine=jvm 上传即试装载，失败立刻报错不留到运行时。
+        // 按 type@version 预检，只影响这个版本；同版本升级时旧实例会在预检里被卸掉（随后回 PENDING）
+        if (ENGINE_JVM.equals(manifest.getEngine())) {
             try {
                 pluginManager.load(manifest.getType(), dir, manifest);
-                pluginManager.unload(manifest.getType());
+                pluginManager.unload(manifest.getType(), manifest.getVersion());
             } catch (Exception e) {
                 deletePackageDir(packagePath);
                 throw new ServiceException("连接器装载预检失败（mainClass 无法实例化）：" + e.getMessage());
@@ -229,13 +236,14 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
 
         LocalDateTime now = LocalDateTime.now();
         // 来源角标按本次上传人判定（方案 §2.5）：治理员上传＝官方，其他人＝手动上传。
-        // 升版本与接管 DEV 行走同一判定，不继承旧 source
+        // 同版本升级（buildNo 更大）与接管 DEV 行走同一判定，不继承旧 source
         String source = isGovernanceUploader() ? SOURCE_ADMIN : SOURCE_UPLOAD;
         DatabusConnectorDef row;
         if (existing == null) {
             row = new DatabusConnectorDef();
             row.setType(manifest.getType());
             row.setVersion(manifest.getVersion());
+            row.setBuildNo(buildNo);
             row.setEngine(manifest.getEngine());
             row.setManifestSnapshot(manifestJson);
             row.setPackagePath(packagePath);
@@ -247,12 +255,13 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             row.setCreateTime(now);
             row.setUpdateTime(now);
             defMapper.insert(row);
-            connectorRegistry.markPending(row.getType());
+            // 新版本只是多了一个连接器，不触碰同 type 其它版本（不卸载、不下架）
+            connectorRegistry.markPending(row.getType(), row.getVersion());
         } else {
-            // 升版本＝换了新内容，旧版本的审核结论不继承：清 verified、回 PENDING，
-            // 并卸下旧实例、把市场物料一起下线，等作者重新提交上架、治理者重新审核启用。
+            // 同版本升级 / 接管 DEV 行：换了新内容，旧审核结论不继承——清 verified、回 PENDING，
+            // 只卸这个版本、只下线这个版本的市场物料，等作者重新提交上架、治理者重新审核启用。
             // 这条不变式是「审了才能跑」的前提——否则新包会带着上一次的 verified 直接过审。
-            existing.setVersion(manifest.getVersion());
+            existing.setBuildNo(buildNo);
             existing.setEngine(manifest.getEngine());
             existing.setManifestSnapshot(manifestJson);
             existing.setPackagePath(packagePath);
@@ -270,10 +279,20 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             }
             defMapper.updateById(existing);
             offlineMarketItems(existing);
-            pluginManager.broadcastSuspend(existing.getType());
-            pluginManager.unload(existing.getType());
-            connectorRegistry.markPending(existing.getType());
+            pluginManager.broadcastSuspend(existing.getType(), existing.getVersion());
+            pluginManager.unload(existing.getType(), existing.getVersion());
+            connectorRegistry.markPending(existing.getType(), existing.getVersion());
             row = existing;
+        }
+        // 正式包出现后，同 type 的 DEV 行（可能来自另一个 version）已无意义：
+        // DevConnectorLoader 遇到正式行会跳过该 type，留着只会多出一行幽灵记录
+        List<DatabusConnectorDef> staleDevRows = defMapper.selectList(Wrappers.<DatabusConnectorDef>lambdaQuery()
+            .eq(DatabusConnectorDef::getType, manifest.getType())
+            .eq(DatabusConnectorDef::getSource, SOURCE_DEV)
+            .ne(DatabusConnectorDef::getVersion, manifest.getVersion()));
+        for (DatabusConnectorDef dev : staleDevRows) {
+            pluginManager.unload(dev.getType(), dev.getVersion());
+            defMapper.deleteById(dev.getId());
         }
         return defViewAssembler.toVo(row);
     }
@@ -290,8 +309,8 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Boolean enable(String type, Long reviewerId, Boolean verified) {
-        DatabusConnectorDef def = requireDef(type);
+    public Boolean enable(String type, String version, Long reviewerId, Boolean verified) {
+        DatabusConnectorDef def = requireDef(type, version);
         // 审核即信任（§1.3）：提交人 ≠ 审批人，勾 verified 才能启用
         if (Objects.equals(def.getCreateBy(), reviewerId)) {
             throw new ServiceException("不能审核自己上传的连接器（提交人 ≠ 审批人），请换一名管理员审核");
@@ -305,28 +324,29 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Boolean disable(String type) {
-        return toggle(requireDef(type), ConnectorDefStatusEnum.DISABLED.getCode());
+    public Boolean disable(String type, String version) {
+        return toggle(requireDef(type, version), ConnectorDefStatusEnum.DISABLED.getCode());
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Boolean deprecate(String type) {
-        DatabusConnectorDef def = requireDef(type);
+    public Boolean deprecate(String type, String version) {
+        DatabusConnectorDef def = requireDef(type, version);
         // 废弃是终态，会把 dev 通道一起堵死（DevConnectorLoader 拒绝装载已废弃的 type），
         // 而 dev 行的状态本来每次启动都被覆盖，落这个态毫无意义
         rejectDevRow(def, "不能废弃（废弃是终态，会把开发通道一起堵死）");
         if (ConnectorDefStatusEnum.DEPRECATED.getCode().equals(def.getStatus())) {
-            throw new ServiceException("连接器 " + type + " 已废弃（终态不可逆）；如需彻底移除请卸载");
+            throw new ServiceException("连接器 " + type + " 版本 " + version + " 已废弃（终态不可逆）；如需彻底移除请卸载");
         }
         if (!ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus()) && !ConnectorDefStatusEnum.DISABLED.getCode().equals(def.getStatus())) {
-            throw new ServiceException("连接器 " + type + " 尚未启用过（当前 " + def.getStatus()
+            throw new ServiceException("连接器 " + type + " 版本 " + version + " 尚未启用过（当前 " + def.getStatus()
                 + "），无需废弃；未启用的包直接卸载即可");
         }
-        // 废弃＝先停机（广播停用 + 卸载实例，包与 def 行保留）再落终态门禁
-        pluginManager.broadcastSuspend(type);
-        pluginManager.unload(type);
-        connectorRegistry.markDeprecated(type);
+        // 废弃＝先停机（广播停用 + 卸载实例，包与 def 行保留）再落终态门禁。
+        // 只作用于这一个版本，同 type 其它版本照常运行
+        pluginManager.broadcastSuspend(type, version);
+        pluginManager.unload(type, version);
+        connectorRegistry.markDeprecated(type, version);
         // 废弃终态同样要从市场下线：不能再有人装它
         offlineMarketItems(def);
         def.setStatus(ConnectorDefStatusEnum.DEPRECATED.getCode());
@@ -336,25 +356,23 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Boolean uninstall(String type, boolean force) {
-        DatabusConnectorDef def = defMapper.selectOne(Wrappers.<DatabusConnectorDef>lambdaQuery()
-            .eq(DatabusConnectorDef::getType, type)
-            .last("limit 1"));
-        if (def == null) {
-            throw new ServiceException("连接器不存在：" + type);
-        }
-        // 默认拒绝（§15.5 三档第一档）：列出在用连接数，同外键 RESTRICT 语义
+    public Boolean uninstall(String type, String version, boolean force) {
+        DatabusConnectorDef def = requireDef(type, version);
+        // 默认拒绝（§15.5 三档第一档）：列出在用连接数，同外键 RESTRICT 语义。
+        // 连接按 def 定版后，只统计绑定这一版的连接；未绑定版本的历史连接按 type 计入（无法区分版本）
         if (!force) {
             Long inUse = connectionMapper.selectCount(Wrappers.<SysDatabusConnection>lambdaQuery()
-                .eq(SysDatabusConnection::getConnectorType, type));
+                .and(w -> w.eq(SysDatabusConnection::getConnectorDefId, def.getId())
+                    .or(o -> o.eq(SysDatabusConnection::getConnectorType, type)
+                        .isNull(SysDatabusConnection::getConnectorDefId))));
             if (inUse != null && inUse > 0) {
-                throw new ServiceException("连接器 " + type + " 仍有 " + inUse
+                throw new ServiceException("连接器 " + type + " 版本 " + version + " 仍有 " + inUse
                     + " 条在用连接，默认拒绝卸载；确认强制卸载请显式传 force=true（存量连接悬空，自然衰减）");
             }
         }
         // §4.3 四步清扫：先卸载实例（onShutdown + close loader + 注销）再删包，
         // 避免 Windows 下 jar 句柄未释放导致判删不掉
-        pluginManager.unload(type);
+        pluginManager.unload(type, version);
         if (SOURCE_DEV.equals(def.getSource())) {
             // dev 行的 package_path 指向构建输出目录（target），不是平台管的包目录，删了就是删编译产物；
             // 且它的生命周期由配置项决定——目录还留在 dev-plugin-dir 里时，重启装载会重新登记该行，
@@ -393,22 +411,24 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
      */
     private Boolean toggle(DatabusConnectorDef def, String status) {
         String type = def.getType();
+        String version = def.getVersion();
         rejectDevRow(def, "启用/停用状态由开发通道管理，在这里改了下次启动也会被覆盖");
         if (ConnectorDefStatusEnum.DEPRECATED.getCode().equals(def.getStatus())) {
-            throw new ServiceException("连接器 " + type + " 已废弃（终态不可逆），不能再启用/停用");
+            throw new ServiceException("连接器 " + type + " 版本 " + version + " 已废弃（终态不可逆），不能再启用/停用");
         }
         if (ConnectorDefStatusEnum.ENABLED.getCode().equals(status)) {
             try {
                 loadConnector(def);
             } catch (Exception e) {
-                throw new ServiceException("装载连接器 " + type + " 失败：" + e.getMessage());
+                throw new ServiceException("装载连接器 " + type + " 版本 " + version + " 失败：" + e.getMessage());
             }
-            connectorRegistry.clearPending(type);
-            connectorRegistry.clearDisabled(type);
+            connectorRegistry.clearPending(type, version);
+            connectorRegistry.clearDisabled(type, version);
         } else {
-            pluginManager.broadcastSuspend(type);
-            pluginManager.unload(type);
-            connectorRegistry.markDisabled(type);
+            // 只停这一个版本：同 type 其它版本继续服务各自的连接
+            pluginManager.broadcastSuspend(type, version);
+            pluginManager.unload(type, version);
+            connectorRegistry.markDisabled(type, version);
             // 停用后市场里不该再挂着它能装：直接下架，读端查询就不需要跨表判 def 状态
             offlineMarketItems(def);
         }
@@ -434,14 +454,16 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
     }
 
     /**
-     * 按 type 取 def 行，不存在即报错（启停/审核共用的前置校验）。
+     * 按 (type, version) 取 def 行，不存在即报错（启停/废弃/卸载共用的前置校验）。
+     * 多版本共存后 type 不再唯一，必须带 version 才能定位唯一一行。
      */
-    private DatabusConnectorDef requireDef(String type) {
+    private DatabusConnectorDef requireDef(String type, String version) {
         DatabusConnectorDef def = defMapper.selectOne(Wrappers.<DatabusConnectorDef>lambdaQuery()
             .eq(DatabusConnectorDef::getType, type)
+            .eq(DatabusConnectorDef::getVersion, version)
             .last("limit 1"));
         if (def == null) {
-            throw new ServiceException("连接器不存在：" + type);
+            throw new ServiceException("连接器不存在：" + type + " 版本 " + version);
         }
         return def;
     }

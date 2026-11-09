@@ -16,11 +16,14 @@ import org.dromara.databus.connector.ConnectorException;
 import org.dromara.databus.connector.ConnectorRegistry;
 import org.dromara.databus.context.JsonCodec;
 import org.dromara.databus.domain.DatabusChain;
+import org.dromara.databus.domain.DatabusConnectorDef;
 import org.dromara.databus.domain.SysDatabusConnection;
 import org.dromara.databus.domain.bo.SysDatabusConnectionBo;
 import org.dromara.databus.domain.vo.ConnectionOptionVo;
 import org.dromara.databus.domain.vo.SysDatabusConnectionVo;
+import org.dromara.databus.enums.ConnectorDefStatusEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
+import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.SysDatabusConnectionMapper;
 import org.dromara.databus.service.ISysDatabusConnectionService;
 import org.springframework.stereotype.Service;
@@ -30,6 +33,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -61,6 +65,8 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     private static final String ENABLED_YES = "Y";
 
     private final SysDatabusConnectionMapper connectionMapper;
+
+    private final DatabusConnectorDefMapper connectorDefMapper;
 
     private final ConnectorRegistry connectorRegistry;
 
@@ -133,9 +139,10 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
             bo.setConnectionId(generateConnectionId(bo.getConnectorType()));
         }
         validateConnectionIdUnique(bo);
-        validateConnectorTypeExists(bo.getConnectorType());
-        validateRequiredSensitive(bo.getConnectorType(), normalizeConfig(bo));
-        SysDatabusConnection add = buildEntityFromBo(bo);
+        DatabusConnectorDef def = resolveDef(bo);
+        validateConnectorAvailable(def);
+        validateRequiredSensitive(def, normalizeConfig(bo));
+        SysDatabusConnection add = buildEntityFromBo(bo, def);
         add.setId(null);
         boolean flag = connectionMapper.insert(add) > 0;
         if (flag) {
@@ -151,10 +158,11 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
             throw new ServiceException("连接不存在或已删除");
         }
         validateConnectionIdUnique(bo);
-        validateConnectorTypeExists(bo.getConnectorType());
+        DatabusConnectorDef def = resolveDef(bo);
+        validateConnectorAvailable(def);
         // 敏感字段留空表示不修改：按 descriptor 的 sensitive 声明从库中旧值补齐，避免空值覆盖
-        mergeMissingSensitive(normalizeConfig(bo), existing, bo.getConnectorType());
-        SysDatabusConnection update = buildEntityFromBo(bo);
+        mergeMissingSensitive(normalizeConfig(bo), existing, def);
+        SysDatabusConnection update = buildEntityFromBo(bo, def);
         return connectionMapper.updateById(update) > 0;
     }
 
@@ -166,19 +174,28 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
 
     @Override
     public Object testConnection(SysDatabusConnectionBo bo) {
-        if (StringUtils.isBlank(bo.getConnectorType())) {
+        if (StringUtils.isBlank(bo.getConnectorType()) && bo.getConnectorDefId() == null) {
             throw new ServiceException("Connector 类型不能为空");
         }
         // 编辑场景敏感字段留空表示沿用原值：从库中取回再实测，否则测的是空密码
+        SysDatabusConnection existing = null;
         if (bo.getId() != null) {
-            SysDatabusConnection existing = connectionMapper.selectById(bo.getId());
+            existing = connectionMapper.selectById(bo.getId());
             if (existing == null) {
                 throw new ServiceException("连接不存在或已删除");
             }
-            mergeMissingSensitive(normalizeConfig(bo), existing, bo.getConnectorType());
+            // 编辑回显可能没带 defId：沿用库里已锁定的版本，避免测试时跳到别的版本
+            if (bo.getConnectorDefId() == null) {
+                bo.setConnectorDefId(existing.getConnectorDefId());
+            }
         }
-        Connector connector = connectorRegistry.ofType(bo.getConnectorType());
-        Connection runtimeConn = boToRuntimeConnection(bo);
+        DatabusConnectorDef def = resolveDef(bo);
+        if (existing != null) {
+            mergeMissingSensitive(normalizeConfig(bo), existing, def);
+        }
+        // 按 (type, version) 精确取：同 type 多版本共存时不能测到「最新版」
+        Connector connector = connectorRegistry.ofType(def.getType(), def.getVersion());
+        Connection runtimeConn = boToRuntimeConnection(bo, def);
         try {
             return connector.testConnection(runtimeConn);
         } catch (ConnectorException e) {
@@ -194,10 +211,19 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
         LambdaQueryWrapper<SysDatabusConnection> lqw = Wrappers.<SysDatabusConnection>lambdaQuery()
             .eq(SysDatabusConnection::getEnabled, ENABLED_YES);
         List<SysDatabusConnection> entities = connectionMapper.selectList(lqw);
+        // 一批取回所有被引用的 def 行：运行时 Connection 要带上锁定版本，
+        // 组件脚本才能用 ofType(type, version) 精确命中，而不是被「最新版」接管
+        Set<Long> defIds = entities.stream()
+            .map(SysDatabusConnection::getConnectorDefId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<Long, DatabusConnectorDef> defs = defIds.isEmpty() ? Map.of()
+            : connectorDefMapper.selectByIds(defIds).stream()
+                .collect(Collectors.toMap(DatabusConnectorDef::getId, d -> d));
         List<Connection> connections = new ArrayList<>(entities.size());
         for (SysDatabusConnection entity : entities) {
             try {
-                connections.add(toRuntimeConnection(entity));
+                connections.add(toRuntimeConnection(entity, defs.get(entity.getConnectorDefId())));
             } catch (Exception e) {
                 // 单条转换失败不阻断执行，记录后跳过；后续组件取该 connectionId 会抛"未注册"
                 log.error("连接转换失败 id={} connectionId={} err={}",
@@ -218,6 +244,9 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
                 SysDatabusConnection::getConnectionName, bo.getConnectionName());
             lqw.eq(StringUtils.isNotBlank(bo.getConnectorType()),
                 SysDatabusConnection::getConnectorType, bo.getConnectorType());
+            // 同 type 多版本共存：按 def 精确筛「这一版的连接」，卸载前查在用数要用到
+            lqw.eq(bo.getConnectorDefId() != null,
+                SysDatabusConnection::getConnectorDefId, bo.getConnectorDefId());
             lqw.eq(StringUtils.isNotBlank(bo.getEnabled()),
                 SysDatabusConnection::getEnabled, bo.getEnabled());
         }
@@ -258,13 +287,50 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     }
 
     /**
-     * 校验 connectorType 在 ConnectorRegistry 中已注册（避免保存无法使用的连接）。
+     * 解析并校验连接绑定的连接器版本（身份键 = type + version）。
+     * <p>显式传 connectorDefId 时以它为准（并校验与 connectorType 一致）；未传时按 type 取
+     * 最新启用的版本并回填——保证新连接一定有明确版本，不会被将来上传的新版本静默接管。
      */
-    private void validateConnectorTypeExists(String connectorType) {
+    private DatabusConnectorDef resolveDef(SysDatabusConnectionBo bo) {
+        DatabusConnectorDef def;
+        if (bo.getConnectorDefId() != null) {
+            def = connectorDefMapper.selectById(bo.getConnectorDefId());
+            if (def == null) {
+                throw new ServiceException("连接器版本不存在（connectorDefId=" + bo.getConnectorDefId()
+                    + "），请重新选择连接器版本");
+            }
+            if (StringUtils.isNotBlank(bo.getConnectorType()) && !bo.getConnectorType().equals(def.getType())) {
+                throw new ServiceException("连接器类型与所选版本不一致：" + bo.getConnectorType()
+                    + " ≠ " + def.getType() + "（v" + def.getVersion() + "）");
+            }
+        } else {
+            if (StringUtils.isBlank(bo.getConnectorType())) {
+                throw new ServiceException("Connector 类型不能为空");
+            }
+            def = connectorDefMapper.selectList(Wrappers.<DatabusConnectorDef>lambdaQuery()
+                    .eq(DatabusConnectorDef::getType, bo.getConnectorType())
+                    .eq(DatabusConnectorDef::getStatus, ConnectorDefStatusEnum.ENABLED.getCode())
+                    .orderByDesc(DatabusConnectorDef::getUpdateTime)
+                    .orderByDesc(DatabusConnectorDef::getId))
+                .stream().findFirst()
+                .orElseThrow(() -> new ServiceException("Connector 类型 '" + bo.getConnectorType()
+                    + "' 没有已启用的版本，请先在连接器管理里启用后再建连接"));
+        }
+        bo.setConnectorDefId(def.getId());
+        bo.setConnectorType(def.getType());
+        return def;
+    }
+
+    /**
+     * 校验连接器版本在运行层可用（已注册 + 已启用），避免保存无法使用的连接。
+     * <p>按 (type, version) 精确校验：同 type 多版本共存时，别的版本启用不能代表这一版可用。
+     */
+    private void validateConnectorAvailable(DatabusConnectorDef def) {
         try {
-            connectorRegistry.ofType(connectorType);
+            connectorRegistry.ofType(def.getType(), def.getVersion());
         } catch (ConnectorException e) {
-            throw new ServiceException("Connector 类型 '" + connectorType + "' 未注册: " + e.getMessage());
+            throw new ServiceException("连接器 " + def.getType() + " 版本 " + def.getVersion()
+                + " 当前不可用: " + e.getMessage());
         }
     }
 
@@ -323,17 +389,18 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
      * BO → 实体（通用列直映；config Map 按 descriptor 的 sensitive 标记
      * 拆成 config（明文）与 credentials（加密）两份 JSON）。
      */
-    private SysDatabusConnection buildEntityFromBo(SysDatabusConnectionBo bo) {
+    private SysDatabusConnection buildEntityFromBo(SysDatabusConnectionBo bo, DatabusConnectorDef def) {
         SysDatabusConnection entity = new SysDatabusConnection();
         entity.setId(bo.getId());
         entity.setConnectionId(bo.getConnectionId());
         entity.setConnectionName(bo.getConnectionName());
         entity.setConnectorType(bo.getConnectorType());
+        entity.setConnectorDefId(bo.getConnectorDefId());
         entity.setEnabled(StringUtils.isBlank(bo.getEnabled()) ? ENABLED_YES : bo.getEnabled());
         entity.setRemark(bo.getRemark());
 
         Map<String, Object> runtimeConfig = normalizeConfig(bo);
-        Set<String> sensitiveKeys = sensitiveKeys(bo.getConnectorType());
+        Set<String> sensitiveKeys = sensitiveKeys(def);
         Map<String, Object> plainConfig = new LinkedHashMap<>();
         Map<String, Object> credentialConfig = new LinkedHashMap<>();
         runtimeConfig.forEach((key, value) -> {
@@ -350,9 +417,10 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
 
     /**
      * 从 connector descriptor 取敏感字段名集合（ConfigField.sensitive=true）。
+     * <p>按 (type, version) 取：同 type 多版本共存时各版本的 configSchema 可能不同。
      */
-    private Set<String> sensitiveKeys(String connectorType) {
-        ConnectorDescriptor descriptor = connectorRegistry.ofType(connectorType).describe();
+    private Set<String> sensitiveKeys(DatabusConnectorDef def) {
+        ConnectorDescriptor descriptor = connectorRegistry.ofType(def.getType(), def.getVersion()).describe();
         return descriptor.getConfigSchema().entrySet().stream()
             .filter(entry -> entry.getValue().isSensitive())
             .map(Map.Entry::getKey)
@@ -379,8 +447,8 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
      * <p>非敏感的必填项不在这里拦：连接器执行期的校验能给出更精确的错因
      * （如 JDBC 的「host/port/database 与自定义 URL 二选一」），前端也已按同一份 schema 做提交前校验。
      */
-    private void validateRequiredSensitive(String connectorType, Map<String, Object> config) {
-        connectorRegistry.ofType(connectorType).describe().getConfigSchema().forEach((key, field) -> {
+    private void validateRequiredSensitive(DatabusConnectorDef def, Map<String, Object> config) {
+        connectorRegistry.ofType(def.getType(), def.getVersion()).describe().getConfigSchema().forEach((key, field) -> {
             if (field.isRequired() && field.isSensitive() && isBlankValue(config.get(key))) {
                 String label = StringUtils.isBlank(field.getLabel()) ? key : field.getLabel();
                 throw new ServiceException(label + " 不能为空");
@@ -393,8 +461,8 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
      * <p>对 descriptor 标记的每个 sensitive key，新 config 未提供或为空时，
      * 从旧 credentials（已由 MyBatis 解密）取回；旧值也空则拦，避免敏感字段被覆盖丢失。
      */
-    private void mergeMissingSensitive(Map<String, Object> config, SysDatabusConnection existing, String connectorType) {
-        Set<String> sensitiveKeys = sensitiveKeys(connectorType);
+    private void mergeMissingSensitive(Map<String, Object> config, SysDatabusConnection existing, DatabusConnectorDef def) {
+        Set<String> sensitiveKeys = sensitiveKeys(def);
         if (sensitiveKeys.isEmpty()) {
             return;
         }
@@ -418,11 +486,12 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     /**
      * BO → 运行时连接（testConnection 用，未落库也能测试；无需拆敏感字段）。
      */
-    private Connection boToRuntimeConnection(SysDatabusConnectionBo bo) {
+    private Connection boToRuntimeConnection(SysDatabusConnectionBo bo, DatabusConnectorDef def) {
         Connection conn = new Connection();
         conn.setId(bo.getConnectionId());
         conn.setName(bo.getConnectionName());
         conn.setConnectorType(bo.getConnectorType());
+        conn.setConnectorVersion(def.getVersion());
         conn.setConfig(normalizeConfig(bo));
         return conn;
     }
@@ -430,11 +499,13 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     /**
      * 实体 → 运行时连接（执行链路注入用）：config 与 credentials 解密后合并为全量 Map。
      */
-    private Connection toRuntimeConnection(SysDatabusConnection entity) {
+    private Connection toRuntimeConnection(SysDatabusConnection entity, DatabusConnectorDef def) {
         Connection conn = new Connection();
         conn.setId(entity.getConnectionId());
         conn.setName(entity.getConnectionName());
         conn.setConnectorType(entity.getConnectorType());
+        // 锁定版本为空的存量连接保持 null：注册表按该 type 最新启用版本兜底
+        conn.setConnectorVersion(def == null ? null : def.getVersion());
         Map<String, Object> merged = new LinkedHashMap<>();
         merged.putAll(parseJsonMap(entity.getConfig()));
         // credentials 经 MyBatis 拦截器已解密；同名 key 以凭据为准（正常不会重名）
@@ -455,6 +526,7 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
         vo.setConnectionId(entity.getConnectionId());
         vo.setConnectionName(entity.getConnectionName());
         vo.setConnectorType(entity.getConnectorType());
+        vo.setConnectorDefId(entity.getConnectorDefId());
         vo.setEnabled(entity.getEnabled());
         vo.setRemark(entity.getRemark());
         vo.setCreateTime(entity.getCreateTime());

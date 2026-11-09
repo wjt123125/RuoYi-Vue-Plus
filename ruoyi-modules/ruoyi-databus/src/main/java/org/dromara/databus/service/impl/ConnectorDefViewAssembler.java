@@ -165,6 +165,7 @@ public class ConnectorDefViewAssembler {
         vo.setId(def.getId());
         vo.setType(def.getType());
         vo.setVersion(def.getVersion());
+        vo.setBuildNo(def.getBuildNo());
         vo.setEngine(def.getEngine());
         vo.setStatus(def.getStatus());
         vo.setSource(def.getSource());
@@ -185,7 +186,8 @@ public class ConnectorDefViewAssembler {
             // 快照异常不阻断列表；上传链路已保证落库快照合法
         }
         // 已装载时用运行态 describe() 覆盖 operations/configSchema/groups（代码是活的，manifest 是构建期快照，§2.3）
-        Connector connector = connectorRegistry.get(def.getType());
+        // 必须按 (type, version) 取：同 type 多版本并存时，按 type 会拿到别的版本的实例
+        Connector connector = connectorRegistry.get(def.getType(), def.getVersion());
         if (connector != null) {
             ConnectorDescriptor descriptor = connector.describe();
             vo.setOperations(descriptor.getOperations());
@@ -193,7 +195,7 @@ public class ConnectorDefViewAssembler {
             vo.setGroups(descriptor.getGroups());
         }
         // 运行态健康（§4.2.1）：内存现算不落库，与组件的 GET /component/script/runtime 同一口径
-        PluginManager.ConnectorHealth health = pluginManager.healthOf(def.getType());
+        PluginManager.ConnectorHealth health = pluginManager.healthOf(def.getType(), def.getVersion());
         vo.setHealth(health.health());
         vo.setHealthReason(health.reason());
         return vo;

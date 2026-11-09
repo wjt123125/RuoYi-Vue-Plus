@@ -67,7 +67,7 @@ public class PluginManager {
     private final ConnectorRegistry registry;
 
     /**
-     * type → 最近一次装载失败的原因（人话）。装载成功即清除，卸载也清除，重启后自然为空。
+     * type@version → 最近一次装载失败的原因（人话）。装载成功即清除，卸载也清除，重启后自然为空。
      *
      * <p>为什么要这张表：def 行只记「该不该装」（status），不记「装的时候为什么没装上」。
      * 装载失败发生在启动回装或点重载的那一刻，异常抛完就没了；列表页要说出真实原因，
@@ -91,15 +91,16 @@ public class PluginManager {
      * @return 已注册的 Connector 实例
      */
     public Connector load(String type, Path packageDir, ConnectorManifest manifest) {
+        String failureKey = key(type, manifest.getVersion());
         try {
             Connector connector = doLoad(type, packageDir, manifest);
-            loadFailures.remove(type);
+            loadFailures.remove(failureKey);
             return connector;
         } catch (ConnectorException e) {
-            loadFailures.put(type, e.getMessage());
+            loadFailures.put(failureKey, e.getMessage());
             throw e;
         } catch (RuntimeException e) {
-            loadFailures.put(type, e.getMessage() == null ? e.toString() : e.getMessage());
+            loadFailures.put(failureKey, e.getMessage() == null ? e.toString() : e.getMessage());
             throw e;
         }
     }
@@ -152,24 +153,34 @@ public class PluginManager {
     }
 
     /**
-     * 卸载一个连接器：onShutdown（包内自清扫）+ close loader + 注销注册表。
+     * 卸载一个指定版本的连接器：onShutdown（包内自清扫）+ close loader + 注销注册表。
      */
-    public void unload(String type) {
-        Connector connector = registry.get(type);
+    public void unload(String type, String version) {
+        Connector connector = registry.get(type, version);
         if (connector != null) {
             try {
                 connector.onShutdown();
             } catch (Exception e) {
-                log.warn("连接器 type={} onShutdown() 异常（继续 close/注销）：{}", type, e.toString());
+                log.warn("连接器 type={} version={} onShutdown() 异常（继续 close/注销）：{}",
+                    type, version, e.toString());
             }
         }
-        ClassLoader loader = registry.loaderOf(type);
+        ClassLoader loader = registry.loaderOf(type, version);
         if (loader instanceof PluginClassLoader pluginClassLoader) {
             closeQuietly(pluginClassLoader);
         }
-        registry.unregister(type);
-        loadFailures.remove(type);
-        log.info("卸载连接器 type={}", type);
+        registry.unregister(type, version);
+        loadFailures.remove(key(type, version));
+        log.info("卸载连接器 type={} version={}", type, version);
+    }
+
+    /**
+     * 卸载某 type 下的全部版本。dev 目录一个 type 只对应一个版本，重载时用它清掉上一次装载的实例。
+     */
+    public void unloadAll(String type) {
+        for (String version : registry.versionsOf(type)) {
+            unload(type, version);
+        }
     }
 
     /**
@@ -187,15 +198,16 @@ public class PluginManager {
     }
 
     /**
-     * 广播停用（def 行置 DISABLED 时调用）。有池的连接器关闭本类型全部池。
+     * 广播停用（def 行置 DISABLED 时调用）。有池的连接器关闭本版本的池；
+     * 同 type 其它版本不受影响（决策 18：不同 version 是不同连接器）。
      */
-    public void broadcastSuspend(String type) {
-        Connector connector = registry.get(type);
+    public void broadcastSuspend(String type, String version) {
+        Connector connector = registry.get(type, version);
         if (connector != null) {
             try {
                 connector.onSuspend();
             } catch (Exception e) {
-                log.warn("连接器 type={} onSuspend() 异常：{}", type, e.toString());
+                log.warn("连接器 type={} version={} onSuspend() 异常：{}", type, version, e.toString());
             }
         }
     }
@@ -203,12 +215,12 @@ public class PluginManager {
     /**
      * 运行时信息（§4.2.1）：当前实际加载器与生效驱动清单。
      */
-    public Map<String, Object> runtimeInfo(String type) {
+    public Map<String, Object> runtimeInfo(String type, String version) {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("type", type);
-        String version = registry.versionOf(type);
+        info.put("version", version);
         info.put("classLoader", version == null ? null : "PluginClassLoader[" + type + "/" + version + "]");
-        info.put("drivers", collectDrivers(type));
+        info.put("drivers", collectDrivers(type, version));
         return info;
     }
 
@@ -265,22 +277,22 @@ public class PluginManager {
      * <p>def 行的 status 不参与判定：一行 DISABLED 本来就不该有实例，那种行前端按 status 显示灰色，
      * 这里只负责把运行态事实说清楚。
      */
-    public ConnectorHealth healthOf(String type) {
-        String failure = loadFailures.get(type);
+    public ConnectorHealth healthOf(String type, String version) {
+        String failure = loadFailures.get(key(type, version));
         if (failure != null) {
             // 旧实例还在跑就补一句：否则「缺驱动」和「测试连接居然通了」摆在一起看不懂
-            String reason = registry.get(type) == null ? failure
+            String reason = registry.get(type, version) == null ? failure
                 : failure + "（上一版实例还在运行，所以连接可能暂时还能通；重启后失效）";
             return new ConnectorHealth(
                 isDriverProblem(failure) ? HEALTH_MISSING_DRIVER : HEALTH_NOT_LOADED, reason);
         }
-        Connector connector = registry.get(type);
+        Connector connector = registry.get(type, version);
         if (connector == null) {
             return new ConnectorHealth(HEALTH_NOT_LOADED,
-                "运行中没有这个连接器的实例（未启用、已停用，或启动时装载没成功）");
+                "运行中没有这个连接器版本的实例（未启用、已停用，或启动时装载没成功）");
         }
         String required = connector.requiredDriverClass();
-        ClassLoader loader = registry.loaderOf(type);
+        ClassLoader loader = registry.loaderOf(type, version);
         if (required == null || required.isBlank() || loader == null) {
             // 不需要驱动，或实例不是从包装载的（没有「包内 / 平台」之分可判）
             return new ConnectorHealth(HEALTH_OK, null);
@@ -312,15 +324,15 @@ public class PluginManager {
      * 记一条装载失败原因。正式包由 {@link #load} 自己记；dev 目录装载走
      * {@code DevConnectorLoader}，失败时调本方法，保证两条通道在列表页说法一致。
      */
-    public void recordLoadFailure(String type, String reason) {
-        loadFailures.put(type, reason);
+    public void recordLoadFailure(String type, String version, String reason) {
+        loadFailures.put(key(type, version), reason);
     }
 
     /**
      * 清掉装载失败记录（装载成功或卸载时）。
      */
-    public void clearLoadFailure(String type) {
-        loadFailures.remove(type);
+    public void clearLoadFailure(String type, String version) {
+        loadFailures.remove(key(type, version));
     }
 
     /**
@@ -354,14 +366,15 @@ public class PluginManager {
      * （pgjdbc 42.7.11 实测有该属性）。带连接时那份 {@code DatabaseMetaData.getDriverVersion()}
      * 精确字符串由 {@code AbstractJdbcConnector.testConnection()} 的 {@code driverVersion} 键返回。
      */
-    private List<Map<String, Object>> collectDrivers(String type) {
-        if (!(registry.loaderOf(type) instanceof PluginClassLoader pluginLoader)) {
+    private List<Map<String, Object>> collectDrivers(String type, String version) {
+        if (!(registry.loaderOf(type, version) instanceof PluginClassLoader pluginLoader)) {
             return List.of();
         }
         List<Map<String, Object>> drivers = new ArrayList<>();
         for (String driverClass : ownDriverClasses(pluginLoader)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("type", type);
+            row.put("connectorVersion", version);
             row.put("driverClass", driverClass);
             try {
                 Class<?> clazz = Class.forName(driverClass, false, pluginLoader);
@@ -423,12 +436,20 @@ public class PluginManager {
      */
     @PreDestroy
     public void shutdownAll() {
-        for (String type : new ArrayList<>(registry.all().keySet())) {
-            unload(type);
+        for (String key : new ArrayList<>(registry.all().keySet())) {
+            int at = key.lastIndexOf('@');
+            if (at > 0) {
+                unload(key.substring(0, at), key.substring(at + 1));
+            }
         }
     }
 
     // ---------------------------- 私有工具 ----------------------------
+
+    /** 装载失败表与运行态的复合键：type@version */
+    private static String key(String type, String version) {
+        return type + "@" + version;
+    }
 
     /**
      * 解压 zip 到目标目录，返回 {@code lib/} 下所有 jar 路径。

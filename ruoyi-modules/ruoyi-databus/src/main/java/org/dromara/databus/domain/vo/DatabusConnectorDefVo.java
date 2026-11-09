@@ -30,14 +30,19 @@ public class DatabusConnectorDefVo implements Serializable {
     private Long id;
 
     /**
-     * 类型键（全局唯一；连接管理页 connectorType 引用此值）
+     * 类型键（与 version 一起构成身份；连接管理页建链时选 (type, version)，落库 connector_def_id）
      */
     private String type;
 
     /**
-     * 版本号（manifest 声明）
+     * 版本号（manifest 声明；不同 version 是不同连接器）
      */
     private String version;
+
+    /**
+     * 构建号（同 type+version 下更大＝同版本升级；前端据此展示「构建 N」）
+     */
+    private Integer buildNo;
 
     /**
      * 构建模块标识（manifest 的 artifact，Maven artifactId）；下载附件名据此推导成 {@code artifact-version.zip}

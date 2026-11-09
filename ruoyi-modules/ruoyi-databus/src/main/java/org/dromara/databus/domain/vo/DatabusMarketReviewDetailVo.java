@@ -70,6 +70,11 @@ public class DatabusMarketReviewDetailVo implements Serializable {
         private String version;
 
         /**
+         * 连接器构建号（仅 CONNECTOR，缺省 0）：审核人据此判断是首次上架还是同版本重建
+         */
+        private Integer buildNo;
+
+        /**
          * 脚本语言（COMPONENT 关键信息）
          */
         private String scriptLang;

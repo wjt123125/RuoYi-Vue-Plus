@@ -13,6 +13,7 @@ create table sys_databus_connection (
     connection_id     varchar(64)     not null                  comment '连接ID（全局唯一，组件层引用）',
     connection_name   varchar(100)    not null                  comment '连接名称（用户可读）',
     connector_type    varchar(32)     not null                  comment 'Connector 类型标识（如 bpmHttp）',
+    connector_def_id  bigint(20)      default null              comment '锁定的连接器版本（databus_connector_def.id；同 type 多版本共存时由它决定用哪一版，空＝按该 type 最新启用版本兜底）',
     config            text            default null              comment '连接配置（明文 JSON，非敏感参数；字段 schema 由 connector describe 声明，如 endpoint/accessKey/timeoutMs/retryCount）',
     credentials       text            default null              comment '凭据（AES 字段级加密 JSON，敏感字段如 apiSecret/token/secretKey）',
     enabled           char(1)         default 'Y'               comment '是否启用（Y启用 N禁用，启用时执行链路自动注入 DatabusContext）',
@@ -25,7 +26,8 @@ create table sys_databus_connection (
     del_flag          char(1)         default '0'               comment '删除标志（0存在 1删除）',
     primary key (id),
     unique key uk_connection_id (connection_id),
-    key idx_connector_type (connector_type)
+    key idx_connector_type (connector_type),
+    key idx_connector_def_id (connector_def_id)
 ) engine=innodb comment='数据总线连接管理表';
 
 -- ----------------------------

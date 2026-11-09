@@ -244,19 +244,26 @@ public class DevConnectorLoader {
             throw new ServiceException("dev 目录装载只支持 engine=jvm（当前 " + manifest.getEngine() + "）：" + type);
         }
         // 废弃是终态：dev 通道不给复活后门（与上传链路同一口径）
-        DatabusConnectorDef existing = defMapper.selectOne(Wrappers.<DatabusConnectorDef>lambdaQuery()
-            .eq(DatabusConnectorDef::getType, type)
-            .last("limit 1"));
-        if (existing != null && ConnectorDefStatusEnum.DEPRECATED.getCode().equals(existing.getStatus())) {
-            throw new ServiceException("连接器 " + type + " 已废弃（终态不可逆），dev 通道不能复活；请先卸载再重新上传");
-        }
+        // 同 type 可能已有多个版本行（决策 18），dev 目录只对应其中一个版本
+        List<DatabusConnectorDef> rows = defMapper.selectList(Wrappers.<DatabusConnectorDef>lambdaQuery()
+            .eq(DatabusConnectorDef::getType, type));
         // 正式包优先：DEV 行之外的行（UPLOAD 等）是审核后的正式记录，dev 目录不再抢这个 type。
         // 否则每次重启都会把用户上传的包顶掉，还会把状态改回 ENABLED、绕过审核。
-        if (existing != null && !SOURCE_DEV.equals(existing.getSource())) {
+        DatabusConnectorDef formal = rows.stream()
+            .filter(row -> !SOURCE_DEV.equals(row.getSource()))
+            .findFirst().orElse(null);
+        if (formal != null) {
             log.warn("DEV 模式：跳过连接器 {}，该类型已由正式包占用（source={}，version={}）；"
-                + "要本地调试请先卸载正式包", type, existing.getSource(), existing.getVersion());
+                + "要本地调试请先卸载正式包", type, formal.getSource(), formal.getVersion());
             return null;
         }
+        if (rows.stream().anyMatch(row -> ConnectorDefStatusEnum.DEPRECATED.getCode().equals(row.getStatus()))) {
+            throw new ServiceException("连接器 " + type + " 已废弃（终态不可逆），dev 通道不能复活；请先卸载再重新上传");
+        }
+        DatabusConnectorDef existing = rows.stream()
+            .filter(row -> SOURCE_DEV.equals(row.getSource())
+                && manifest.getVersion().equals(row.getVersion()))
+            .findFirst().orElse(null);
 
         List<URL> urls = new ArrayList<>();
         urls.add(toUrl(classesDir));
@@ -278,29 +285,29 @@ public class DevConnectorLoader {
             // 放在卸旧实例之前，校验不过时上一版继续跑
             pluginManager.verifyRequiredDriver(type, loader, connector);
             // 实例化与驱动校验都通过才卸旧的：重载时用新编译的实例顶掉本类上一次装载的实例
-            // （被正式包占用的 type 在上面已跳过，走不到这里）
-            if (connectorRegistry.get(type) != null) {
-                pluginManager.unload(type);
-            }
+            // （被正式包占用的 type 在上面已跳过，走不到这里）。dev 目录一个 type 只对应一个版本，
+            // 版本号改过时旧版本实例也要一起卸掉
+            pluginManager.unloadAll(type);
             connectorRegistry.register(type, manifest.getVersion(), connector, loader);
-            connectorRegistry.clearPending(type);
-            connectorRegistry.clearDisabled(type);
-            pluginManager.clearLoadFailure(type);
+            connectorRegistry.clearPending(type, manifest.getVersion());
+            connectorRegistry.clearDisabled(type, manifest.getVersion());
+            pluginManager.clearLoadFailure(type, manifest.getVersion());
         } catch (ConnectorException e) {
             closeQuietly(loader);
             // dev 目录装载常缺 target/lib（IDE 编译不生成），这里把补法说明带上，不然只看到「包内找不到」
             String reason = e.getMessage()
                 + "（dev 目录装载：先 mvn package 生成 target/lib，驱动 jar 才会在 lib/ 下）";
-            pluginManager.recordLoadFailure(type, reason);
+            pluginManager.recordLoadFailure(type, manifest.getVersion(), reason);
             throw new ServiceException(reason);
         } catch (ReflectiveOperationException | LinkageError e) {
             closeQuietly(loader);
             String reason = "dev 装载失败（mainClass=" + manifest.getMainClass() + " 无法实例化）：" + e;
-            pluginManager.recordLoadFailure(type, reason);
+            pluginManager.recordLoadFailure(type, manifest.getVersion(), reason);
             throw new ServiceException(reason);
         } catch (RuntimeException e) {
             closeQuietly(loader);
-            pluginManager.recordLoadFailure(type, e.getMessage() == null ? e.toString() : e.getMessage());
+            pluginManager.recordLoadFailure(type, manifest.getVersion(),
+                e.getMessage() == null ? e.toString() : e.getMessage());
             throw e;
         }
 

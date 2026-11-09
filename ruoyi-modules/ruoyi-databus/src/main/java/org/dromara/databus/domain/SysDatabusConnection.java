@@ -54,6 +54,13 @@ public class SysDatabusConnection extends BaseEntity {
     private String connectorType;
 
     /**
+     * 锁定的连接器版本（databus_connector_def.id）。
+     * <p>同 type 多版本共存时由它决定运行时用哪一版；空值＝按该 type 最新启用版本兜底
+     * （历史连接与手写种子数据兼容）。
+     */
+    private Long connectorDefId;
+
+    /**
      * 非敏感连接配置（明文 JSON）。
      * <p>key 与 connector descriptor 的 configSchema 对齐，
      * bpmHttp 含 endpoint / accessKey / timeoutMs / retryCount。

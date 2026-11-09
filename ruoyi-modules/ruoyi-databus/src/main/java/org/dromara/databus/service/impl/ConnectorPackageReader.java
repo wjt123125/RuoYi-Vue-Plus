@@ -119,6 +119,7 @@ public class ConnectorPackageReader {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("type", type);
         result.put("version", version);
+        result.put("buildNo", manifest.getBuildNo());
         result.put("engine", manifest.getEngine());
         result.put("mainClass", mainClass);
 

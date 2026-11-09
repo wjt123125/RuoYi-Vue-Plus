@@ -44,6 +44,11 @@ public class SysDatabusConnectionVo implements Serializable {
     private String connectorType;
 
     /**
+     * 锁定的连接器版本（databus_connector_def.id）
+     */
+    private Long connectorDefId;
+
+    /**
      * 是否启用（Y启用 N禁用）
      */
     private String enabled;

@@ -73,6 +73,7 @@ public class DevConnectorDefLedger {
             DatabusConnectorDef row = new DatabusConnectorDef();
             row.setType(type);
             row.setVersion(manifest.getVersion());
+            row.setBuildNo(manifest.getBuildNo() == null ? 0 : manifest.getBuildNo());
             row.setEngine(manifest.getEngine());
             row.setManifestSnapshot(manifestJson);
             row.setPackagePath(packagePath);
@@ -82,9 +83,15 @@ public class DevConnectorDefLedger {
             row.setCreateTime(now);
             row.setUpdateTime(now);
             defMapper.insert(row);
+            // dev 目录一个 type 只对应一个版本：manifest 改过 version 时，旧 DEV 版本行不再有效
+            defMapper.delete(Wrappers.<DatabusConnectorDef>lambdaQuery()
+                .eq(DatabusConnectorDef::getType, type)
+                .eq(DatabusConnectorDef::getSource, SOURCE_DEV)
+                .ne(DatabusConnectorDef::getVersion, manifest.getVersion()));
             return;
         }
         existing.setVersion(manifest.getVersion());
+        existing.setBuildNo(manifest.getBuildNo() == null ? 0 : manifest.getBuildNo());
         existing.setEngine(manifest.getEngine());
         existing.setManifestSnapshot(manifestJson);
         existing.setPackagePath(packagePath);

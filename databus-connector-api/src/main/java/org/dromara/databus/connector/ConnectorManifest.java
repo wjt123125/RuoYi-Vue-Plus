@@ -58,8 +58,17 @@ public class ConnectorManifest {
     /** 图标名（Iconify 字符串），如 "ph:plugs" */
     private String icon;
 
-    /** 版本号（同 type 升版本＝热更新 def 行） */
+    /** 版本号（与 type 一起构成连接器身份；不同 version 是不同连接器） */
     private String version;
+
+    /**
+     * 构建号（同一 type+version 的唯一「升级」依据）。
+     * <p>
+     * 语义：不同 version 是不同连接器，各自独立审核启用；只有当 type 与 version 都相同、
+     * 而 buildNo 更大时，才视为「同一连接器的升级」，允许替换该版本的包内容。
+     * 不填视为 0（首次上传）。
+     */
+    private Integer buildNo;
 
     /** 引擎档（http / jvm / native） */
     private String engine;

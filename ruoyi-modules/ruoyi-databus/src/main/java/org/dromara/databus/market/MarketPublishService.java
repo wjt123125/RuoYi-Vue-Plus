@@ -426,7 +426,7 @@ public class MarketPublishService {
                 throw new ServiceException("源连接器不存在或已卸载，无法通过审核");
             }
             if (ConnectorDefStatusEnum.PENDING.getCode().equals(def.getStatus())) {
-                connectorService.enable(def.getType(), reviewerId, Boolean.TRUE);
+                connectorService.enable(def.getType(), def.getVersion(), reviewerId, Boolean.TRUE);
             } else if (!ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus())) {
                 throw new ServiceException("连接器 " + def.getType() + " 当前为 " + def.getStatus()
                     + "，不能通过审核；请先在物料治理里启用或恢复");
@@ -501,7 +501,7 @@ public class MarketPublishService {
         if ((siblingItems != null && siblingItems > 0) || (installs != null && installs > 0)) {
             return;
         }
-        connectorService.uninstall(def.getType(), true);
+        connectorService.uninstall(def.getType(), def.getVersion(), true);
     }
 
     /**
@@ -574,6 +574,7 @@ public class MarketPublishService {
             preview.setAuthor(item.getOwnerCode());
             preview.setCode(def.getType());
             preview.setVersion(def.getVersion());
+            preview.setBuildNo(def.getBuildNo());
             preview.setConnectorStatus(def.getStatus());
         }
         return preview;

@@ -4,6 +4,7 @@
   "label": "BPM HTTP 连接器",
   "icon": "ph:plugs",
   "version": "${bpm.version}",
+  "buildNo": 0,
   "engine": "jvm",
   "mainClass": "org.dromara.databus.connector.bpm.BpmHttpConnector"
 }

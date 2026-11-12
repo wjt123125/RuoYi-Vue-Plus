@@ -117,6 +117,19 @@
             <version>${liteflow.version}</version>
         </dependency>
 
+        <!-- SnailAI 客户端：AI 助手只经 OpenApiChatClient 流式对话这一处调用（§3.13），
+             进程内工具由本应用既有的 agent executor 扫描 @Tool Bean 提供（§15 分支一） -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-ai</artifactId>
+        </dependency>
+
+        <!-- 全局推送：AI 的画布/草稿业务事件走全局推送通道，不塞进按 run 的 SSE -->
+        <dependency>
+            <groupId>org.dromara</groupId>
+            <artifactId>ruoyi-common-push</artifactId>
+        </dependency>
+
         <!-- JSONPath：DatabusContext 内部持 jayway DocumentContext，完整 JSONPath 读写；版本由 spring-boot-dependencies 管理 -->
         <dependency>
             <groupId>com.jayway.jsonpath</groupId>

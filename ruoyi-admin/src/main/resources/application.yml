@@ -279,6 +279,14 @@ liteflow:
 # 过期数据由 Spring @Scheduled 定时任务物理删除；手动触发 POST /databus/execution/cleanup。
 # 单节点幂等维护，多节点部署阶段迁 SnailJob（见 DatabusSchedulingConfig 注释）。
 databus:
+  # AI 助手（左侧栏对话）：只经 SnailAI OpenAPI 流式对话，工具跑在本应用进程内（@Tool Bean）。
+  agent:
+    # SnailAI「智能体管理」里该应用的智能体 id，OpenAPI 对话必填；未配置时对话接口只报错、不影响其余功能
+    agent-id: 1
+    # run 存活分钟数，超时守卫惰性置 EXPIRED（无扫描任务）
+    run-ttl-minutes: 30
+    # SSE 连接空闲超时毫秒，超时即收尾并把未完成的 run 置 STOPPED
+    stream-timeout-ms: 300000
   execution:
     cleanup:
       # 清理任务开关（false 只停定时任务，手动端点仍可用）

@@ -265,7 +265,15 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         update.setStatus(null);
         update.setIsTemplate(null);
         update.setElExpression(generateEl(bo));
-        return chainMapper.updateById(update) > 0;
+        boolean flag = chainMapper.updateById(update) > 0;
+        if (flag && bo.getUpdateBy() != null) {
+            // 无登录态（AI 工具线程 / 内部调用）时 updateFill 会把 update_by 冲成 -1，
+            // 调用方显式给出真实操作者时补写一次，保留审计可追溯。
+            chainMapper.update(null, Wrappers.<DatabusChain>lambdaUpdate()
+                .eq(DatabusChain::getId, bo.getId())
+                .set(DatabusChain::getUpdateBy, bo.getUpdateBy()));
+        }
+        return flag;
     }
 
     /**

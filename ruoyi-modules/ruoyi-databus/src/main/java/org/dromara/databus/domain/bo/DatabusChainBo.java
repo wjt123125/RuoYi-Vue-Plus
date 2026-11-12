@@ -1,5 +1,6 @@
 package org.dromara.databus.domain.bo;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.github.linpeilie.annotations.AutoMapper;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -106,5 +107,22 @@ public class DatabusChainBo implements Serializable {
      * 服务端叠加 create_by = 当前用户；超级管理员豁免，市场模板等内部调用不传）。
      */
     private Boolean onlyMine;
+
+    /**
+     * 创建人（仅服务端内部调用可写，HTTP 入参一律忽略）。
+     * <p>
+     * AI 工具线程没有登录态，自动填充会落 -1；工具在调用 insertByBo 前显式带上
+     * run.userId，Mapstruct 直接映射到实体，保证草稿作者是发起人而不是 -1。
+     */
+    @JsonIgnore
+    private Long createBy;
+
+    /**
+     * 更新人（仅服务端内部调用可写，HTTP 入参一律忽略）。
+     * <p>
+     * 无登录态时自动填充会把 update_by 冲成 -1，工具在 updateByBo 之后用此值补写。
+     */
+    @JsonIgnore
+    private Long updateBy;
 
 }

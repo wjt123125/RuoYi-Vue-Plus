@@ -80,6 +80,11 @@ public class DatabusChainVo implements Serializable {
     private List<ChainInputParam> inputParams;
 
     /**
+     * 归属类型（SYSTEM 系统资源 / USER 用户资源；AI 写工具据此区分「系统链路只能治理角色改」）
+     */
+    private String ownerType;
+
+    /**
      * 是否精选模板（0否 1是）
      */
     private String isTemplate;

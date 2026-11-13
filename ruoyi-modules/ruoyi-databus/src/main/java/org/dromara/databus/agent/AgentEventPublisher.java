@@ -57,17 +57,21 @@ public class AgentEventPublisher {
      * @param cmpProperty  全量结构树
      * @param elExpression 后端生成的 EL
      * @param revealNodeId 需要高亮的节点 id（可空）
+     * @param created      本次是否新建链路：新建时前端即使画布未打开也自动开 tab
      */
     @Transactional(rollbackFor = Exception.class)
     public void publishCanvas(AgentRunContext context, Long chainId, String chainName,
-                              CmpProperty cmpProperty, String elExpression, String revealNodeId) {
+                              CmpProperty cmpProperty, String elExpression, String revealNodeId,
+                              boolean created) {
         int seq = nextSeq(context.runId());
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("eventCode", EVENT_CANVAS);
         data.put("runId", context.runId());
+        data.put("conversationId", context.conversationId());
         data.put("seq", seq);
         data.put("chainId", chainId);
         data.put("chainName", chainName);
+        data.put("operation", created ? "CREATE" : "UPDATE");
         data.put("cmpProperty", cmpProperty);
         data.put("elExpression", elExpression);
         if (revealNodeId != null) {
@@ -92,6 +96,7 @@ public class AgentEventPublisher {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("eventCode", EVENT_DRAFT);
         data.put("runId", context.runId());
+        data.put("conversationId", context.conversationId());
         data.put("seq", seq);
         data.put("chainId", chainId);
         data.put("chainName", chainName);
@@ -104,7 +109,8 @@ public class AgentEventPublisher {
     private int nextSeq(String runId) {
         runMapper.increaseNextSeq(runId);
         Integer seq = runMapper.selectNextSeq(runId);
-        return seq == null ? 0 : seq;
+        // 与 AgentStepRecorder、run 收尾的号源口径一致：自增后回读值减一才是本条的 seq
+        return seq == null ? 1 : seq - 1;
     }
 
     private void saveMessage(String runId, int seq, String eventCode, Long chainId, String content) {

@@ -7,14 +7,15 @@ import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.databus.agent.AgentChainSnapshot;
 import org.dromara.databus.agent.AgentGuard;
 import org.dromara.databus.domain.DatabusAgentSnapshot;
-import org.dromara.databus.domain.vo.AgentSnapshotVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.mapper.DatabusAgentSnapshotMapper;
 import org.dromara.databus.service.IDatabusAgentSnapshotService;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * AI agent 链路快照 Service 实现。
@@ -26,6 +27,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DatabusAgentSnapshotServiceImpl implements IDatabusAgentSnapshotService {
 
+    /**
+     * 动手前快照的操作类型：修改 / 新建。
+     */
+    private static final String OPERATION_UPDATE = "UPDATE";
+    private static final String OPERATION_CREATE = "CREATE";
+
     private final DatabusAgentSnapshotMapper snapshotMapper;
 
     private final AgentGuard agentGuard;
@@ -34,6 +41,7 @@ public class DatabusAgentSnapshotServiceImpl implements IDatabusAgentSnapshotSer
     public AgentChainSnapshot record(String runId, int round, DatabusChainVo before) {
         AgentChainSnapshot payload = new AgentChainSnapshot();
         payload.setChainId(before.getId());
+        payload.setOperation(OPERATION_UPDATE);
         payload.setChainCode(before.getChainCode());
         payload.setChainName(before.getChainName());
         payload.setCmpProperty(before.getCmpProperty());
@@ -46,6 +54,7 @@ public class DatabusAgentSnapshotServiceImpl implements IDatabusAgentSnapshotSer
         DatabusAgentSnapshot row = new DatabusAgentSnapshot();
         row.setRunId(runId);
         row.setRound(round);
+        row.setOperation(OPERATION_UPDATE);
         row.setPayload(json);
         snapshotMapper.insert(row);
         agentGuard.updateBeforePayload(runId, json);
@@ -53,33 +62,39 @@ public class DatabusAgentSnapshotServiceImpl implements IDatabusAgentSnapshotSer
     }
 
     @Override
-    public List<AgentSnapshotVo> listByRunId(String runId) {
-        List<DatabusAgentSnapshot> rows = snapshotMapper.selectList(Wrappers.<DatabusAgentSnapshot>lambdaQuery()
-            .eq(DatabusAgentSnapshot::getRunId, runId)
-            .orderByAsc(DatabusAgentSnapshot::getRound));
-        List<AgentSnapshotVo> result = new ArrayList<>(rows.size());
-        for (DatabusAgentSnapshot row : rows) {
-            AgentSnapshotVo vo = new AgentSnapshotVo();
-            vo.setId(row.getId());
-            vo.setRunId(row.getRunId());
-            vo.setRound(row.getRound());
-            vo.setCreateTime(row.getCreateTime());
-            AgentChainSnapshot payload = parse(row.getPayload());
-            if (payload != null) {
-                vo.setChainId(payload.getChainId());
-                vo.setChainName(payload.getChainName());
-            }
-            result.add(vo);
-        }
-        return result;
+    public AgentChainSnapshot recordCreate(String runId, int round, Long chainId, String chainCode, String chainName) {
+        AgentChainSnapshot payload = new AgentChainSnapshot();
+        payload.setChainId(chainId);
+        payload.setOperation(OPERATION_CREATE);
+        payload.setChainCode(chainCode);
+        payload.setChainName(chainName);
+
+        DatabusAgentSnapshot row = new DatabusAgentSnapshot();
+        row.setRunId(runId);
+        row.setRound(round);
+        row.setOperation(OPERATION_CREATE);
+        row.setPayload(JsonUtils.toJsonString(payload));
+        snapshotMapper.insert(row);
+        return payload;
     }
 
     @Override
-    public AgentChainSnapshot find(String runId, Integer round) {
-        DatabusAgentSnapshot row = snapshotMapper.selectOne(Wrappers.<DatabusAgentSnapshot>lambdaQuery()
+    public List<AgentChainSnapshot> listEarliestByRun(String runId) {
+        List<DatabusAgentSnapshot> rows = snapshotMapper.selectList(Wrappers.<DatabusAgentSnapshot>lambdaQuery()
             .eq(DatabusAgentSnapshot::getRunId, runId)
-            .eq(DatabusAgentSnapshot::getRound, round));
-        return row == null ? null : parse(row.getPayload());
+            .orderByAsc(DatabusAgentSnapshot::getRound));
+        Map<Long, AgentChainSnapshot> earliest = new LinkedHashMap<>();
+        for (DatabusAgentSnapshot row : rows) {
+            AgentChainSnapshot payload = parse(row.getPayload());
+            if (payload == null || payload.getChainId() == null) {
+                continue;
+            }
+            if (payload.getOperation() == null) {
+                payload.setOperation(row.getOperation());
+            }
+            earliest.putIfAbsent(payload.getChainId(), payload);
+        }
+        return new ArrayList<>(earliest.values());
     }
 
     private AgentChainSnapshot parse(String payload) {

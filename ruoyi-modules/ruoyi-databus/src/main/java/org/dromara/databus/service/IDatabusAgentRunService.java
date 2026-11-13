@@ -2,9 +2,10 @@ package org.dromara.databus.service;
 
 import org.dromara.databus.domain.bo.AgentChatBo;
 import org.dromara.databus.domain.vo.AgentChatStartVo;
+import org.dromara.databus.domain.vo.AgentConversationVo;
 import org.dromara.databus.domain.vo.AgentMessageVo;
+import org.dromara.databus.domain.vo.AgentRollbackVo;
 import org.dromara.databus.domain.vo.AgentRunVo;
-import org.dromara.databus.domain.vo.AgentSnapshotVo;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
@@ -42,6 +43,14 @@ public interface IDatabusAgentRunService {
     void stop(String runId);
 
     /**
+     * 记录「用户丢弃本次画布更新」：落一行审计，下一轮上下文摘要里让模型知道改动没被采纳。
+     *
+     * @param runId     run 句柄
+     * @param chainName 链路名，可为空
+     */
+    void reportCanvasSkip(String runId, String chainName);
+
+    /**
      * 按会话查当前用户进行中的 run（刷新后恢复用），无则返回 null。
      *
      * @param conversationId 会话 id
@@ -68,20 +77,20 @@ public interface IDatabusAgentRunService {
     List<AgentRunVo> listConversationRuns(String conversationId);
 
     /**
-     * 列出某个 run 动手前留下的轮次快照（不含 payload）。
+     * 列出当前用户的会话摘要（按最近活跃倒序）。
      *
-     * @param runId run 句柄
-     * @return 按 round 升序
+     * @param limit 条数上限，空取默认 50，最多 100
+     * @return 会话摘要列表
      */
-    List<AgentSnapshotVo> listSnapshots(String runId);
+    List<AgentConversationVo> listConversations(Integer limit);
 
     /**
-     * 回到 AI 动手前：把指定轮次的快照写回链路（不复制新 run，也不再写快照）。
+     * 回到这次对话前：按 run 整体回滚，对本 run 动过的每条链取本 run 内最早一份快照，
+     * UPDATE 写回原结构、CREATE 删除整条链路。
      *
      * @param runId run 句柄
-     * @param round 轮次
-     * @return 被回滚的链路 id
+     * @return 被回滚的链路（deleted=true 表示整条已删除）
      */
-    Long rollback(String runId, Integer round);
+    List<AgentRollbackVo> rollbackRun(String runId);
 
 }

@@ -31,11 +31,6 @@ public class AgentRunVo implements Serializable {
     private String conversationId;
 
     /**
-     * 绑定的链路 id
-     */
-    private Long chainId;
-
-    /**
      * 用户原话
      */
     private String intent;

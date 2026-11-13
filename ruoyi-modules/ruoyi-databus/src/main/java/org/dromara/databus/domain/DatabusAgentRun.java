@@ -39,11 +39,6 @@ public class DatabusAgentRun extends BaseEntity {
     private Long userId;
 
     /**
-     * 绑定的链路 id，可为空（从零建）；工具入参 chainId 与此不符即拒
-     */
-    private Long chainId;
-
-    /**
      * 用户原话
      */
     private String intent;

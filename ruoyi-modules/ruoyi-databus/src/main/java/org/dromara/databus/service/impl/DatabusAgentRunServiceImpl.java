@@ -18,6 +18,7 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.agent.AgentChainSnapshot;
+import org.dromara.databus.agent.AgentStepRecorder;
 import org.dromara.databus.config.properties.DatabusAgentProperties;
 import org.dromara.databus.domain.DatabusAgentMessage;
 import org.dromara.databus.domain.DatabusAgentRun;
@@ -25,9 +26,11 @@ import org.dromara.databus.domain.DatabusAgentStep;
 import org.dromara.databus.domain.bo.AgentChatBo;
 import org.dromara.databus.domain.bo.DatabusChainBo;
 import org.dromara.databus.domain.vo.AgentChatStartVo;
+import org.dromara.databus.domain.vo.AgentConversationVo;
 import org.dromara.databus.domain.vo.AgentMessageVo;
+import org.dromara.databus.domain.vo.AgentRollbackVo;
 import org.dromara.databus.domain.vo.AgentRunVo;
-import org.dromara.databus.domain.vo.AgentSnapshotVo;
+import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.enums.AgentRunStatusEnum;
 import org.dromara.databus.mapper.DatabusAgentMessageMapper;
 import org.dromara.databus.mapper.DatabusAgentRunMapper;
@@ -54,6 +57,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -90,6 +94,34 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     private static final int CONVERSATION_HISTORY_LIMIT = 50;
 
     /**
+     * 会话列表默认 / 最大条数。
+     */
+    private static final int DEFAULT_CONVERSATION_LIMIT = 50;
+    private static final int MAX_CONVERSATION_LIMIT = 100;
+
+    /**
+     * 快照 operation=CREATE：该轮回滚的语义是删除整条新建链路，而不是写回结构。
+     */
+    private static final String OPERATION_CREATE = "CREATE";
+    private static final String STATUS_DRAFT = "DRAFT";
+    private static final String OWNER_SYSTEM = "SYSTEM";
+
+    /**
+     * 会话标题清洗后的上限：只防超长传输，真正的省略交给前端按栏宽做。
+     */
+    private static final int TITLE_LIMIT = 200;
+
+    /**
+     * 标题清洗用：整段代码块、行首 markdown 记号、行内反引号/星号、连续空白。
+     * <p>
+     * 刻意不动下划线——用户问句里常有 {@code chain_save}、{@code field_mapping} 这类标识符。
+     */
+    private static final Pattern TITLE_CODE_BLOCK = Pattern.compile("```[\\s\\S]*?```");
+    private static final Pattern TITLE_LINE_PREFIX = Pattern.compile("(?m)^\\s*(?:#{1,6}|[-*+]|>)\\s+");
+    private static final Pattern TITLE_INLINE_MARK = Pattern.compile("[`*]+");
+    private static final Pattern TITLE_BLANK = Pattern.compile("\\s+");
+
+    /**
      * 会话 id 白名单：只接受 UUID / 业务自生成的安全字符，拒绝把任意串塞进 SnailAI 会话（红线 15）。
      */
     private static final Pattern CONVERSATION_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{8,64}$");
@@ -115,6 +147,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     private final DatabusAgentStepMapper stepMapper;
     private final IDatabusAgentSnapshotService snapshotService;
     private final IDatabusChainService chainService;
+    private final AgentStepRecorder stepRecorder;
     private final OpenApiChatClient chatClient;
     private final OpenApiUserClient userClient;
     private final OpenApiAgentClient agentClient;
@@ -138,12 +171,11 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             throw new ServiceException("AI 助手未配置 databus.agent.agent-id");
         }
         String conversationId = resolveConversationId(bo.getConversationId());
-        supersedeActiveRuns(userId, bo.getChainId());
+        supersedeActiveRuns(userId, conversationId);
 
         DatabusAgentRun run = new DatabusAgentRun();
         run.setRunId(UUID.randomUUID().toString());
         run.setUserId(userId);
-        run.setChainId(bo.getChainId());
         run.setIntent(bo.getContent());
         run.setConversationId(conversationId);
         run.setRound(0);
@@ -263,6 +295,17 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     }
 
     @Override
+    public void reportCanvasSkip(String runId, String chainName) {
+        requireOwnedRun(runId);
+        String name = StringUtils.hasText(chainName) ? chainName : "当前链路";
+        // 借审计 step 告知模型：本轮画布更新被人丢弃，下一轮不要再重复推同一份改动
+        stepRecorder.recordReject(runId, "canvas_skip",
+            JsonUtils.toJsonString(Map.of("chainName", name)),
+            JsonUtils.toJsonString(Map.of("message", "用户丢弃了本次画布更新，画布上是用户未保存的本地改动")),
+            "用户丢弃画布更新", 0);
+    }
+
+    @Override
     public AgentRunVo getActiveRun(String conversationId) {
         if (!StringUtils.hasText(conversationId)) {
             return null;
@@ -314,21 +357,72 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     }
 
     @Override
-    public List<AgentSnapshotVo> listSnapshots(String runId) {
-        requireOwnedRun(runId);
-        return snapshotService.listByRunId(runId);
+    public List<AgentConversationVo> listConversations(Integer limit) {
+        Long userId = LoginHelper.getUserId();
+        if (userId == null) {
+            throw new ServiceException("当前登录用户为空");
+        }
+        int size = limit == null || limit <= 0
+            ? DEFAULT_CONVERSATION_LIMIT
+            : Math.min(limit, MAX_CONVERSATION_LIMIT);
+        List<AgentConversationVo> conversations = runMapper.selectConversations(userId, size);
+        conversations.forEach(vo -> vo.setTitle(cleanTitle(vo.getTitle())));
+        return conversations;
+    }
+
+    /**
+     * 把首问原文清洗成一行可展示的标题：去掉代码块与 markdown 记号、合并换行。
+     * <p>
+     * 只清洗不概括，所以问句长了还是会被前端按栏宽省略——这是刻意的，
+     * 不引入模型调用，失败面为零。
+     *
+     * @param raw 首问原文
+     * @return 清洗后的标题，清洗后为空返回 null（前端显示「未命名会话」）
+     */
+    private static String cleanTitle(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        String title = TITLE_CODE_BLOCK.matcher(raw).replaceAll(" ");
+        title = TITLE_LINE_PREFIX.matcher(title).replaceAll("");
+        title = TITLE_INLINE_MARK.matcher(title).replaceAll("");
+        title = TITLE_BLANK.matcher(title).replaceAll(" ").trim();
+        if (title.isEmpty()) {
+            return null;
+        }
+        return title.length() > TITLE_LIMIT ? title.substring(0, TITLE_LIMIT) : title;
     }
 
     @Override
-    public Long rollback(String runId, Integer round) {
+    public List<AgentRollbackVo> rollbackRun(String runId) {
         DatabusAgentRun run = requireOwnedRun(runId);
-        if (round == null) {
-            throw new ServiceException("轮次不能为空");
+        if (AgentRunStatusEnum.RUNNING.getCode().equals(run.getStatus())) {
+            throw new ServiceException("任务还在进行中，结束后才能回滚");
         }
-        AgentChainSnapshot snapshot = snapshotService.find(runId, round);
-        if (snapshot == null || snapshot.getChainId() == null) {
-            throw new ServiceException("该轮次没有可回滚的快照");
+        List<AgentChainSnapshot> earliest = snapshotService.listEarliestByRun(runId);
+        if (earliest.isEmpty()) {
+            throw new ServiceException("这次对话没有可回滚的操作");
         }
+        List<AgentRollbackVo> result = new ArrayList<>(earliest.size());
+        for (AgentChainSnapshot snapshot : earliest) {
+            boolean created = OPERATION_CREATE.equals(snapshot.getOperation());
+            if (created) {
+                deleteCreatedChain(run, snapshot.getChainId());
+            } else {
+                restoreChain(run, snapshot);
+            }
+            result.add(new AgentRollbackVo(snapshot.getChainId(), created));
+        }
+        return result;
+    }
+
+    /**
+     * 把快照里的链路结构整条写回（回滚的 UPDATE 分支）。
+     *
+     * @param run      当前 run
+     * @param snapshot 本 run 内该链路最早一份快照
+     */
+    private void restoreChain(DatabusAgentRun run, AgentChainSnapshot snapshot) {
         DatabusChainBo bo = new DatabusChainBo();
         bo.setId(snapshot.getChainId());
         bo.setChainCode(snapshot.getChainCode());
@@ -341,7 +435,37 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         if (!Boolean.TRUE.equals(chainService.updateByBo(bo, run.getUserId()))) {
             throw new ServiceException("回滚失败");
         }
-        return snapshot.getChainId();
+    }
+
+    /**
+     * 撤销一次新建：仅当链路仍是「本人创建 + 草稿态 + 非系统链」时整条删除。
+     * <p>
+     * 链路一旦被别人改过、已发布或被其它链引用，就不该再当「AI 刚建的」删掉——
+     * 此时抛错让用户放弃撤销，而不是覆盖或强删。
+     *
+     * @param run     当前 run
+     * @param chainId 新建出来的链路 id
+     */
+    private void deleteCreatedChain(DatabusAgentRun run, Long chainId) {
+        DatabusChainVo chain = chainService.queryById(chainId);
+        if (chain == null) {
+            throw new ServiceException("该链路已不存在，无法撤销新建");
+        }
+        if (OWNER_SYSTEM.equals(chain.getOwnerType())
+            || !STATUS_DRAFT.equals(chain.getStatus())
+            || !Objects.equals(chain.getCreateBy(), run.getUserId())) {
+            throw new ServiceException("该链路已被修改或非草稿，无法撤销新建");
+        }
+        boolean deleted;
+        try {
+            deleted = Boolean.TRUE.equals(chainService.deleteByIds(List.of(chainId)));
+        } catch (Exception e) {
+            log.warn("[databus-agent] 撤销新建失败 runId={} chainId={}：{}", run.getRunId(), chainId, e.getMessage());
+            throw new ServiceException("该链路已被引用，无法撤销新建");
+        }
+        if (!deleted) {
+            throw new ServiceException("该链路已被修改或非草稿，无法撤销新建");
+        }
     }
 
     /**
@@ -429,7 +553,9 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             }
             runMapper.update(null, wrapper);
             if (StringUtils.hasText(report)) {
-                appendMessage(run.getRunId(), EVENT_RUN_END, run.getChainId(), report);
+                // 同一会话可能改过多条链，收口消息归属到本轮最后一条链路
+                Long lastChainId = runMapper.selectLastChainId(run.getRunId());
+                appendMessage(run.getRunId(), EVENT_RUN_END, lastChainId, report);
             }
         });
     }
@@ -455,17 +581,16 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     }
 
     /**
-     * 同链路（或同为「不绑链路」）的进行中 run 置 SUPERSEDED，保证同时只有一个在跑。
+     * 同一会话的进行中 run 置 SUPERSEDED，保证每会话同时只有一条在跑；跨会话互不影响。
      *
-     * @param userId  发起人
-     * @param chainId 链路 id，可为空
+     * @param userId         发起人
+     * @param conversationId 会话 id
      */
-    private void supersedeActiveRuns(Long userId, Long chainId) {
+    private void supersedeActiveRuns(Long userId, String conversationId) {
         LambdaUpdateWrapper<DatabusAgentRun> wrapper = Wrappers.<DatabusAgentRun>lambdaUpdate()
             .eq(DatabusAgentRun::getUserId, userId)
+            .eq(DatabusAgentRun::getConversationId, conversationId)
             .eq(DatabusAgentRun::getStatus, AgentRunStatusEnum.RUNNING.getCode())
-            .eq(chainId != null, DatabusAgentRun::getChainId, chainId)
-            .isNull(chainId == null, DatabusAgentRun::getChainId)
             .set(DatabusAgentRun::getStatus, AgentRunStatusEnum.SUPERSEDED.getCode())
             .set(DatabusAgentRun::getUpdateTime, LocalDateTime.now());
         runMapper.update(null, wrapper);
@@ -599,7 +724,6 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         AgentRunVo vo = new AgentRunVo();
         vo.setRunId(run.getRunId());
         vo.setConversationId(run.getConversationId());
-        vo.setChainId(run.getChainId());
         vo.setIntent(run.getIntent());
         vo.setStatus(run.getStatus());
         vo.setReport(run.getReport());

@@ -10,8 +10,7 @@ import java.io.Serializable;
 /**
  * AI 对话发起业务对象。
  * <p>
- * conversationId 为空时由后端生成并回传（前端只存这个 id，run 状态归后端）；
- * chainId 是当前画布链路，可为空（从零建）。
+ * conversationId 为空时由后端生成并回传（前端只存这个 id，run 状态归后端）。
  *
  * @author databus
  */
@@ -33,10 +32,5 @@ public class AgentChatBo implements Serializable {
      */
     @Size(max = 64, message = "会话id长度不能超过{max}个字符")
     private String conversationId;
-
-    /**
-     * 当前画布链路 id，可为空
-     */
-    private Long chainId;
 
 }

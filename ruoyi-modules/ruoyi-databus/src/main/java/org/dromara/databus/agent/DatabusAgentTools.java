@@ -200,22 +200,28 @@ public class DatabusAgentTools {
      * <p>
      * EL 一律由 {@link ExpressGenerator} 生成并校验，工具层不自己拼；内联脚本节点一律拒绝
      * （必须先落脚本草稿、再把节点换成组件引用）。每次动手前把改之前的整条链路存
-     * {@code databus_agent_snapshot}，供「回到 AI 动手前」按轮次回滚。
+     * {@code databus_agent_snapshot}，供「回到这次对话前」按 run 整体回滚。
      *
-     * @param draftId       草稿链路 id；有就是改，没有就是新建
-     * @param chainCode     链路编码，新建必填
-     * @param chainName     链路名称
-     * @param baseChainId   照着哪条链路改（只作参考，保存以 cmpProperty 为唯一依据）
-     * @param cmpProperty   画布结构树 JSON（唯一依据）
-     * @param inputParams   链路入参登记表 JSON 数组，可空
-     * @param logLevel      执行记录档位 OFF/BASIC/FULL，默认 FULL
-     * @param note          备注
+     * @param draftId           草稿链路 id；有就是改，没有就是新建
+     * @param chainCode         链路编码，新建必填
+     * @param chainName         链路名称
+     * @param baseChainId       照着哪条链路改（只作参考，保存以 cmpProperty 为唯一依据）
+     * @param cmpProperty       画布结构树 JSON（唯一依据）
+     * @param inputParams       链路入参登记表 JSON 数组，可空
+     * @param logLevel          执行记录档位 OFF/BASIC/FULL，默认 FULL
+     * @param note              备注
+     * @param expectedUpdateTime 读取时链路的 updateTime，保存时原样回传（乐观锁期望值）
+     * @param force             用户已确认覆盖他人改动
      * @return JSON 结果
      */
     @Tool(name = TOOL_CHAIN_SAVE, description = "把拼好的链路结构存成草稿（status=DRAFT），新建与修改都走这里。"
+        + "同一会话可以多次新建或修改：新建不传 draftId，修改传 draftId。"
         + "cmpProperty 是画布结构树 JSON，是保存的唯一依据；EL 由服务端生成并校验，不要自己拼 EL。"
         + "链路里含内联脚本节点会被直接拒绝，必须先调 databus_script_draft_save 落脚本草稿、再把节点换成组件引用。"
-        + "修改已发布/已下线的链路、系统链路、别人的链路都会被拒绝。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
+        + "修改已发布/已下线的链路、系统链路、别人的链路都会被拒绝。"
+        + "修改前必须先调 databus_chain_get 拿到 updateTime，原样作为 expectedUpdateTime 传回；"
+        + "若链路在你读取之后被别人改过，会返回 conflict=true 且不写库，此时把 message 转述给用户，"
+        + "用户明确同意覆盖后再带 force=true 重试。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
     public String chainSave(
         @ToolParam(description = "草稿链路 id；有就是改，没有就是新建", required = false) Long draftId,
         @ToolParam(description = "链路编码，新建必填（字母/数字/下划线）", required = false) String chainCode,
@@ -224,7 +230,9 @@ public class DatabusAgentTools {
         @ToolParam(description = "画布结构树 JSON（唯一依据），根节点通常是 THEN") String cmpProperty,
         @ToolParam(description = "链路入参登记表 JSON 数组，可空；修改时传 [] 表示清空", required = false) String inputParams,
         @ToolParam(description = "执行记录档位 OFF / BASIC / FULL，默认 FULL", required = false) String logLevel,
-        @ToolParam(description = "备注", required = false) String note) {
+        @ToolParam(description = "备注", required = false) String note,
+        @ToolParam(description = "读取时 databus_chain_get 返回的 updateTime，原样传回", required = false) String expectedUpdateTime,
+        @ToolParam(description = "用户已确认覆盖他人改动后才传 true", required = false) Boolean force) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("draftId", draftId);
         args.put("chainCode", chainCode);
@@ -234,9 +242,12 @@ public class DatabusAgentTools {
         args.put("inputParams", inputParams);
         args.put("logLevel", logLevel);
         args.put("note", note);
+        args.put("expectedUpdateTime", expectedUpdateTime);
+        args.put("force", force);
         String permission = draftId == null ? PERMISSION_ADD : PERMISSION_WRITE;
-        return execute(TOOL_CHAIN_SAVE, args, permission, draftId,
-            ctx -> doChainSave(ctx, draftId, chainCode, chainName, cmpProperty, inputParams, logLevel, note));
+        return execute(TOOL_CHAIN_SAVE, args, permission,
+            ctx -> doChainSave(ctx, draftId, chainCode, chainName, cmpProperty, inputParams, logLevel, note,
+                expectedUpdateTime, force));
     }
 
     /**
@@ -248,16 +259,16 @@ public class DatabusAgentTools {
      * @return JSON 结果
      */
     private String execute(String tool, Map<String, Object> args, Function<AgentRunContext, Map<String, Object>> body) {
-        return execute(tool, args, PERMISSION_READ, null, body);
+        return execute(tool, args, PERMISSION_READ, body);
     }
 
-    private String execute(String tool, Map<String, Object> args, String permission, Long targetChainId,
+    private String execute(String tool, Map<String, Object> args, String permission,
                            Function<AgentRunContext, Map<String, Object>> body) {
         long began = System.currentTimeMillis();
         String argsJson = JsonUtils.toJsonString(args);
         AgentRunContext context = null;
         try {
-            context = agentGuard.check(permission, targetChainId);
+            context = agentGuard.check(permission);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("ok", true);
             payload.putAll(body.apply(context));
@@ -278,7 +289,7 @@ public class DatabusAgentTools {
 
     private Map<String, Object> doChainSave(AgentRunContext context, Long draftId, String chainCode,
                                             String chainName, String cmpPropertyJson, String inputParamsJson,
-                                            String logLevel, String note) {
+                                            String logLevel, String note, String expectedUpdateTime, Boolean force) {
         CmpProperty tree = parseTree(cmpPropertyJson);
         // 内联脚本拦截：脚本只允许走 databus_script_draft_save，链路树里出现脚本叶子一律不写库
         List<DatabusExecutor.ScriptNodeSpec> scripts = databusExecutor.collectScriptNodes(tree);
@@ -304,11 +315,9 @@ public class DatabusAgentTools {
 
         Long chainId;
         String name;
+        boolean overwritten = false;
+        boolean created = draftId == null;
         if (draftId == null) {
-            if (context.chainId() != null) {
-                throw new IllegalArgumentException("当前任务已绑定链路 " + context.chainId()
-                    + "，修改请传 draftId=" + context.chainId() + "；要新建链路请另开会话");
-            }
             String code = trimToNull(chainCode);
             name = trimToNull(chainName);
             if (code == null) {
@@ -317,6 +326,8 @@ public class DatabusAgentTools {
             if (name == null) {
                 throw new IllegalArgumentException("新建链路必须给 chainName");
             }
+            // 新建也占一轮：回滚时按 operation=CREATE 删除整条链路
+            int round = agentGuard.nextRound(context.runId());
             DatabusChainBo bo = new DatabusChainBo();
             bo.setChainCode(code);
             bo.setChainName(name);
@@ -330,8 +341,8 @@ public class DatabusAgentTools {
                 throw new IllegalStateException("新建链路失败");
             }
             chainId = bo.getId();
-            // 首次新建后把 run 绑到新链路，后续 chain_save / chain_run 才能过 guard ④
-            agentGuard.bindChain(context.runId(), chainId);
+            // 记一次新建快照（operation=CREATE），回滚该轮即删除这条链
+            snapshotService.recordCreate(context.runId(), round, chainId, code, name);
         } else {
             DatabusChainVo before = chainService.queryById(draftId);
             if (before == null) {
@@ -346,6 +357,20 @@ public class DatabusAgentTools {
             }
             if (!Objects.equals(before.getCreateBy(), context.userId())) {
                 throw new IllegalArgumentException("只能修改自己创建的链路");
+            }
+            // 同链并发：读取之后被别人改过且用户尚未确认覆盖 → 不写库，把问题抛回给模型问用户
+            String currentUpdateTime = formatTime(before.getUpdateTime());
+            String expected = trimToNull(expectedUpdateTime);
+            if (expected != null && currentUpdateTime != null && !expected.equals(currentUpdateTime)) {
+                if (!Boolean.TRUE.equals(force)) {
+                    Map<String, Object> conflict = new LinkedHashMap<>();
+                    conflict.put("conflict", true);
+                    conflict.put("message", "这条链路在你读取之后被修改过，要继续覆盖吗？");
+                    conflict.put("expectedUpdateTime", expected);
+                    conflict.put("currentUpdateTime", currentUpdateTime);
+                    return conflict;
+                }
+                overwritten = true;
             }
             // 动手前先落快照，失败也能回到这一轮之前
             int round = agentGuard.nextRound(context.runId());
@@ -371,7 +396,7 @@ public class DatabusAgentTools {
             chainId = draftId;
         }
 
-        eventPublisher.publishCanvas(context, chainId, name, tree, elExpression, null);
+        eventPublisher.publishCanvas(context, chainId, name, tree, elExpression, null, created);
         eventPublisher.publishDraft(context, chainId, name);
 
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -382,6 +407,9 @@ public class DatabusAgentTools {
         payload.put("verifyMessage", null);
         payload.put("nodeCount", nodeCount);
         payload.put("scriptNodeCount", 0);
+        if (overwritten) {
+            payload.put("warning", "已覆盖他人改动");
+        }
         return payload;
     }
 

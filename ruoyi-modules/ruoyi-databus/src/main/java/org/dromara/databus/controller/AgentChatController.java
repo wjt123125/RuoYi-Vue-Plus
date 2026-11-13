@@ -8,9 +8,10 @@ import org.dromara.common.core.domain.R;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.AgentChatBo;
 import org.dromara.databus.domain.vo.AgentChatStartVo;
+import org.dromara.databus.domain.vo.AgentConversationVo;
 import org.dromara.databus.domain.vo.AgentMessageVo;
+import org.dromara.databus.domain.vo.AgentRollbackVo;
 import org.dromara.databus.domain.vo.AgentRunVo;
-import org.dromara.databus.domain.vo.AgentSnapshotVo;
 import org.dromara.databus.service.IDatabusAgentRunService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
@@ -85,6 +86,18 @@ public class AgentChatController extends BaseController {
     }
 
     /**
+     * 上报「用户丢弃了本次画布更新」，记入审计供下一轮对话得知改动未采纳。
+     *
+     * @param runId     run 句柄
+     * @param chainName 链路名，可为空
+     */
+    @PostMapping("/run/{runId}/canvas-skip")
+    public R<Void> canvasSkip(@PathVariable String runId, @RequestParam(required = false) String chainName) {
+        agentRunService.reportCanvasSkip(runId, chainName);
+        return R.ok();
+    }
+
+    /**
      * 按会话查当前用户进行中的 run（刷新后恢复用）。
      *
      * @param conversationId 会话 id
@@ -93,6 +106,18 @@ public class AgentChatController extends BaseController {
     @GetMapping("/run/active")
     public R<AgentRunVo> activeRun(@RequestParam @NotBlank String conversationId) {
         return R.ok(agentRunService.getActiveRun(conversationId));
+    }
+
+    /**
+     * 列出当前用户的会话（按最近活跃倒序），供工作区左侧历史栏使用。
+     *
+     * @param limit 条数上限，默认 50，最多 100
+     * @return 会话摘要列表
+     */
+    @GetMapping("/conversations")
+    public R<List<AgentConversationVo>> conversations(
+        @RequestParam(required = false, defaultValue = "50") Integer limit) {
+        return R.ok(agentRunService.listConversations(limit));
     }
 
     /**
@@ -118,26 +143,14 @@ public class AgentChatController extends BaseController {
     }
 
     /**
-     * 列出某个 run 每轮动手前的快照（「回到 AI 动手前」按轮次选择用）。
+     * 回到这次对话前：按 run 整体回滚（新建的删掉、改过的写回）。
      *
      * @param runId run 句柄
-     * @return 轮次快照（不含 payload）
-     */
-    @GetMapping("/run/{runId}/snapshots")
-    public R<List<AgentSnapshotVo>> snapshots(@PathVariable String runId) {
-        return R.ok(agentRunService.listSnapshots(runId));
-    }
-
-    /**
-     * 回到 AI 动手前：把指定轮次的快照写回链路。
-     *
-     * @param runId run 句柄
-     * @param round 轮次
-     * @return 被回滚的链路 id
+     * @return 被回滚的链路
      */
     @PostMapping("/run/{runId}/rollback")
-    public R<Long> rollback(@PathVariable String runId, @RequestParam Integer round) {
-        return R.ok(agentRunService.rollback(runId, round));
+    public R<List<AgentRollbackVo>> rollback(@PathVariable String runId) {
+        return R.ok(agentRunService.rollbackRun(runId));
     }
 
 }

@@ -10,14 +10,19 @@
 --   id 只做内部主键，run_id 才是交给前端与 AI 的唯一句柄。
 -- seq 号源在 run 行上：update databus_agent_run set next_seq = next_seq + 1 where run_id = ?
 --   后读回，InnoDB 行锁保证原子，多实例安全；step 与 message 共用，才排得出全局先后。
+-- 幂等：整份脚本可重复执行。开发阶段先删后建（会清空这四张表的数据），生产环境勿直接整份执行。
 -- ----------------------------
+
+drop table if exists databus_agent_message;
+drop table if exists databus_agent_step;
+drop table if exists databus_agent_snapshot;
+drop table if exists databus_agent_run;
 
 -- 一次 AI 干活。run_id 用 UUID，是交给 AI 的唯一句柄
 create table if not exists databus_agent_run (
     id                   bigint(20)      not null                   comment '主键',
     run_id               varchar(64)     not null                   comment 'run 句柄，UUID，交给前端与 AI',
     user_id              bigint(20)      not null                   comment '发起人（身份快照来源，工具层据此 setCreateBy）',
-    chain_id             bigint(20)      default null               comment '绑定的链路 id，可为空（从零建）；工具入参 chainId 与此不符即拒',
     intent               varchar(1000)   default null               comment '用户原话',
     conversation_id      varchar(64)     default null               comment 'SnailAI 会话 id',
     round                int(11)         default 0                  comment '已用纠错轮数，上限取 databus.agent.max-rounds',
@@ -38,7 +43,7 @@ create table if not exists databus_agent_run (
     primary key (id),
     unique key uk_agent_run_run_id (run_id),
     key idx_agent_run_user_status (user_id, status),
-    key idx_agent_run_chain (chain_id, status)
+    key idx_agent_run_user_conv_time (user_id, conversation_id, create_time)
 ) engine=innodb comment = 'AI agent 一次任务（身份与权限快照）';
 
 -- 每次工具调用一条，只增不改（对照 databus_execution 的处置）
@@ -60,13 +65,14 @@ create table if not exists databus_agent_step (
     key idx_agent_step_tool (tool, create_time)
 ) engine=innodb comment = 'AI agent 工具调用审计';
 
--- 每轮动手前的链路快照，只增不改：供「回到 AI 动手前」按轮次回滚（设计文档 §9.2 / §16.1）
+-- 每轮动手前的链路快照，只增不改：供「回到这次对话前」按 run 整体回滚（设计文档 §9.2 / §16.1）
 -- payload 存 DatabusChain 整行快照（cmpProperty / elExpression / canvasData / inputParams / logLevel）；
 -- 用 mediumtext 而非 text：大链路的 cmpProperty + canvasData 可能超过 64KB，截断的快照等于回滚不了。
 create table if not exists databus_agent_snapshot (
     id                  bigint(20)      not null                   comment '主键',
     run_id              varchar(64)     not null                   comment '所属 run',
     round               int(11)         not null default 0         comment '第几轮动手前（0 表示首轮）',
+    operation           varchar(10)     not null default 'UPDATE'  comment 'CREATE 新建 / UPDATE 修改',
     payload             mediumtext      default null               comment '链路全量快照（JSON：cmpProperty/elExpression/canvasData/inputParams/logLevel）',
     create_time         datetime        default null               comment '创建时间',
     primary key (id),

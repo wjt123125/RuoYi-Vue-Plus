@@ -13,6 +13,9 @@ import java.util.List;
  * <p>
  * 只存回滚真正要写回的字段 + 定位信息；el_expression 一并留存便于比对，
  * 回滚时不用它——EL 永远由 {@code IDatabusChainService.updateByBo} 从结构树重新生成。
+ * <p>
+ * operation=CREATE 时 payload 只有定位信息（chainId/chainCode/chainName），
+ * 没有「动手前」结构可写回，回滚语义是删除整条链路。
  *
  * @author databus
  */
@@ -26,6 +29,11 @@ public class AgentChainSnapshot implements Serializable {
      * 快照所属链路 id
      */
     private Long chainId;
+
+    /**
+     * CREATE 新建 / UPDATE 修改
+     */
+    private String operation;
 
     /**
      * 链路编码

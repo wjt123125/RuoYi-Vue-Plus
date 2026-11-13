@@ -11,7 +11,6 @@ import java.util.List;
  * @param runId          本轮 run 句柄
  * @param conversationId SnailAI 会话 id
  * @param userId         发起人（写操作据此显式 setCreateBy）
- * @param chainId        绑定的链路 id，可为空（从零建）
  * @param permissions    发起时的权限点快照
  * @param round          已用纠错轮数
  * @author databus
@@ -19,7 +18,6 @@ import java.util.List;
 public record AgentRunContext(String runId,
                               String conversationId,
                               Long userId,
-                              Long chainId,
                               List<String> permissions,
                               Integer round) {
 

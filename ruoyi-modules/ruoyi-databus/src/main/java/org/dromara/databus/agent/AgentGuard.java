@@ -18,7 +18,7 @@ import java.util.List;
  * 工具身份守卫（方案 §十五 守卫 ②–⑤）。
  * <p>
  * 身份不靠模型自报：只取 SnailAI 透传的 conversationId，反查 databus_agent_run
- * 拿到 userId / chainId / permissions 快照。任何一处对不上都拒绝，绝不退化成放行。
+ * 拿到 userId / permissions 快照。任何一处对不上都拒绝，绝不退化成放行。
  *
  * @author databus
  */
@@ -37,12 +37,11 @@ public class AgentGuard {
     /**
      * 执行守卫校验并返回身份快照。
      *
-     * @param permission    所需权限点，空表示不校验权限
-     * @param targetChainId 目标链路 id；写操作必传，读操作传 null 表示不校验链路绑定
+     * @param permission 所需权限点，空表示不校验权限
      * @return 身份快照
      * @throws AgentGuardRejectedException 任一守卫不通过
      */
-    public AgentRunContext check(String permission, Long targetChainId) {
+    public AgentRunContext check(String permission) {
         // ② 上下文存在：取 SnailAI 透传的 conversationId
         String conversationId = AgentChatContextHolder.getContext().getConversationId();
         if (!StringUtils.hasText(conversationId)) {
@@ -83,40 +82,12 @@ public class AgentGuard {
             run.getRunId(),
             conversationId,
             run.getUserId(),
-            run.getChainId(),
             permissions,
             run.getRound() == null ? 0 : run.getRound());
         if (!context.hasPermission(permission)) {
             throw new AgentGuardRejectedException(run.getRunId(), "当前用户缺少权限点 " + permission + "，已拒绝执行");
         }
-
-        // ④ 目标校验：任务绑定链路时，目标链路必须与快照一致
-        if (targetChainId != null) {
-            if (run.getChainId() == null) {
-                throw new AgentGuardRejectedException(run.getRunId(), "当前任务未绑定链路，不能操作链路 " + targetChainId);
-            }
-            if (!run.getChainId().equals(targetChainId)) {
-                throw new AgentGuardRejectedException(run.getRunId(),
-                    "目标链路 " + targetChainId + " 与当前任务绑定的链路 " + run.getChainId() + " 不一致，已拒绝执行");
-            }
-        }
         return context;
-    }
-
-    /**
-     * 首次新建链路后把 run 绑定到新链 id。
-     * <p>
-     * 只在该 run 尚未绑定链路时写入：后续 chain_save 的 guard ④ 依赖这条绑定，
-     * 否则「从零建链」第二轮就会被「任务未绑定链路」拒掉。
-     *
-     * @param runId   run 句柄
-     * @param chainId 新建链路 id
-     */
-    public void bindChain(String runId, Long chainId) {
-        runMapper.update(null, Wrappers.<DatabusAgentRun>lambdaUpdate()
-            .eq(DatabusAgentRun::getRunId, runId)
-            .isNull(DatabusAgentRun::getChainId)
-            .set(DatabusAgentRun::getChainId, chainId));
     }
 
     /**

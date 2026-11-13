@@ -38,9 +38,14 @@ public class DatabusAgentSnapshot implements Serializable {
     private String runId;
 
     /**
-     * 第几轮动手前（1 起，首次新建没有动手前快照）
+     * 第几轮动手前（1 起；新建轮也占一轮，回滚时按 operation=CREATE 删除整条链路）
      */
     private Integer round;
+
+    /**
+     * CREATE 新建 / UPDATE 修改
+     */
+    private String operation;
 
     /**
      * 链路全量快照（JSON：cmpProperty/elExpression/canvasData/inputParams/logLevel）

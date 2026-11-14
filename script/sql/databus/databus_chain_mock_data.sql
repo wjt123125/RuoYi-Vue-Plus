@@ -3,8 +3,8 @@
 -- 执行顺序：先 databus_chain.sql（含 drop table 与建表/菜单）再跑本文件。带 is_template=1 的 10 条为精选模板库首批模板。
 -- 全部为草稿状态（status=DRAFT）；发布走前端/接口 publish，后端实时生成 EL 推 Rule-DB。
 -- id 段 1762000000000100001 起。
--- 本文件可重复执行：开头先按全部种子 id 清场再逐条插入（早期残留 code alert-test-always-fail、
--- 以及 AI 自建时用雪花 id 落库的 round_limit_zz 一并清掉）。
+-- 本文件可重复执行：开头用与本文件插入完全相同的 id 清单 + chain_code 清单双键清场，
+-- 不区分行是固定种子 id 还是 AI 自建时雪花 id 落库，同一套清单覆盖全部种子，无单独例外。
 -- 只清 databus_chain 草稿本体；已发布链路留在 lf_chain 的旧规则不动，重新发布会覆盖。
 -- ----------------------------
 -- 归属：种子资源统一挂到测试账号 test 名下（create_by/create_dept 直接写入 INSERT，不使用事后 UPDATE）。
@@ -15,8 +15,7 @@ set @db_seed_admin_uid := (select user_id from sys_user where user_name = 'admin
 set @db_seed_admin_did := (select dept_id from sys_user where user_name = 'admin' and del_flag = '0' limit 1);
 
 delete from databus_chain
-where chain_code in ('alert-test-always-fail', 'round_limit_zz')
-   or id in
+where id in
 ( 1762000000000100001, 1762000000000100002, 1762000000000100003, 1762000000000100004, 1762000000000100005,
   1762000000000100006, 1762000000000100007, 1762000000000100008, 1762000000000100009, 1762000000000100010,
   1762000000000100011, 1762000000000100012, 1762000000000100013, 1762000000000100014, 1762000000000100015,
@@ -26,7 +25,16 @@ where chain_code in ('alert-test-always-fail', 'round_limit_zz')
   1762000000000100030, 1762000000000100031, 1762000000000100032, 1762000000000100033,
   1762000000000100034, 1762000000000100035, 1762000000000100036, 1762000000000100037,
   1762000000000100038,
-  1762000000000100901, 1762000000000100902 );
+  1762000000000100901, 1762000000000100902 )
+   or chain_code in
+( 'script-if-booleanScript', 'http-anonymous-chain', 'bpm-flow', 'bpm-bo-update', 'bpm-bo-delete',
+  'bpm-rds-methods', 'bpm-idcard-to-userid', 'bpm-idcard-all-miss', 'local-flag', 'serial-all',
+  'then-empty', 'when-parallel', 'if-branch', 'if-empty-false', 'switch-cases',
+  'for-count', 'while-loop', 'iterator-items', 'iterator-nested', 'catch-flow',
+  'catch-empty', 'and-logic', 'or-logic', 'not-logic', 'chain-ref',
+  'nested-complex', 'nested-catch-in-then', 'subChain_demo', 'catch-type-route', 'alert-test-send-mail',
+  'alert-test-random-fail', 'review-sub-demo', 'review-main-demo', 'jdbc-query-rows', 'jdbc-query-modes',
+  'jdbc-type-matrix', 'jdbc-execute-keys', 'jdbc-batch-write', 'jdbc-full-loop', 'round_limit_zz' );
 
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, input_params, create_time, remark, is_template, template_desc, template_sort, owner_type, create_dept, create_by)

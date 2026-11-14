@@ -49,7 +49,8 @@ public class DatabusAgentRun extends BaseEntity {
     private String conversationId;
 
     /**
-     * 已用纠错轮数，上限取 databus.agent.max-rounds
+     * 已用纠错轮数：每次写链路自增 1（新建与修改都占一轮）；自增后大于
+     * databus.agent.max-rounds 时拒绝本次写入，此时该值停在 max-rounds + 1。
      */
     private Integer round;
 

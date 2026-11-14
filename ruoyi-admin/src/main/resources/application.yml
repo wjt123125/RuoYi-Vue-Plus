@@ -287,6 +287,8 @@ databus:
     run-ttl-minutes: 30
     # SSE 连接空闲超时毫秒，超时即收尾并把未完成的 run 置 STOPPED
     stream-timeout-ms: 300000
+    # 单次 run 的写链路纠错轮数上限（round 自增后超过即拒绝写入，不写库、不落快照）
+    max-rounds: 20
   execution:
     cleanup:
       # 清理任务开关（false 只停定时任务，手动端点仍可用）

@@ -32,4 +32,9 @@ public class DatabusAgentProperties {
      */
     private long streamTimeoutMs = 300000;
 
+    /**
+     * 单次 run 的写链路纠错轮数上限：round 自增后超过该值的写操作被拒绝，不写库、不落快照。
+     */
+    private int maxRounds = 20;
+
 }

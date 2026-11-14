@@ -3,6 +3,7 @@ package org.dromara.databus.agent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.domain.PageResult;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.component.schema.enums.NodeTypeKind;
@@ -278,6 +279,11 @@ public class DatabusAgentTools {
         } catch (AgentGuardRejectedException e) {
             String result = errorJson(e.getMessage());
             stepRecorder.recordReject(e.getRunId(), tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
+            return result;
+        } catch (ServiceException e) {
+            // 业务校验（如轮数上限）直接给出原因，不套「工具执行失败」前缀
+            String result = errorJson(e.getMessage());
+            stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
             return result;
         } catch (Exception e) {
             log.warn("[databus-agent] 工具 {} 执行失败", tool, e);

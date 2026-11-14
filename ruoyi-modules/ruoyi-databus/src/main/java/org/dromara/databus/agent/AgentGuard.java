@@ -4,7 +4,9 @@ import com.aizuda.snail.ai.agent.common.context.AgentChatContextHolder;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.json.utils.JsonUtils;
+import org.dromara.databus.config.properties.DatabusAgentProperties;
 import org.dromara.databus.domain.DatabusAgentRun;
 import org.dromara.databus.enums.AgentRunStatusEnum;
 import org.dromara.databus.mapper.DatabusAgentRunMapper;
@@ -33,6 +35,7 @@ public class AgentGuard {
     private static final int SINGLE_RUNNING = 1;
 
     private final DatabusAgentRunMapper runMapper;
+    private final DatabusAgentProperties agentProperties;
 
     /**
      * 执行守卫校验并返回身份快照。
@@ -94,9 +97,12 @@ public class AgentGuard {
      * 进入下一轮：round 原子自增并回读。
      * <p>
      * round 落在 run 上而不是链路上：链路草稿是用户资产，不该被 AI 的运行状态污染。
+     * 自增后超过 {@code databus.agent.max-rounds} 即抛业务异常，由工具统一执行壳转成错误 JSON，
+     * 本次写操作不落库；此时 round 停在 max-rounds + 1，不存在回退。
      *
      * @param runId run 句柄
      * @return 自增后的轮次（1 起）
+     * @throws ServiceException 本轮超过配置的轮数上限
      */
     public int nextRound(String runId) {
         runMapper.update(null, Wrappers.<DatabusAgentRun>lambdaUpdate()
@@ -105,7 +111,12 @@ public class AgentGuard {
         DatabusAgentRun run = runMapper.selectOne(Wrappers.<DatabusAgentRun>lambdaQuery()
             .eq(DatabusAgentRun::getRunId, runId)
             .select(DatabusAgentRun::getRound));
-        return run == null || run.getRound() == null ? 1 : run.getRound();
+        int round = run == null || run.getRound() == null ? 1 : run.getRound();
+        int maxRounds = agentProperties.getMaxRounds();
+        if (round > maxRounds) {
+            throw new ServiceException("本次对话已用完 " + maxRounds + " 轮纠错，请先确认现有结果或新开会话");
+        }
+        return round;
     }
 
     /**

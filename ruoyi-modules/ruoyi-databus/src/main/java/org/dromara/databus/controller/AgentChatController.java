@@ -7,7 +7,10 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.AgentChatBo;
+import org.dromara.databus.domain.bo.AgentApprovalModeBo;
+import org.dromara.databus.domain.bo.AgentConversationTitleBo;
 import org.dromara.databus.domain.vo.AgentChatStartVo;
+import org.dromara.databus.domain.vo.AgentApprovalModeVo;
 import org.dromara.databus.domain.vo.AgentConversationVo;
 import org.dromara.databus.domain.vo.AgentMessageVo;
 import org.dromara.databus.domain.vo.AgentRollbackVo;
@@ -16,9 +19,11 @@ import org.dromara.databus.service.IDatabusAgentRunService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -121,6 +126,57 @@ public class AgentChatController extends BaseController {
     }
 
     /**
+     * 搜当前用户的会话（标题 + 问句 + 消息内容模糊匹配）。
+     *
+     * @param keyword 关键字
+     * @param limit   条数上限，默认 50，最多 100
+     * @return 命中的会话摘要
+     */
+    @GetMapping("/conversations/search")
+    public R<List<AgentConversationVo>> searchConversations(
+        @RequestParam @NotBlank String keyword,
+        @RequestParam(required = false, defaultValue = "50") Integer limit) {
+        return R.ok(agentRunService.searchConversations(keyword, limit));
+    }
+
+    /**
+     * 重命名会话（只覆盖显示标题，不影响 run 的历史问句）。
+     *
+     * @param conversationId 会话 id
+     * @param bo             新标题
+     */
+    @PutMapping("/conversation/{conversationId}/title")
+    public R<Void> renameConversation(@PathVariable String conversationId,
+                                      @Valid @RequestBody AgentConversationTitleBo bo) {
+        agentRunService.renameConversation(conversationId, bo.getTitle());
+        return R.ok();
+    }
+
+    /**
+     * 置顶 / 取消置顶会话。
+     *
+     * @param conversationId 会话 id
+     * @param pinned         true 置顶，false 取消
+     */
+    @PutMapping("/conversation/{conversationId}/pin")
+    public R<Void> pinConversation(@PathVariable String conversationId,
+                                   @RequestParam(defaultValue = "true") boolean pinned) {
+        agentRunService.pinConversation(conversationId, pinned);
+        return R.ok();
+    }
+
+    /**
+     * 删除会话（软删覆盖信息，run / step / message 历史保留）。
+     *
+     * @param conversationId 会话 id
+     */
+    @DeleteMapping("/conversation/{conversationId}")
+    public R<Void> deleteConversation(@PathVariable String conversationId) {
+        agentRunService.deleteConversation(conversationId);
+        return R.ok();
+    }
+
+    /**
      * 回放某个 run 已落库的消息（按 seq 升序）。
      *
      * @param runId run 句柄
@@ -151,6 +207,30 @@ public class AgentChatController extends BaseController {
     @PostMapping("/run/{runId}/rollback")
     public R<List<AgentRollbackVo>> rollback(@PathVariable String runId) {
         return R.ok(agentRunService.rollbackRun(runId));
+    }
+
+    /**
+     * 读取会话级操作审批模式。
+     *
+     * @param conversationId 会话 id
+     * @return 生效模式与部署开关
+     */
+    @GetMapping("/conversation/{conversationId}/approval-mode")
+    public R<AgentApprovalModeVo> approvalMode(@PathVariable String conversationId) {
+        return R.ok(agentRunService.getApprovalMode(conversationId));
+    }
+
+    /**
+     * 保存会话级操作审批模式（MANUAL/AUTO；FULL 需部署开放；CUSTOM 暂未开放）。
+     *
+     * @param conversationId 会话 id
+     * @param bo             模式
+     */
+    @PutMapping("/conversation/{conversationId}/approval-mode")
+    public R<Void> saveApprovalMode(@PathVariable String conversationId,
+                                    @Valid @RequestBody AgentApprovalModeBo bo) {
+        agentRunService.saveApprovalMode(conversationId, bo.getMode());
+        return R.ok();
     }
 
 }

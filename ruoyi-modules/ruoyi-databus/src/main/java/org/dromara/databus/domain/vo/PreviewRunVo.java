@@ -26,6 +26,16 @@ public class PreviewRunVo implements Serializable {
     private String elStr;
 
     /**
+     * 本次试跑的执行 id（仅用于串联日志；试运行不落 databus_execution）
+     */
+    private String executionId;
+
+    /**
+     * 端到端耗时（毫秒），仅 executed=true 时有值
+     */
+    private Long costTime;
+
+    /**
      * EL 是否校验通过
      */
     private Boolean valid;
@@ -81,6 +91,8 @@ public class PreviewRunVo implements Serializable {
     public static PreviewRunVo executed(String elStr, DatabusExecutionResult result) {
         PreviewRunVo vo = new PreviewRunVo();
         vo.setElStr(elStr);
+        vo.setExecutionId(result.getExecutionId());
+        vo.setCostTime(result.getCostTime());
         vo.setValid(Boolean.TRUE);
         vo.setExecuted(Boolean.TRUE);
         vo.setSuccess(result.isSuccess());

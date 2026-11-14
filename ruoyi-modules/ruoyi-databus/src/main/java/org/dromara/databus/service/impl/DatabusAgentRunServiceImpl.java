@@ -18,20 +18,24 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.agent.AgentChainSnapshot;
+import org.dromara.databus.agent.AgentApprovalService;
 import org.dromara.databus.agent.AgentStepRecorder;
 import org.dromara.databus.config.properties.DatabusAgentProperties;
+import org.dromara.databus.domain.DatabusAgentConversationMeta;
 import org.dromara.databus.domain.DatabusAgentMessage;
 import org.dromara.databus.domain.DatabusAgentRun;
 import org.dromara.databus.domain.DatabusAgentStep;
 import org.dromara.databus.domain.bo.AgentChatBo;
 import org.dromara.databus.domain.bo.DatabusChainBo;
 import org.dromara.databus.domain.vo.AgentChatStartVo;
+import org.dromara.databus.domain.vo.AgentApprovalModeVo;
 import org.dromara.databus.domain.vo.AgentConversationVo;
 import org.dromara.databus.domain.vo.AgentMessageVo;
 import org.dromara.databus.domain.vo.AgentRollbackVo;
 import org.dromara.databus.domain.vo.AgentRunVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.enums.AgentRunStatusEnum;
+import org.dromara.databus.mapper.DatabusAgentConversationMetaMapper;
 import org.dromara.databus.mapper.DatabusAgentMessageMapper;
 import org.dromara.databus.mapper.DatabusAgentRunMapper;
 import org.dromara.databus.mapper.DatabusAgentStepMapper;
@@ -145,6 +149,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     private final DatabusAgentRunMapper runMapper;
     private final DatabusAgentMessageMapper messageMapper;
     private final DatabusAgentStepMapper stepMapper;
+    private final DatabusAgentConversationMetaMapper metaMapper;
     private final IDatabusAgentSnapshotService snapshotService;
     private final IDatabusChainService chainService;
     private final AgentStepRecorder stepRecorder;
@@ -152,6 +157,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     private final OpenApiUserClient userClient;
     private final OpenApiAgentClient agentClient;
     private final DatabusAgentProperties properties;
+    private final AgentApprovalService approvalService;
     private final TransactionTemplate transactionTemplate;
 
     /**
@@ -368,6 +374,107 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         List<AgentConversationVo> conversations = runMapper.selectConversations(userId, size);
         conversations.forEach(vo -> vo.setTitle(cleanTitle(vo.getTitle())));
         return conversations;
+    }
+
+    @Override
+    public List<AgentConversationVo> searchConversations(String keyword, Integer limit) {
+        if (!StringUtils.hasText(keyword)) {
+            return List.of();
+        }
+        Long userId = LoginHelper.getUserId();
+        if (userId == null) {
+            throw new ServiceException("当前登录用户为空");
+        }
+        int size = limit == null || limit <= 0
+            ? DEFAULT_CONVERSATION_LIMIT
+            : Math.min(limit, MAX_CONVERSATION_LIMIT);
+        List<AgentConversationVo> conversations = runMapper.searchConversations(userId, keyword.trim(), size);
+        conversations.forEach(vo -> vo.setTitle(cleanTitle(vo.getTitle())));
+        return conversations;
+    }
+
+    @Override
+    public void renameConversation(String conversationId, String title) {
+        Long userId = requireOwnedConversation(conversationId);
+        DatabusAgentConversationMeta meta = loadOrInitMeta(conversationId, userId);
+        meta.setCustomTitle(title.trim());
+        saveMeta(meta);
+    }
+
+    @Override
+    public void pinConversation(String conversationId, boolean pinned) {
+        Long userId = requireOwnedConversation(conversationId);
+        DatabusAgentConversationMeta meta = loadOrInitMeta(conversationId, userId);
+        meta.setPinned(pinned ? "1" : "0");
+        saveMeta(meta);
+    }
+
+    @Override
+    public void deleteConversation(String conversationId) {
+        Long userId = requireOwnedConversation(conversationId);
+        DatabusAgentConversationMeta meta = loadOrInitMeta(conversationId, userId);
+        meta.setDelFlag("1");
+        saveMeta(meta);
+    }
+
+    /**
+     * 取会话的覆盖信息行，没有就构造一行待插入的（pinned / del_flag 给默认值）。
+     * <p>
+     * 不过滤 del_flag：软删过的会话再被操作时要找回同一行改写，否则会撞 conversation_id 唯一键。
+     *
+     * @param conversationId 会话 id
+     * @param userId         归属用户
+     * @return 已存在或待插入的 meta 行
+     */
+    private DatabusAgentConversationMeta loadOrInitMeta(String conversationId, Long userId) {
+        DatabusAgentConversationMeta meta = metaMapper.selectOne(
+            Wrappers.<DatabusAgentConversationMeta>lambdaQuery()
+                .eq(DatabusAgentConversationMeta::getConversationId, conversationId));
+        if (meta != null) {
+            return meta;
+        }
+        meta = new DatabusAgentConversationMeta();
+        meta.setConversationId(conversationId);
+        meta.setUserId(userId);
+        meta.setPinned("0");
+        meta.setDelFlag("0");
+        return meta;
+    }
+
+    /**
+     * 落 meta：无主键插入，有主键按非空字段更新（null 字段不覆盖）。
+     *
+     * @param meta meta 行
+     */
+    private void saveMeta(DatabusAgentConversationMeta meta) {
+        if (meta.getId() == null) {
+            metaMapper.insert(meta);
+        } else {
+            metaMapper.updateById(meta);
+        }
+    }
+
+    /**
+     * 校验会话归属当前用户（会话由 run 聚合而成，有 run 才算存在），返回当前用户 id。
+     *
+     * @param conversationId 会话 id
+     * @return 当前用户 id
+     */
+    private Long requireOwnedConversation(String conversationId) {
+        if (!StringUtils.hasText(conversationId)) {
+            throw new ServiceException("会话不存在");
+        }
+        Long userId = LoginHelper.getUserId();
+        if (userId == null) {
+            throw new ServiceException("当前登录用户为空");
+        }
+        Long count = runMapper.selectCount(Wrappers.<DatabusAgentRun>lambdaQuery()
+            .eq(DatabusAgentRun::getUserId, userId)
+            .eq(DatabusAgentRun::getConversationId, conversationId));
+        if (count == null || count == 0) {
+            throw new ServiceException("无权访问该会话");
+        }
+        return userId;
     }
 
     /**
@@ -818,6 +925,19 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         if (disposable != null && !disposable.isDisposed()) {
             disposable.dispose();
         }
+    }
+
+    @Override
+    public AgentApprovalModeVo getApprovalMode(String conversationId) {
+        AgentApprovalModeVo vo = new AgentApprovalModeVo();
+        vo.setMode(approvalService.getMode(conversationId, LoginHelper.getUserId()).getCode());
+        vo.setAllowFullAccess(approvalService.isAllowFullAccess());
+        return vo;
+    }
+
+    @Override
+    public void saveApprovalMode(String conversationId, String mode) {
+        approvalService.saveMode(conversationId, LoginHelper.getUserId(), mode);
     }
 
 }

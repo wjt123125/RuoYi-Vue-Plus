@@ -13,6 +13,7 @@
 -- 幂等：整份脚本可重复执行。开发阶段先删后建（会清空这四张表的数据），生产环境勿直接整份执行。
 -- ----------------------------
 
+drop table if exists databus_agent_conversation_meta;
 drop table if exists databus_agent_message;
 drop table if exists databus_agent_step;
 drop table if exists databus_agent_snapshot;
@@ -92,3 +93,36 @@ create table if not exists databus_agent_message (
     unique key uk_agent_message_run_seq (run_id, seq),
     key idx_agent_message_run (run_id, event_code)
 ) engine=innodb comment = 'AI agent 前端消息与 seq 号源';
+
+-- 会话覆盖信息，只存用户改过的那几项（标题 / 置顶 / 工作区 / 软删）：
+-- 会话本身仍由 databus_agent_run 聚合而来，本表不存标题副本以外的任何会话事实。
+-- 「删除」只置 del_flag=1，run / step / message 历史全部保留，便于审计与找回。
+create table if not exists databus_agent_conversation_meta (
+    id              bigint(20)   not null auto_increment comment '主键',
+    conversation_id varchar(64)  not null                comment '会话 id（与 databus_agent_run.conversation_id 对应）',
+    user_id         bigint(20)   not null                comment '归属用户',
+    workspace_id    bigint(20)   default null            comment '工作区 id；空=默认工作区',
+    custom_title    varchar(255) default null            comment '用户自定义标题，空则回落首问摘要',
+    pinned          char(1)      default '0'             comment '置顶（0否 1是）',
+    del_flag        char(1)      default '0'             comment '软删标志（0存在 1删除）',
+    create_time     datetime     default null            comment '创建时间',
+    update_time     datetime     default null            comment '更新时间',
+    primary key (id),
+    unique key uk_conv_meta_conv (conversation_id),
+    key idx_conv_meta_user (user_id, del_flag)
+) engine=innodb comment = 'AI agent 会话覆盖信息（标题/置顶/软删/工作区）';
+
+-- 会话级操作审批模式（阶段六）：一个会话一行，未落行按 MANUAL 处理。
+-- 不并入 databus_agent_conversation_meta：审批模式是「本次会话怎么执行」的运行策略，
+-- 与会话展示覆盖项（标题/置顶/软删）生命周期不同，且阶段禁令不允许往 meta 表加列。
+drop table if exists databus_agent_approval_setting;
+create table if not exists databus_agent_approval_setting (
+    id              bigint(20)   not null auto_increment comment '主键',
+    conversation_id varchar(64)  not null                comment '会话 id（与 databus_agent_run.conversation_id 对应）',
+    user_id         bigint(20)   default null            comment '归属用户',
+    mode            varchar(16)  not null default 'MANUAL' comment '审批模式 MANUAL/AUTO/FULL/CUSTOM',
+    create_time     datetime     default null            comment '创建时间',
+    update_time     datetime     default null            comment '更新时间',
+    primary key (id),
+    unique key uk_approval_conv (conversation_id)
+) engine=innodb comment = 'AI 会话级操作审批模式';

@@ -25,8 +25,8 @@ public class AgentConversationVo implements Serializable {
     private String conversationId;
 
     /**
-     * 标题：同会话最早一条非 SUPERSEDED run 的问句，服务层清洗成一行，
-     * 长度不在这里截死，由前端按栏宽省略
+     * 标题：用户自定义标题优先，否则取同会话最早一条非 SUPERSEDED run 的问句，
+     * 服务层清洗成一行，长度不在这里截死，由前端按栏宽省略
      */
     private String title;
 
@@ -44,5 +44,15 @@ public class AgentConversationVo implements Serializable {
      * 该会话的 run 条数
      */
     private Integer runCount;
+
+    /**
+     * 是否置顶（meta 覆盖项，无 meta 视为未置顶）
+     */
+    private Boolean pinned;
+
+    /**
+     * 归属工作区 id；空表示默认工作区
+     */
+    private Long workspaceId;
 
 }

@@ -37,4 +37,14 @@ public class DatabusAgentProperties {
      */
     private int maxRounds = 20;
 
+    /**
+     * 是否开放「完全访问」审批档：false 时前端下拉置灰，历史已存 FULL 的运行期按 MANUAL 处理。
+     */
+    private boolean allowFullAccess = false;
+
+    /**
+     * chain_run 单次回传的输出总量上限（字节），超出按路径顺序截断。
+     */
+    private int maxOutputBytes = 16384;
+
 }

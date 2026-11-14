@@ -289,6 +289,10 @@ databus:
     stream-timeout-ms: 300000
     # 单次 run 的写链路纠错轮数上限（round 自增后超过即拒绝写入，不写库、不落快照）
     max-rounds: 20
+    # 是否开放「完全访问」审批档：false 时前端置灰，已存 FULL 的运行期按 MANUAL 处理
+    allow-full-access: false
+    # chain_run 单次回传的输出总量上限（字节），超出按路径顺序截断
+    max-output-bytes: 16384
   execution:
     cleanup:
       # 清理任务开关（false 只停定时任务，手动端点仍可用）

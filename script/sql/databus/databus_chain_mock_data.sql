@@ -3,7 +3,8 @@
 -- 执行顺序：先 databus_chain.sql（含 drop table 与建表/菜单）再跑本文件。带 is_template=1 的 10 条为精选模板库首批模板。
 -- 全部为草稿状态（status=DRAFT）；发布走前端/接口 publish，后端实时生成 EL 推 Rule-DB。
 -- id 段 1762000000000100001 起。
--- 本文件可重复执行：开头先按全部种子 id 清场再逐条插入（早期残留 code alert-test-always-fail 一并清掉）。
+-- 本文件可重复执行：开头先按全部种子 id 清场再逐条插入（早期残留 code alert-test-always-fail、
+-- 以及 AI 自建时用雪花 id 落库的 round_limit_zz 一并清掉）。
 -- 只清 databus_chain 草稿本体；已发布链路留在 lf_chain 的旧规则不动，重新发布会覆盖。
 -- ----------------------------
 -- 归属：种子资源统一挂到测试账号 test 名下（create_by/create_dept 直接写入 INSERT，不使用事后 UPDATE）。
@@ -14,7 +15,7 @@ set @db_seed_admin_uid := (select user_id from sys_user where user_name = 'admin
 set @db_seed_admin_did := (select dept_id from sys_user where user_name = 'admin' and del_flag = '0' limit 1);
 
 delete from databus_chain
-where chain_code = 'alert-test-always-fail'
+where chain_code in ('alert-test-always-fail', 'round_limit_zz')
    or id in
 ( 1762000000000100001, 1762000000000100002, 1762000000000100003, 1762000000000100004, 1762000000000100005,
   1762000000000100006, 1762000000000100007, 1762000000000100008, 1762000000000100009, 1762000000000100010,
@@ -24,6 +25,7 @@ where chain_code = 'alert-test-always-fail'
   1762000000000100026, 1762000000000100027, 1762000000000100028, 1762000000000100029,
   1762000000000100030, 1762000000000100031, 1762000000000100032, 1762000000000100033,
   1762000000000100034, 1762000000000100035, 1762000000000100036, 1762000000000100037,
+  1762000000000100038,
   1762000000000100901, 1762000000000100902 );
 
 insert into databus_chain
@@ -257,3 +259,14 @@ values
   (1762000000000100037, 'jdbc-full-loop', 'JDBC·查完再写（节点产出跨节点引用）', 1, 'DRAFT', null, null, '{"type":"THEN","children":[{"id":"dbQuery","type":"NodeComponent","properties":{"tag":"dbq","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"select user_id, user_name from jdbc_org_user where dept_id = ? order by user_id\\",\\"args\\":[\\"{{ $.request.deptId }}\\"],\\"resultMode\\":\\"rows\\"}"}},{"id":"dbExecute","type":"NodeComponent","properties":{"tag":"dblog","data":"{\\"connectionId\\":\\"jdbc-mysql-demo\\",\\"sql\\":\\"insert into jdbc_write_log (user_id, action, payload) values (?, ?, ?)\\",\\"args\\":[\\"{{ $.dbq.rows[0].user_id }}\\",\\"sync\\",\\"部门 {{ $.request.deptId }} 共 {{ $.dbq.rowCount }} 人，首人 {{ $.dbq.rows[0].user_name }}\\"],\\"returnGeneratedKeys\\":true}"}}]}', 'BASIC', '[{"path":"$.request.deptId","type":"number","defaultValue":108,"required":true}]', sysdate(), '验数据空间跨节点传递：第二个节点的 args 用 JSONPath 取第一个节点的产出（$.dbq.rows[0].user_id / $.dbq.rowCount）。期望 $.dblog.affectedRows=1，靶库里新行的 user_id=u005、payload 里嵌了 rowCount=2 与「钱七」。这条也顺带验中文在参数绑定路径上不乱码（不只是结果映射路径）。', 'USER', @db_seed_test_did, @db_seed_test_uid);
 
 -- ----------------------------
+-- AI 自纠轮数上限实测链（正本 docs/databus-agent-runtime.md §6 写链路步骤第 5 点）
+-- 只含一个 setValue 占位节点：根 THEN 不能为空，否则 EL 校验直接报 node/chain is not exist；
+-- 节点本身无业务语义，用途就是给 AI 反复 databus_chain_save 改名，不依赖连接器与组件前置。
+-- 用法：把 databus.agent.max-rounds 调小（如 2），一条消息内让 AI 连续写三次 → 第三次必被拦；
+--       断言本链停在第二次的名字、该 run 的 databus_agent_snapshot 只有 2 行。
+-- 归属 admin（实测用 admin 账号登录工作台）。
+-- ----------------------------
+insert into databus_chain
+  (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark, owner_type, create_dept, create_by)
+values
+  (1762000000000100038, 'round_limit_zz', '轮数测试链', 1, 'DRAFT', null, null, '{"type":"THEN","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue1","data":"{\\"path\\":\\"$.roundLimit.zz\\",\\"value\\":\\"init\\"}"}}]}', 'BASIC', sysdate(), 'AI 自纠轮数上限（databus.agent.max-rounds）实测专用：单 setValue 占位节点保证 EL 校验能过。实测时连续改名三次，第三次应返回「本次对话已用完 N 轮纠错，请先确认现有结果或新开会话」，且本链与快照均无第三次结果。', 'USER', @db_seed_admin_did, @db_seed_admin_uid);

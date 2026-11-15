@@ -85,7 +85,7 @@ create table if not exists databus_agent_message (
     id                  bigint(20)      not null                   comment '主键',
     run_id              varchar(64)     not null                   comment '所属 run',
     seq                 int(11)         not null                   comment 'run 内单调递增序号，前端按此保序',
-    event_code          varchar(64)     not null                   comment 'databus:agent:canvas / draft / script-draft / run-end / auth',
+    event_code          varchar(64)     not null                   comment 'databus:agent:chain:canvas:updated / chain:draft:saved / component:draft:saved / run:lifecycle:ended',
     chain_id            bigint(20)      default null               comment 'canvas 事件带的链路 id',
     content             mediumtext      default null               comment '载荷（canvas 事件为 cmpProperty 全量快照）',
     create_time         datetime        default null               comment '创建时间',

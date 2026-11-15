@@ -269,7 +269,7 @@ values
 -- ----------------------------
 -- AI 自纠轮数上限实测链（正本 docs/databus-agent-runtime.md §6 写链路步骤第 5 点）
 -- 只含一个 setValue 占位节点：根 THEN 不能为空，否则 EL 校验直接报 node/chain is not exist；
--- 节点本身无业务语义，用途就是给 AI 反复 databus_chain_save 改名，不依赖连接器与组件前置。
+-- 节点本身无业务语义，用途就是给 AI 反复 databus_chain_draft_save 改名，不依赖连接器与组件前置。
 -- 用法：把 databus.agent.max-rounds 调小（如 2），一条消息内让 AI 连续写三次 → 第三次必被拦；
 --       断言本链停在第二次的名字、该 run 的 databus_agent_snapshot 只有 2 行。
 -- 归属 test（实测用 test 账号登录工作台）。

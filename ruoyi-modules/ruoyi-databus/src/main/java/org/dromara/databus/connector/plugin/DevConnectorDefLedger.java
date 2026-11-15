@@ -21,6 +21,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import static org.dromara.databus.constant.ConnectorConstants.MANIFEST_ENTRY;
+import static org.dromara.databus.constant.ConnectorConstants.SOURCE_DEV;
+
 /**
  * DEV 连接器台账（{@code databus_connector_def} 中 {@code source=DEV} 的行）的写入与对账
  * （从 DevConnectorLoader 拆出）。
@@ -37,16 +40,6 @@ import java.util.Set;
 @Profile("dev")
 @RequiredArgsConstructor
 public class DevConnectorDefLedger {
-
-    /**
-     * 来源角标：dev 目录装载（无特权，仅展示用）
-     */
-    private static final String SOURCE_DEV = "DEV";
-
-    /**
-     * 编译输出目录里的清单文件名（源在 {@code src/main/resources}，IDE 编译同步过来）
-     */
-    private static final String MANIFEST_FILE = "manifest.json";
 
     private final DatabusConnectorDefMapper defMapper;
 
@@ -110,7 +103,7 @@ public class DevConnectorDefLedger {
      * 与「目录已被移出配置」等价——该行会在对账时清理，具体原因由装载环节打印。
      */
     public String readManifestTypeQuietly(Path classesDir) {
-        Path manifestPath = classesDir.resolve(MANIFEST_FILE);
+        Path manifestPath = classesDir.resolve(MANIFEST_ENTRY);
         if (!Files.isRegularFile(manifestPath)) {
             return null;
         }

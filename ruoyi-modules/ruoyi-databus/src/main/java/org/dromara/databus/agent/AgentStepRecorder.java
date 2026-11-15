@@ -10,6 +10,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.regex.Pattern;
 
+import static org.dromara.databus.constant.AgentConstants.MAX_ARGS_LEN;
+import static org.dromara.databus.constant.AgentConstants.MAX_ERROR_LEN;
+import static org.dromara.databus.constant.AgentConstants.MAX_REJECT_LEN;
+import static org.dromara.databus.constant.AgentConstants.MAX_RESULT_LEN;
+
 /**
  * 工具调用审计统一入口（方案 §十五 守卫 ⑦）。
  * <p>
@@ -22,14 +27,6 @@ import java.util.regex.Pattern;
 @Component
 @RequiredArgsConstructor
 public class AgentStepRecorder {
-
-    /**
-     * 与 DDL 列宽一致，超长截断。
-     */
-    private static final int MAX_ARGS_LEN = 2000;
-    private static final int MAX_RESULT_LEN = 4000;
-    private static final int MAX_ERROR_LEN = 2000;
-    private static final int MAX_REJECT_LEN = 200;
 
     /**
      * 出库脱敏：仅遮蔽键名明确的凭据字段，避免把库里的密码 / token 写进审计。

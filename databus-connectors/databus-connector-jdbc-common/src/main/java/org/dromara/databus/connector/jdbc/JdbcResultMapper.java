@@ -17,6 +17,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.dromara.databus.connector.jdbc.JdbcConst.JS_SAFE_INTEGER;
+import static org.dromara.databus.connector.jdbc.JdbcConst.MAX_LOB_BYTES;
+
 /**
  * ResultSet → JSON 类型矩阵（方案 §7.1）+ 强制护栏（§7.2）。
  *
@@ -40,12 +43,6 @@ import java.util.Map;
 public final class JdbcResultMapper {
 
     private static final Logger log = LoggerFactory.getLogger(JdbcResultMapper.class);
-
-    /** 单个 BLOB/CLOB 字段的截断上限：1MB（§7.2） */
-    private static final int MAX_LOB_BYTES = 1024 * 1024;
-
-    /** JS Number 安全整数上限 2^53（§7.1 BIGINT 行） */
-    private static final long JS_SAFE_INTEGER = 9007199254740992L;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");

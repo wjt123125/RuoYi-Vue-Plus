@@ -52,8 +52,8 @@ class JdbcResultMapperTest {
     /** §7.2 的 BLOB/CLOB 单字段截断上限，与被测常量同值 */
     private static final int LOB_LIMIT = 1024 * 1024;
 
-    /** JS Number 安全整数上限 2^53，与被测常量同值 */
-    private static final long JS_SAFE_INTEGER = 9007199254740992L;
+    /** JS Number 安全整数上限 2^53-1，与被测常量同值 */
+    private static final long JS_SAFE_INTEGER = 9007199254740991L;
 
     /** 每个用例一个独立内存库（不给 DB_CLOSE_DELAY，关连接即销毁，用例间零残留） */
     private static final AtomicInteger DB_SEQ = new AtomicInteger();

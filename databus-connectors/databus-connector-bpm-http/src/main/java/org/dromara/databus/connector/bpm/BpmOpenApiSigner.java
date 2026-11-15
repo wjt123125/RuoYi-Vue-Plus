@@ -7,6 +7,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.TreeMap;
 
+import static org.dromara.databus.connector.bpm.BpmConst.FORMAT_JSON;
+import static org.dromara.databus.connector.bpm.BpmConst.PARAM_PAYLOAD;
+import static org.dromara.databus.connector.bpm.BpmConst.SIG_METHOD;
+
 /**
  * AWS PaaS /portal/openapi 网关签名器（方案 B）。
  *
@@ -34,17 +38,6 @@ import java.util.TreeMap;
  * @author databus
  */
 public final class BpmOpenApiSigner {
-
-    /** 平台固定签名算法标识（公共参数 sig_method 的值，不可改） */
-    public static final String SIG_METHOD = "HmacMD5";
-
-    /** 响应格式（公共参数 format 的值） */
-    public static final String FORMAT_JSON = "json";
-
-    /** form 业务参数名（BPM 端 @Param("payload") 绑定，JSON 字符串参与签名；不用 "body" 避开平台 type=body 验签分支） */
-    public static final String PARAM_PAYLOAD = "payload";
-
-    private static final String HMAC_MD5 = "HmacMD5";
 
     private BpmOpenApiSigner() {
     }
@@ -109,8 +102,8 @@ public final class BpmOpenApiSigner {
      */
     private static String hmacMd5HexUpper(String secret, String content) {
         try {
-            Mac mac = Mac.getInstance(HMAC_MD5);
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), HMAC_MD5));
+            Mac mac = Mac.getInstance(SIG_METHOD);
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), SIG_METHOD));
             byte[] raw = mac.doFinal(content.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(raw.length * 2);
             for (byte b : raw) {

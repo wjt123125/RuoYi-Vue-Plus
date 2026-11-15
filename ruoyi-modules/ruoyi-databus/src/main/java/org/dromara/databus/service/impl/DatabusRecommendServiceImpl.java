@@ -19,6 +19,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.dromara.databus.constant.CommonConstants.RECOMMEND_ANY_ANCHOR;
+import static org.dromara.databus.constant.CommonConstants.RECOMMEND_DEFAULT_SEED_SCORE;
+import static org.dromara.databus.constant.CommonConstants.RECOMMEND_FINAL_SCORE_CAP;
+import static org.dromara.databus.constant.CommonConstants.RECOMMEND_USAGE_BOOST_CAP;
+
 /**
  * 组件插入推荐服务实现。
  *
@@ -32,18 +37,6 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class DatabusRecommendServiceImpl implements IDatabusRecommendService {
 
-    /** 无前置时的锚点占位值，与种子表 ANY 行对应 */
-    private static final String ANY_ANCHOR = "ANY";
-
-    /** 真账有计数、种子未覆盖时的兜底基线分（对应前端本地规则的「其他」档） */
-    private static final int DEFAULT_SEED_SCORE = 40;
-
-    /** 真账抬升封顶，避免次数绝对碾压 */
-    private static final int USAGE_BOOST_CAP = 60;
-
-    /** 最终分封顶 */
-    private static final int FINAL_SCORE_CAP = 100;
-
     /** 合法场景白名单，拒绝脏数据写入真账表 */
     private static final Set<String> VALID_SCENES = Set.of("prepend", "append", "replace", "insertEdge");
 
@@ -53,7 +46,7 @@ public class DatabusRecommendServiceImpl implements IDatabusRecommendService {
     @Override
     public List<CmpRecommendVo> recommend(String mode, String anchorType, List<String> excludedTypes) {
         String scene = VALID_SCENES.contains(mode) ? mode : "append";
-        String anchor = StringUtils.isBlank(anchorType) ? ANY_ANCHOR : anchorType;
+        String anchor = StringUtils.isBlank(anchorType) ? RECOMMEND_ANY_ANCHOR : anchorType;
         Set<String> excluded = excludedTypes == null ? Set.of() : new HashSet<>(excludedTypes);
 
         // 种子：同一 pickedType 可能同时命中精确行与 ANY 回退行，取最高分
@@ -76,10 +69,10 @@ public class DatabusRecommendServiceImpl implements IDatabusRecommendService {
         return candidates.stream()
             .filter(type -> !excluded.contains(type))
             .map(type -> {
-                int base = seedMap.getOrDefault(type, DEFAULT_SEED_SCORE);
+                int base = seedMap.getOrDefault(type, RECOMMEND_DEFAULT_SEED_SCORE);
                 int count = usageMap.getOrDefault(type, 0);
-                int boost = (int) Math.min(USAGE_BOOST_CAP, Math.round(15.0 * (Math.log(count + 1) / Math.log(2))));
-                int score = Math.min(FINAL_SCORE_CAP, base + boost);
+                int boost = (int) Math.min(RECOMMEND_USAGE_BOOST_CAP, Math.round(15.0 * (Math.log(count + 1) / Math.log(2))));
+                int score = Math.min(RECOMMEND_FINAL_SCORE_CAP, base + boost);
                 return new CmpRecommendVo(type, score);
             })
             .sorted(Comparator.comparing(CmpRecommendVo::getScore).reversed()
@@ -92,7 +85,7 @@ public class DatabusRecommendServiceImpl implements IDatabusRecommendService {
         if (!VALID_SCENES.contains(bo.getMode()) || StringUtils.isBlank(bo.getPickedType())) {
             return;
         }
-        String anchor = StringUtils.isBlank(bo.getAnchorType()) ? ANY_ANCHOR : bo.getAnchorType();
+        String anchor = StringUtils.isBlank(bo.getAnchorType()) ? RECOMMEND_ANY_ANCHOR : bo.getAnchorType();
         usageMapper.upsertCount(IdUtil.getSnowflakeNextId(), anchor, bo.getPickedType(), bo.getMode());
     }
 

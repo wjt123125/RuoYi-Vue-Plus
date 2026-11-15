@@ -54,9 +54,10 @@ public class PageQuery implements Serializable {
     public static final int DEFAULT_PAGE_NUM = 1;
 
     /**
-     * 每页显示记录数 默认值 默认查全部
+     * 未传 pageSize 时的取值：不分页，一次取全部。
+     * <p>名为「不限」而不是「默认十条」——调用方没写 pageSize 就是想拿全量。
      */
-    public static final int DEFAULT_PAGE_SIZE = Integer.MAX_VALUE;
+    public static final int UNLIMITED_PAGE_SIZE = Integer.MAX_VALUE;
 
     /**
      * 构建分页对象。
@@ -66,7 +67,7 @@ public class PageQuery implements Serializable {
      */
     public <T> Page<T> build() {
         Integer pageNum = ObjectUtil.defaultIfNull(getPageNum(), DEFAULT_PAGE_NUM);
-        Integer pageSize = ObjectUtil.defaultIfNull(getPageSize(), DEFAULT_PAGE_SIZE);
+        Integer pageSize = ObjectUtil.defaultIfNull(getPageSize(), UNLIMITED_PAGE_SIZE);
         if (pageNum <= 0) {
             pageNum = DEFAULT_PAGE_NUM;
         }
@@ -127,7 +128,7 @@ public class PageQuery implements Serializable {
     @JsonIgnore
     public Integer getFirstNum() {
         Integer currentPageNum = ObjectUtil.defaultIfNull(getPageNum(), DEFAULT_PAGE_NUM);
-        Integer currentPageSize = ObjectUtil.defaultIfNull(getPageSize(), DEFAULT_PAGE_SIZE);
+        Integer currentPageSize = ObjectUtil.defaultIfNull(getPageSize(), UNLIMITED_PAGE_SIZE);
         if (currentPageNum <= 0) {
             currentPageNum = DEFAULT_PAGE_NUM;
         }

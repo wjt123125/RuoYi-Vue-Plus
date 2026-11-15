@@ -8,6 +8,8 @@ import org.dromara.databus.domain.DatabusComponent;
 
 import java.util.List;
 
+import static org.dromara.databus.constant.ComponentConstants.DOMAIN_SLOT;
+
 /**
  * 物料合流选项（/options 单项，schema JSON 契约 §5.1）。
  * <p>
@@ -53,9 +55,6 @@ public record ComponentOptionVo(String code,
                                 List<String> tags,
                                 Boolean deprecated,
                                 String deprecateNote) {
-
-    /** 条件槽件域名（与 databus_component_domain 的 slot 行 key 一致） */
-    private static final String DOMAIN_SLOT = "slot";
 
     /** node_type 是槽件的正本：非 NODE 即算子条件位，恒归 slot 域 */
     private static String deriveSlotDomain(NodeTypeKind nodeType) {

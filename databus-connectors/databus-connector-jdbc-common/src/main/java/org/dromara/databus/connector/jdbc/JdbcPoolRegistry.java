@@ -15,6 +15,11 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.dromara.databus.connector.jdbc.JdbcConst.IDLE_TIMEOUT_MS;
+import static org.dromara.databus.connector.jdbc.JdbcConst.MAX_LIFETIME_MS;
+import static org.dromara.databus.connector.jdbc.JdbcConst.MAX_POOLS;
+import static org.dromara.databus.connector.jdbc.JdbcConst.MAX_TOTAL_CONNECTIONS;
+
 /**
  * connectionId → HikariDataSource 缓存与生命周期（方案 §6.1）。
  *
@@ -38,18 +43,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class JdbcPoolRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(JdbcPoolRegistry.class);
-
-    /** 单包池总数上限（§6.1） */
-    private static final int MAX_POOLS = 50;
-
-    /** 单包物理连接总数上限（各池 maximumPoolSize 之和，§6.1） */
-    private static final int MAX_TOTAL_CONNECTIONS = 500;
-
-    /** 空闲连接回收时间：10 分钟（§6.1） */
-    private static final long IDLE_TIMEOUT_MS = 10 * 60 * 1000L;
-
-    /** 连接最长存活：30 分钟（§6.1，避开数据库侧 wait_timeout 静默断连） */
-    private static final long MAX_LIFETIME_MS = 30 * 60 * 1000L;
 
     /** key → 池 */
     private final Map<String, HikariDataSource> pools = new ConcurrentHashMap<>();

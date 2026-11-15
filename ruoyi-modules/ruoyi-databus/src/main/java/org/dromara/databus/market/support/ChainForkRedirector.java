@@ -18,6 +18,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.dromara.databus.constant.ChainConstants.CHAIN_REF_TYPE;
+import static org.dromara.databus.constant.MarketConstants.DEF_TYPE_FIELD;
+
 /**
  * 装链路时改引用的工具（decisions §十四-3）。
  * <p>
@@ -47,16 +50,6 @@ import java.util.stream.Collectors;
  * @since 2026/10/23
  */
 public final class ChainForkRedirector {
-
-    /**
-     * CHAIN 引用节点的类型值，怎么判断和 collectChainRefs 一样（不分大小写）。
-     */
-    private static final String CHAIN_TYPE = "CHAIN";
-
-    /**
-     * 画布里判断「这是 CHAIN 节点」用的字段（前端 useChainDocument/ChainCanvasPane 里的 data.defType）。
-     */
-    private static final String DEF_TYPE_FIELD = "defType";
 
     /**
      * EL 关键字的集合（把 ExpressParserEnum.type 都收进来，存成大写，比对时也转大写）：
@@ -105,7 +98,7 @@ public final class ChainForkRedirector {
      */
     private static CmpProperty copyAndRedirect(CmpProperty source, Map<String, String> codeMapping) {
         CmpProperty copy = new CmpProperty();
-        boolean chainRef = source.getType() != null && CHAIN_TYPE.equalsIgnoreCase(source.getType());
+        boolean chainRef = source.getType() != null && CHAIN_REF_TYPE.equalsIgnoreCase(source.getType());
         copy.setId(remapIf(source.getId(), chainRef, codeMapping));
         copy.setType(source.getType());
         if (source.getProperties() != null) {
@@ -175,7 +168,7 @@ public final class ChainForkRedirector {
                     continue;
                 }
                 String defType = data.path(DEF_TYPE_FIELD).asText(null);
-                if (defType == null || !CHAIN_TYPE.equalsIgnoreCase(defType)) {
+                if (defType == null || !CHAIN_REF_TYPE.equalsIgnoreCase(defType)) {
                     continue;
                 }
                 String cmpId = data.path("cmpId").asText(null);

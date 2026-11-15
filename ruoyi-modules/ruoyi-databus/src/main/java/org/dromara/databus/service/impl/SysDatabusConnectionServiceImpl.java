@@ -38,6 +38,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static org.dromara.databus.constant.CommonConstants.FLAG_YES;
+
 /**
  * 数据总线连接管理 Service 实现。
  *
@@ -62,8 +64,6 @@ import java.util.stream.Collectors;
 @Service
 public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionService {
 
-    private static final String ENABLED_YES = "Y";
-
     private final SysDatabusConnectionMapper connectionMapper;
 
     private final DatabusConnectorDefMapper connectorDefMapper;
@@ -82,7 +82,7 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     public List<ConnectionOptionVo> queryOptions() {
         List<SysDatabusConnection> entities = connectionMapper.selectList(
             Wrappers.<SysDatabusConnection>lambdaQuery()
-                .eq(SysDatabusConnection::getEnabled, ENABLED_YES)
+                .eq(SysDatabusConnection::getEnabled, FLAG_YES)
                 .orderByAsc(SysDatabusConnection::getId));
         // 同一 type 的连接可能有多行（多套库），族是 type 的静态属性，缓存一次避免重复 describe()
         Map<String, String> familyCache = new LinkedHashMap<>();
@@ -209,7 +209,7 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     @Override
     public List<Connection> loadEnabledConnections() {
         LambdaQueryWrapper<SysDatabusConnection> lqw = Wrappers.<SysDatabusConnection>lambdaQuery()
-            .eq(SysDatabusConnection::getEnabled, ENABLED_YES);
+            .eq(SysDatabusConnection::getEnabled, FLAG_YES);
         List<SysDatabusConnection> entities = connectionMapper.selectList(lqw);
         // 一批取回所有被引用的 def 行：运行时 Connection 要带上锁定版本，
         // 组件脚本才能用 ofType(type, version) 精确命中，而不是被「最新版」接管
@@ -396,7 +396,7 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
         entity.setConnectionName(bo.getConnectionName());
         entity.setConnectorType(bo.getConnectorType());
         entity.setConnectorDefId(bo.getConnectorDefId());
-        entity.setEnabled(StringUtils.isBlank(bo.getEnabled()) ? ENABLED_YES : bo.getEnabled());
+        entity.setEnabled(StringUtils.isBlank(bo.getEnabled()) ? FLAG_YES : bo.getEnabled());
         entity.setRemark(bo.getRemark());
 
         Map<String, Object> runtimeConfig = normalizeConfig(bo);

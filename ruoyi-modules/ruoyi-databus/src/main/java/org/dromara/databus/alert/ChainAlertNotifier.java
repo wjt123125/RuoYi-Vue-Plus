@@ -19,6 +19,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import static org.dromara.databus.constant.AlertConstants.STATUS_DISPATCHED;
+
 /**
  * 通知链路渠道：告警达到阈值时异步执行用户指定的链路，链路内可做任意告警动作
  * （钉钉/企微机器人、短信网关、工单系统、自动扩容……），产品的自我闭环（dogfooding）。
@@ -42,11 +44,6 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Component
 public class ChainAlertNotifier implements AlertNotifier {
-
-    /**
-     * 本渠道专属结果编码：已投递（异步执行，成败看 databus_execution）。
-     */
-    public static final String STATUS_DISPATCHED = "DISPATCHED";
 
     /**
      * 通知链执行线程池：核心 1、上限 2、队列 50，告警频次天然低，防积压即可。

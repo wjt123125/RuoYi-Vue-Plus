@@ -8,6 +8,7 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.connector.ConnectorManifest;
 import org.dromara.databus.connector.ConnectorRegistry;
+import org.dromara.databus.constant.ConnectorConstants;
 import org.dromara.databus.connector.plugin.PluginManager;
 import org.dromara.databus.domain.DatabusConnectorDef;
 import org.dromara.databus.domain.DatabusMarketItem;
@@ -15,8 +16,7 @@ import org.dromara.databus.domain.SysDatabusConnection;
 import org.dromara.databus.domain.vo.DatabusConnectorDefVo;
 import org.dromara.databus.enums.ConnectorDefStatusEnum;
 import org.dromara.databus.enums.OwnerTypeEnum;
-import org.dromara.databus.market.support.MarketResourceTypes;
-import org.dromara.databus.market.support.MarketStates;
+import org.dromara.databus.constant.MarketConstants;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.mapper.SysDatabusConnectionMapper;
@@ -42,6 +42,14 @@ import java.util.Objects;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+
+import static org.dromara.databus.constant.ConnectorConstants.ENGINE_JVM;
+import static org.dromara.databus.constant.ConnectorConstants.MANIFEST_ENTRY;
+import static org.dromara.databus.constant.ConnectorConstants.MAX_PACKAGE_BYTES;
+import static org.dromara.databus.constant.ConnectorConstants.PERM_MARKET_REVIEW;
+import static org.dromara.databus.constant.ConnectorConstants.SOURCE_ADMIN;
+import static org.dromara.databus.constant.ConnectorConstants.SOURCE_DEV;
+import static org.dromara.databus.constant.ConnectorConstants.SOURCE_UPLOAD;
 
 /**
  * 连接器运行层 Service 实现（万物皆包，databus-material-market.md §15.5/§15.7）。
@@ -69,45 +77,6 @@ import java.util.zip.ZipInputStream;
 @RequiredArgsConstructor
 @Service
 public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
-
-    /**
-     * 引擎档：jvm（PluginClassLoader 在线装卸）
-     */
-    private static final String ENGINE_JVM = "jvm";
-
-    /**
-     * 来源：市场 tab 内上传
-     */
-    private static final String SOURCE_UPLOAD = "UPLOAD";
-
-    /**
-     * 来源：官方件角标（上传人拥有审核权限 {@code databus:market:review}）。只是来路标记，
-     * 不是特权：官方件照常进 PENDING、照常由另一名治理员审核启用
-     */
-    private static final String SOURCE_ADMIN = "ADMIN";
-
-    /**
-     * 治理员标志权限：能审别人上架的物料即为治理员（与「提交人 ≠ 审批人」用的是同一套权限）
-     */
-    private static final String PERM_MARKET_REVIEW = "databus:market:review";
-
-    /**
-     * 来源：dev 目录装载（方案 §五）。启动回装跳过这类行，由 DevConnectorLoader 接管
-     * （仅 dev profile 存在）。它跑的是编译输出目录里的 class，运行期不存在「包」这个实体，
-     * 且 version / status / package_path 每次启动都被开发通道覆盖，因此一切针对包与启停状态的
-     * 操作都按来源拒绝（见 {@link #rejectDevRow}），只留「重新加载」这一个动作。
-     */
-    private static final String SOURCE_DEV = "DEV";
-
-    /**
-     * 上传包体上限（50MB；manifest 声明式包通常几 KB，jvm 档 jar 为主要体量来源）
-     */
-    private static final long MAX_PACKAGE_BYTES = 50L * 1024 * 1024;
-
-    /**
-     * 包内清单文件名（zip 根级，必选）
-     */
-    private static final String MANIFEST_ENTRY = "manifest.json";
 
     private final DatabusConnectorDefMapper defMapper;
 
@@ -446,11 +415,11 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
             return;
         }
         DatabusMarketItem update = new DatabusMarketItem();
-        update.setStatus(MarketStates.STATUS_OFFLINE);
+        update.setStatus(MarketConstants.STATUS_OFFLINE);
         marketItemMapper.update(update, Wrappers.<DatabusMarketItem>lambdaUpdate()
-            .eq(DatabusMarketItem::getResourceType, MarketResourceTypes.CONNECTOR)
+            .eq(DatabusMarketItem::getResourceType, MarketConstants.TYPE_CONNECTOR)
             .eq(DatabusMarketItem::getSourceId, def.getId())
-            .eq(DatabusMarketItem::getStatus, MarketStates.STATUS_ONLINE));
+            .eq(DatabusMarketItem::getStatus, MarketConstants.STATUS_ONLINE));
     }
 
     /**

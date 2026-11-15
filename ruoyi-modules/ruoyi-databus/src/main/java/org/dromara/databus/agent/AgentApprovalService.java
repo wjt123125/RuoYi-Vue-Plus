@@ -24,6 +24,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import static org.dromara.databus.constant.AgentConstants.KIND_EXTERNAL;
+import static org.dromara.databus.constant.AgentConstants.KIND_NEUTRAL;
+import static org.dromara.databus.constant.AgentConstants.KIND_READ;
+import static org.dromara.databus.constant.AgentConstants.KIND_WRITE;
+
 /**
  * 会话级操作审批：模式读写 + 链路风险扫描 + 放行判定（阶段六）。
  * <p>
@@ -71,11 +76,6 @@ public class AgentApprovalService {
      */
     private static final Set<String> SQL_READ_KEYWORDS = Set.of(
         "SELECT", "SHOW", "DESC", "DESCRIBE", "EXPLAIN");
-
-    private static final String KIND_READ = "READ";
-    private static final String KIND_WRITE = "WRITE";
-    private static final String KIND_EXTERNAL = "EXTERNAL";
-    private static final String KIND_NEUTRAL = "NEUTRAL";
 
     private final DatabusAgentApprovalSettingMapper settingMapper;
     private final DatabusComponentMapper componentMapper;

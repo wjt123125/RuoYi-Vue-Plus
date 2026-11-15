@@ -17,6 +17,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.dromara.databus.constant.AgentConstants.OPERATION_CREATE;
+import static org.dromara.databus.constant.AgentConstants.OPERATION_UPDATE;
+
 /**
  * AI agent 链路快照 Service 实现。
  *
@@ -26,12 +29,6 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class DatabusAgentSnapshotServiceImpl implements IDatabusAgentSnapshotService {
-
-    /**
-     * 动手前快照的操作类型：修改 / 新建。
-     */
-    private static final String OPERATION_UPDATE = "UPDATE";
-    private static final String OPERATION_CREATE = "CREATE";
 
     private final DatabusAgentSnapshotMapper snapshotMapper;
 

@@ -26,8 +26,6 @@ import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketCategoryMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
-import org.dromara.databus.market.support.MarketResourceTypes;
-import org.dromara.databus.market.support.MarketStates;
 import org.dromara.databus.market.support.MarketText;
 import org.dromara.databus.market.support.MarketVoAssembler;
 import org.springframework.stereotype.Component;
@@ -37,6 +35,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+
+import static org.dromara.databus.constant.MarketConstants.STATUS_ONLINE;
+import static org.dromara.databus.constant.MarketConstants.STATUS_PENDING;
+import static org.dromara.databus.constant.MarketConstants.TYPE_CHAIN;
+import static org.dromara.databus.constant.MarketConstants.TYPE_COMPONENT;
+import static org.dromara.databus.constant.MarketConstants.TYPE_CONNECTOR;
 
 /**
  * 物料市场——查询（只读，不改任何数据；设计文档 databus-material-market.md §五~§十一）。
@@ -51,18 +55,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Component
 public class MarketQueryService {
-
-    private static final String TYPE_COMPONENT = MarketResourceTypes.COMPONENT;
-    private static final String TYPE_CHAIN = MarketResourceTypes.CHAIN;
-
-    /**
-     * 资源类型：连接器（§15.3「什么都能装」：安装只写一条个人安装记录，
-     * 连接器本体全局共享；启用状态由治理动作控制）
-     */
-    private static final String TYPE_CONNECTOR = MarketResourceTypes.CONNECTOR;
-
-    private static final String STATUS_ONLINE = MarketStates.STATUS_ONLINE;
-    private static final String STATUS_PENDING = MarketStates.STATUS_PENDING;
 
     private final DatabusMarketItemMapper marketItemMapper;
 

@@ -17,6 +17,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static org.dromara.databus.constant.MarketConstants.TYPE_CHAIN;
+import static org.dromara.databus.constant.MarketConstants.TYPE_COMPONENT;
+
 /**
  * 查依赖清单（装成 {@link MarketClosure}）。
  * <p>
@@ -51,7 +54,7 @@ public class MarketClosureLoader {
     public MarketClosure load(String rootChainCode) {
         Map<String, DatabusChain> chains = chainService.collectChainClosure(rootChainCode);
         List<String> componentCodes = collectComponentCodes(chains.values());
-        Map<Long, DatabusMarketItem> chainItems = queryMarketItems(MarketResourceTypes.CHAIN,
+        Map<Long, DatabusMarketItem> chainItems = queryMarketItems(TYPE_CHAIN,
             chains.values().stream().map(DatabusChain::getId).toList());
         Map<String, DatabusComponent> components = componentCodes.isEmpty() ? Map.of()
             // 这里用 LinkedHashMap：上架时顺带补审核单那一步会直接遍历 components()，
@@ -61,7 +64,7 @@ public class MarketClosureLoader {
                 .stream()
                 .collect(Collectors.toMap(DatabusComponent::getComponentCode, c -> c, (a, b) -> a,
                     LinkedHashMap::new));
-        Map<Long, DatabusMarketItem> componentItems = queryMarketItems(MarketResourceTypes.COMPONENT,
+        Map<Long, DatabusMarketItem> componentItems = queryMarketItems(TYPE_COMPONENT,
             components.values().stream().map(DatabusComponent::getId).toList());
         return new MarketClosure(chains, componentCodes, chainItems, components, componentItems);
     }

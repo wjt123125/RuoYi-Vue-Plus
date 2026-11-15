@@ -17,8 +17,6 @@ import org.dromara.databus.enums.ConnectorDefStatusEnum;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
-import org.dromara.databus.market.support.MarketResourceTypes;
-import org.dromara.databus.market.support.MarketStates;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -28,6 +26,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import static org.dromara.databus.constant.MarketConstants.STATUS_ONLINE;
+import static org.dromara.databus.constant.MarketConstants.TYPE_CONNECTOR;
 
 /**
  * 连接器 def 台账的查询与视图组装（从 DatabusConnectorServiceImpl 拆出的只读组装器）。
@@ -76,8 +77,8 @@ public class ConnectorDefViewAssembler {
             .orderByAsc(DatabusConnectorDef::getType));
         if (!fullView) {
             Set<Long> onlineDefIds = marketItemMapper.selectList(Wrappers.<DatabusMarketItem>lambdaQuery()
-                    .eq(DatabusMarketItem::getResourceType, MarketResourceTypes.CONNECTOR)
-                    .eq(DatabusMarketItem::getStatus, MarketStates.STATUS_ONLINE))
+                    .eq(DatabusMarketItem::getResourceType, TYPE_CONNECTOR)
+                    .eq(DatabusMarketItem::getStatus, STATUS_ONLINE))
                 .stream()
                 .map(DatabusMarketItem::getSourceId)
                 .filter(Objects::nonNull)
@@ -108,7 +109,7 @@ public class ConnectorDefViewAssembler {
         }
         Set<Long> defIds = marketItemMapper.selectList(Wrappers.<DatabusMarketItem>lambdaQuery()
                 .in(DatabusMarketItem::getId, itemIds)
-                .eq(DatabusMarketItem::getResourceType, MarketResourceTypes.CONNECTOR))
+                .eq(DatabusMarketItem::getResourceType, TYPE_CONNECTOR))
             .stream()
             .map(DatabusMarketItem::getSourceId)
             .filter(Objects::nonNull)
@@ -142,7 +143,7 @@ public class ConnectorDefViewAssembler {
         // 同一 def 可能有多条物料行（驳回后重提等），按 id 升序取，后写的覆盖前面的
         Map<Long, String> ownerMap = marketItemMapper.selectList(Wrappers.<DatabusMarketItem>lambdaQuery()
                 .select(DatabusMarketItem::getSourceId, DatabusMarketItem::getOwnerCode)
-                .eq(DatabusMarketItem::getResourceType, MarketResourceTypes.CONNECTOR)
+                .eq(DatabusMarketItem::getResourceType, TYPE_CONNECTOR)
                 .in(DatabusMarketItem::getSourceId, defIds)
                 .orderByAsc(DatabusMarketItem::getId))
             .stream()

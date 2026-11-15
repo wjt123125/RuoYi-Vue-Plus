@@ -28,8 +28,6 @@ import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.market.support.ChainForkRedirector;
 import org.dromara.databus.market.support.MarketClosure;
 import org.dromara.databus.market.support.MarketClosureLoader;
-import org.dromara.databus.market.support.MarketResourceTypes;
-import org.dromara.databus.market.support.MarketStates;
 import org.dromara.databus.market.support.MarketText;
 import org.dromara.databus.service.IDatabusChainService;
 import org.springframework.stereotype.Component;
@@ -46,6 +44,23 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+
+import static org.dromara.databus.constant.ChainConstants.CHAIN_CODE_MAX_LEN;
+import static org.dromara.databus.constant.CommonConstants.TEMPLATE_FLAG_NO;
+import static org.dromara.databus.constant.CommonConstants.TEMPLATE_FLAG_YES;
+import static org.dromara.databus.constant.MarketConstants.CASCADE_NEW;
+import static org.dromara.databus.constant.MarketConstants.CASCADE_REUSED;
+import static org.dromara.databus.constant.MarketConstants.CODE_SEPARATOR;
+import static org.dromara.databus.constant.MarketConstants.CODE_SEQ_MAX;
+import static org.dromara.databus.constant.MarketConstants.DISPLAY_SEPARATOR;
+import static org.dromara.databus.constant.MarketConstants.DRAFT_VERSION;
+import static org.dromara.databus.constant.MarketConstants.HASH_SEP;
+import static org.dromara.databus.constant.MarketConstants.MODE_FORK;
+import static org.dromara.databus.constant.MarketConstants.MODE_SHARED;
+import static org.dromara.databus.constant.MarketConstants.STATUS_ONLINE;
+import static org.dromara.databus.constant.MarketConstants.TYPE_CHAIN;
+import static org.dromara.databus.constant.MarketConstants.TYPE_COMPONENT;
+import static org.dromara.databus.constant.MarketConstants.TYPE_CONNECTOR;
 
 /**
  * 物料市场——安装与卸载（设计文档 databus-material-market.md §五~§六、§十二，decisions §十四~§十五）。
@@ -73,39 +88,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Component
 public class MarketInstallService {
-
-    private static final String TYPE_COMPONENT = MarketResourceTypes.COMPONENT;
-    private static final String TYPE_CHAIN = MarketResourceTypes.CHAIN;
-
-    /**
-     * 资源类型：连接器（§15.3「什么都能装」：装连接器只写一条个人安装记录，
-     * 连接器本体全局共享，启用/停用归治理）
-     */
-    private static final String TYPE_CONNECTOR = MarketResourceTypes.CONNECTOR;
-
-    private static final String STATUS_ONLINE = MarketStates.STATUS_ONLINE;
-
-    /**
-     * 安装模式：复制副本（只有装链路用）
-     */
-    private static final String MODE_FORK = MarketStates.MODE_FORK;
-
-    /**
-     * 安装模式：大家一起用同一个（只有装组件用：不复制副本，localResourceId 指向源组件，
-     * 作者更新或停用、物料下架都马上生效）
-     */
-    private static final String MODE_SHARED = MarketStates.MODE_SHARED;
-
-    private static final String TEMPLATE_FLAG_NO = MarketStates.TEMPLATE_FLAG_NO;
-    private static final String TEMPLATE_FLAG_YES = MarketStates.TEMPLATE_FLAG_YES;
-    private static final String CODE_SEPARATOR = MarketStates.CODE_SEPARATOR;
-    private static final String HASH_SEP = MarketStates.HASH_SEP;
-    private static final String DISPLAY_SEPARATOR = MarketStates.DISPLAY_SEPARATOR;
-    private static final int CHAIN_CODE_MAX_LEN = MarketStates.CHAIN_CODE_MAX_LEN;
-    private static final int DRAFT_VERSION = MarketStates.DRAFT_VERSION;
-    private static final int CODE_SEQ_MAX = MarketStates.CODE_SEQ_MAX;
-    private static final String CASCADE_NEW = MarketStates.CASCADE_NEW;
-    private static final String CASCADE_REUSED = MarketStates.CASCADE_REUSED;
 
     private final DatabusMarketItemMapper marketItemMapper;
 

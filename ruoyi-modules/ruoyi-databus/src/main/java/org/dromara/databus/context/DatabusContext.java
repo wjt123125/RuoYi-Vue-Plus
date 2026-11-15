@@ -26,6 +26,8 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.dromara.databus.constant.ChainConstants.MAX_LOOP_DEPTH;
+
 /**
  * 数据总线执行上下文。
  * <p>
@@ -111,9 +113,6 @@ public class DatabusContext {
 
     /** 各层默认变量名（不含 {@code $}）：最外层 $i、第二层 $j、第三层 $k。 */
     public static final List<String> DEFAULT_LOOP_VARS = List.of("i", "j", "k");
-
-    /** 最大支持嵌套层数（与 roadmap 阶段 4 约定一致）。 */
-    public static final int MAX_LOOP_DEPTH = 3;
 
     /** 自定义循环变量名校验：字母/下划线开头，字母数字下划线，不含 {@code $}。 */
     private static final Pattern LOOP_VAR_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");

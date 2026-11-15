@@ -35,6 +35,8 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
 
+import static org.dromara.databus.constant.ChainConstants.PREVIEW_CHAIN_ID;
+
 /**
  * 数据总线执行器，链路执行的统一入口。
  * <p>
@@ -151,6 +153,23 @@ public class DatabusExecutor {
      * @return 执行结果
      */
     public DatabusExecutionResult executeByEl(String elStr, Object requestData, CmpProperty jsonEl) {
+        return executeByEl(elStr, requestData, jsonEl, null);
+    }
+
+    /**
+     * 指定运行时 chainId 的试运行。
+     * <p>
+     * 常规调用方（编辑器预览）不关心临时链 id，用默认的 {@code PREVIEW_CHAIN_ID-<executionId>}
+     * 即执即弃即可；组件探针需要执行结束后按 id 摘链，故由调用方自带一个可回收的 chainId。
+     *
+     * @param elStr                链 EL
+     * @param requestData          执行入参
+     * @param jsonEl               画布树（仅用于取 tag→title，可空）
+     * @param runtimeChainIdOverride 运行时 chainId；空则按默认规则生成
+     * @return 执行结果
+     */
+    public DatabusExecutionResult executeByEl(String elStr, Object requestData, CmpProperty jsonEl,
+                                              String runtimeChainIdOverride) {
         String executionId = generateExecutionId();
         // 计时口径：起点放在 execute2Resp 之前，costTime 是数据总线端到端耗时
         // （含上下文初始化 + 连接查库注入），不是纯 LiteFlow 引擎耗时——
@@ -166,8 +185,11 @@ public class DatabusExecutor {
         injectConnections(context);
 
         try {
-            // 每次试运行使用独立 chainId，避免 FlowBus 中同名 chain 被反复重编译
-            String runtimeChainId = PREVIEW_CHAIN_ID + "-" + executionId;
+            // 每次试运行使用独立 chainId，避免 FlowBus 中同名 chain 被反复重编译；
+            // 组件探针自带 chainId，便于执行结束后精确摘链
+            String runtimeChainId = StringUtils.isNotBlank(runtimeChainIdOverride)
+                ? runtimeChainIdOverride
+                : PREVIEW_CHAIN_ID + "-" + executionId;
             LiteFlowChainELBuilder.createChain()
                 .setChainId(runtimeChainId)
                 .setEL(elStr)
@@ -321,11 +343,6 @@ public class DatabusExecutor {
         return Optional.of(new ScriptNodeSpec(nodeId, isBoolean ? "boolean_script" : "script",
             language, cfg.getScript()));
     }
-
-    /**
-     * 试运行结果中使用的虚拟链路标识（真实 chainId 不落库、不存在）。
-     */
-    private static final String PREVIEW_CHAIN_ID = "preview-el";
 
     /**
      * 生成执行记录业务 id（UUID 去横线）。

@@ -69,22 +69,7 @@ public class ScriptComponentRegistrar {
     public void register(DatabusComponent row, ScriptArtifact artifact) {
         String code = row.getComponentCode();
         Class<?> primaryClass = artifact.primaryClass();
-        NodeComponent instance;
-        try {
-            // AUTOWIRE_CONSTRUCTOR：构造注入 + 字段注入 + initializeBean（@PostConstruct/AOP）全流程都走，
-            // 但不把 bean 登记进容器——动态类名挤进单例池没好处，还挡着旧 ClassLoader 卸载
-            Object bean = applicationContext.getAutowireCapableBeanFactory()
-                .createBean(primaryClass, AutowireCapableBeanFactory.AUTOWIRE_CONSTRUCTOR, false);
-            if (!(bean instanceof NodeComponent nodeComponent)) {
-                throw new ServiceException("脚本主类不是 NodeComponent 实例：" + primaryClass.getName());
-            }
-            instance = nodeComponent;
-        } catch (ServiceException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new ServiceException("脚本组件实例化/依赖注入失败（" + primaryClass.getName()
-                + "）：" + rootMessage(e), e);
-        }
+        NodeComponent instance = instantiate(artifact);
 
         NodeTypeEnum nodeType = NodeTypeEnum.guessType(primaryClass);
         if (nodeType == null) {
@@ -111,6 +96,35 @@ public class ScriptComponentRegistrar {
         health.put(row.getId(), vo);
         log.info("[databus-script] 脚本组件已注册 code={}, version={}, class={}",
             code, row.getVersion(), primaryClass.getName());
+    }
+
+    /**
+     * 只造实例、不安排工位：探针试跑用——编出来的节点借 {@code FlowBus.addManagedNode}
+     * 临时上岗一次，跑完就摘，不进 active/health 两本账。
+     * <p>
+     * 实例化仍走 {@code createBean(AUTOWIRE_CONSTRUCTOR)}：探针要验的就是「带注入能不能造出来」，
+     * 绕开 Spring 生命周期就测不出真实的失败面。
+     *
+     * @param artifact 编译产物
+     * @return LiteFlow 节点实例
+     */
+    public NodeComponent instantiate(ScriptArtifact artifact) {
+        Class<?> primaryClass = artifact.primaryClass();
+        try {
+            // AUTOWIRE_CONSTRUCTOR：构造注入 + 字段注入 + initializeBean（@PostConstruct/AOP）全流程都走，
+            // 但不把 bean 登记进容器——动态类名挤进单例池没好处，还挡着旧 ClassLoader 卸载
+            Object bean = applicationContext.getAutowireCapableBeanFactory()
+                .createBean(primaryClass, AutowireCapableBeanFactory.AUTOWIRE_CONSTRUCTOR, false);
+            if (!(bean instanceof NodeComponent nodeComponent)) {
+                throw new ServiceException("脚本主类不是 NodeComponent 实例：" + primaryClass.getName());
+            }
+            return nodeComponent;
+        } catch (ServiceException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ServiceException("脚本组件实例化/依赖注入失败（" + primaryClass.getName()
+                + "）：" + rootMessage(e), e);
+        }
     }
 
     /**

@@ -2,6 +2,8 @@ package org.dromara.databus.agent;
 
 import java.util.List;
 
+import static org.dromara.databus.constant.AgentConstants.PERMISSION_ALL;
+
 /**
  * 工具执行时的身份快照（方案 §十五 守卫 ②）。
  * <p>
@@ -20,11 +22,6 @@ public record AgentRunContext(String runId,
                               Long userId,
                               List<String> permissions,
                               Integer round) {
-
-    /**
-     * RuoYi 超级管理员通配权限点。
-     */
-    private static final String PERMISSION_ALL = "*:*:*";
 
     public AgentRunContext {
         permissions = permissions == null ? List.of() : List.copyOf(permissions);

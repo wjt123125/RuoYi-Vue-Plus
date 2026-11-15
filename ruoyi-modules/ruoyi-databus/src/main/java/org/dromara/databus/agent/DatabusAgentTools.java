@@ -13,10 +13,14 @@ import org.dromara.databus.enums.AgentApprovalModeEnum;
 import org.dromara.databus.domain.bo.DatabusChainBo;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.PreviewRunBo;
+import org.dromara.databus.domain.bo.ScriptDraftBo;
+import org.dromara.databus.domain.bo.ScriptProbeBo;
 import org.dromara.databus.domain.vo.ComponentOptionVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
 import org.dromara.databus.domain.vo.PreviewRunVo;
+import org.dromara.databus.domain.vo.ScriptDraftResultVo;
+import org.dromara.databus.domain.vo.ScriptProbeResultVo;
 import org.dromara.databus.el.bean.ChainInputParam;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.ELInfo;
@@ -27,6 +31,8 @@ import org.dromara.databus.service.IDatabusAgentSnapshotService;
 import org.dromara.databus.service.IDatabusChainService;
 import org.dromara.databus.service.IDatabusComponentService;
 import org.dromara.databus.service.IDatabusPreviewRunService;
+import org.dromara.databus.script.host.ScriptCompileException;
+import org.dromara.databus.script.host.ScriptDiagnostic;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
@@ -44,8 +50,46 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 
+import static org.dromara.databus.constant.AgentConstants.ACTION_CONFIRM;
+import static org.dromara.databus.constant.AgentConstants.DEFAULT_PAGE_SIZE;
+import static org.dromara.databus.constant.AgentConstants.ERROR_CONFIG;
+import static org.dromara.databus.constant.AgentConstants.ERROR_ENVIRONMENT;
+import static org.dromara.databus.constant.AgentConstants.ERROR_EXTERNAL;
+import static org.dromara.databus.constant.AgentConstants.ERROR_PERMISSION;
+import static org.dromara.databus.constant.AgentConstants.ERROR_RUNTIME;
+import static org.dromara.databus.constant.AgentConstants.ERROR_TIMEOUT;
+import static org.dromara.databus.constant.AgentConstants.ERROR_VALIDATION;
+import static org.dromara.databus.constant.AgentConstants.KIND_CONFIRM;
+import static org.dromara.databus.constant.AgentConstants.KIND_REF;
+import static org.dromara.databus.constant.AgentConstants.MAX_CHECK_VALUE_BYTES;
+import static org.dromara.databus.constant.AgentConstants.MAX_ERROR_TEXT;
+import static org.dromara.databus.constant.AgentConstants.MAX_NODE_ERRORS;
+import static org.dromara.databus.constant.AgentConstants.MAX_OUTPUT_VALUE_BYTES;
+import static org.dromara.databus.constant.AgentConstants.MAX_PAGE_SIZE;
+import static org.dromara.databus.constant.AgentConstants.PERMISSION_ADD;
+import static org.dromara.databus.constant.AgentConstants.PERMISSION_READ;
+import static org.dromara.databus.constant.AgentConstants.PERMISSION_RUN;
+import static org.dromara.databus.constant.AgentConstants.PERMISSION_WRITE;
+import static org.dromara.databus.constant.AgentConstants.PRESENTATION_INLINE;
+import static org.dromara.databus.constant.AgentConstants.RESOURCE_TYPE_COMPONENT;
+import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_DRAFT_SAVE;
+import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_GET;
+import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_RUN;
+import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_SEARCH;
+import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_DRAFT_SAVE;
+import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_GET;
+import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_RUN;
+import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_SEARCH;
+import static org.dromara.databus.constant.ChainConstants.LOG_LEVEL_FULL;
+import static org.dromara.databus.constant.CommonConstants.OWNER_SYSTEM;
+import static org.dromara.databus.constant.CommonConstants.STATUS_DRAFT;
+import static org.dromara.databus.constant.CommonConstants.TEMPLATE_FLAG_YES;
+import static org.dromara.databus.constant.ComponentConstants.FIELD_META;
+import static org.dromara.databus.constant.ComponentConstants.FIELD_SCHEMA;
+import static org.dromara.databus.constant.ComponentConstants.FIELD_SCRIPT;
+
 /**
- * Databus 工具集：切片 2「读物料」（只读检索）+ 切片 3「改画布」（{@code databus_chain_save}）
+ * Databus 工具集：切片 2「读物料」（只读检索）+ 切片 3「改画布」（{@code databus_chain_draft_save}）
  * + 切片 6「试跑」（{@code databus_chain_run}）。
  * <p>
  * 写工具也不拼 EL、不写 canvasData：树交给 {@code IDatabusChainService} 生成 EL，画布交给前端按
@@ -67,73 +111,6 @@ import java.util.function.Function;
 @Component
 @RequiredArgsConstructor
 public class DatabusAgentTools {
-
-    /**
-     * 只读检索所需权限点：与工作台链路列表 / 物料面板 /options 一致。
-     */
-    private static final String PERMISSION_READ = "databus:editor:list";
-    /**
-     * 修改草稿链路所需权限点，与 DatabusChainController 的 PUT 一致。
-     */
-    private static final String PERMISSION_WRITE = "databus:editor:edit";
-    /**
-     * 新建草稿链路所需权限点，与 DatabusChainController 的 POST 一致。
-     */
-    private static final String PERMISSION_ADD = "databus:editor:add";
-
-    private static final String TOOL_CHAIN_SEARCH = "databus_chain_search";
-    private static final String TOOL_CHAIN_GET = "databus_chain_get";
-    private static final String TOOL_COMPONENT_SEARCH = "databus_component_search";
-    private static final String TOOL_COMPONENT_GET = "databus_component_get";
-    private static final String TOOL_CHAIN_SAVE = "databus_chain_save";
-    private static final String TOOL_CHAIN_RUN = "databus_chain_run";
-
-    /**
-     * 试跑所需权限点：与预览页「试运行」一致（databus:editor:run）。
-     */
-    private static final String PERMISSION_RUN = "databus:editor:run";
-
-    /**
-     * AI 只能改草稿态链路，已发布 / 已下线的一律拒绝（避免改了正在跑的链路）。
-     */
-    private static final String STATUS_DRAFT = "DRAFT";
-    private static final String OWNER_SYSTEM = "SYSTEM";
-    private static final String LOG_LEVEL_FULL = "FULL";
-    /**
-     * 模板链路标记（databus_chain.is_template）：模板对所有人生效，非模板只认创建人。
-     */
-    private static final String TEMPLATE_FLAG_YES = "1";
-
-    /**
-     * component_get 的返回裁剪段：元信息 / 配置项定义 / 脚本源码。
-     */
-    private static final String FIELD_META = "meta";
-    private static final String FIELD_SCHEMA = "schema";
-    private static final String FIELD_SCRIPT = "script";
-
-    /**
-     * 节点级错误最多回传条数，超出的截断（避免把整包日志塞进模型上下文）。
-     */
-    private static final int MAX_NODE_ERRORS = 10;
-    private static final int MAX_ERROR_TEXT = 300;
-    /**
-     * 单个输出路径回传的最大字符数（超出截断并标记 truncated）。
-     */
-    private static final int MAX_OUTPUT_VALUE_BYTES = 4096;
-    /**
-     * 断言 actual 回传的最大字符数。
-     */
-    private static final int MAX_CHECK_VALUE_BYTES = 512;
-    private static final String ERROR_VALIDATION = "VALIDATION";
-    private static final String ERROR_CONFIG = "CONFIG";
-    private static final String ERROR_PERMISSION = "PERMISSION";
-    private static final String ERROR_ENVIRONMENT = "ENVIRONMENT";
-    private static final String ERROR_EXTERNAL = "EXTERNAL";
-    private static final String ERROR_TIMEOUT = "TIMEOUT";
-    private static final String ERROR_RUNTIME = "RUNTIME";
-
-    private static final int DEFAULT_PAGE_SIZE = 10;
-    private static final int MAX_PAGE_SIZE = 20;
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -259,10 +236,10 @@ public class DatabusAgentTools {
      * @param force             用户已确认覆盖他人改动
      * @return JSON 结果
      */
-    @Tool(name = TOOL_CHAIN_SAVE, description = "把拼好的链路结构存成草稿（status=DRAFT），新建与修改都走这里。"
+    @Tool(name = TOOL_CHAIN_DRAFT_SAVE, description = "把拼好的链路结构存成草稿（status=DRAFT），新建与修改都走这里。"
         + "同一会话可以多次新建或修改：新建不传 draftId，修改传 draftId。"
         + "cmpProperty 是画布结构树 JSON，是保存的唯一依据；EL 由服务端生成并校验，不要自己拼 EL。"
-        + "链路里含内联脚本节点会被直接拒绝，必须先调 databus_script_draft_save 落脚本草稿、再把节点换成组件引用。"
+        + "链路里含内联脚本节点会被直接拒绝，必须先调 databus_component_draft_save 落脚本草稿、再把节点换成组件引用。"
         + "修改已发布/已下线的链路、系统链路、别人的链路都会被拒绝。"
         + "修改前必须先调 databus_chain_get 拿到 updateTime，原样作为 expectedUpdateTime 传回；"
         + "若链路在你读取之后被别人改过，会返回 conflict=true 且不写库，此时把 message 转述给用户，"
@@ -290,7 +267,7 @@ public class DatabusAgentTools {
         args.put("expectedUpdateTime", expectedUpdateTime);
         args.put("force", force);
         String permission = draftId == null ? PERMISSION_ADD : PERMISSION_WRITE;
-        return execute(TOOL_CHAIN_SAVE, args, permission,
+        return execute(TOOL_CHAIN_DRAFT_SAVE, args, permission,
             ctx -> doChainSave(ctx, draftId, chainCode, chainName, cmpProperty, inputParams, logLevel, note,
                 expectedUpdateTime, force));
     }
@@ -315,7 +292,7 @@ public class DatabusAgentTools {
         + "你只需简短说一句「需要你确认」，不要复述影响清单、不要用文字再问一遍；"
         + "userConfirmed 必须对应本轮收到的【卡片回执】，自行判断传 true 会被拒绝。"
         + "只能试跑草稿态、自己创建的链路；试跑不发布、不写执行记录，也不占纠错轮数。"
-        + "失败时按 nodeErrors 改结构后再调 databus_chain_save，不要原样重跑；"
+        + "失败时按 nodeErrors 改结构后再调 databus_chain_draft_save，不要原样重跑；"
         + "不返回整包日志和上下文快照。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
     public String chainRun(
         @ToolParam(description = "要试跑的草稿链路 id") Long chainId,
@@ -331,6 +308,79 @@ public class DatabusAgentTools {
         args.put("expect", expect);
         return execute(TOOL_CHAIN_RUN, args, PERMISSION_RUN,
             ctx -> doChainRun(ctx, chainId, payloadJson, userConfirmed, outputPaths, expect));
+    }
+
+    /**
+     * 落脚本草稿（AI 造组件第一步）：编译通过才建 DRAFT 行，不注册、不投放。
+     * <p>
+     * 「能编译」只是入场券：草稿不进物料面板、不注册 FlowBus，必须由人在审阅页点采纳才生效。
+     * 工具只返回草稿 id 与物化契约，模型不得声称「已生效」。
+     *
+     * @param componentCode 组件编码
+     * @param componentName 组件名称
+     * @param scriptBody    完整 Java 源码
+     * @param category      台账五分类
+     * @param groupName     物料面板分组
+     * @param description   组件描述
+     * @param componentId   已有草稿 id（更新时传）
+     * @return JSON 结果
+     */
+    @Tool(name = TOOL_COMPONENT_DRAFT_SAVE, description = "把一段 Java 脚本源码落成组件草稿（DRAFT）。"
+        + "服务端先编译，编译通过才建草稿行；草稿不注册 FlowBus、不进物料面板，只有发起人能看到和修改，"
+        + "必须由人在组件审阅页点「采纳」才生效——落完草稿不要声称组件已可用，要提示用户去审阅页确认。"
+        + "scriptBody 必须是完整 Java 类源码：含 @DatabusCmp 主类（继承 NodeComponent）和内嵌 Cfg 配置类；"
+        + "动手前先 databus_component_get 看同类脚本的写法，不要凭记忆拼。"
+        + "落草稿前建议先 databus_component_run 单节点试跑，把编译错和运行错消灭在草稿之前。"
+        + "返回 draftId、componentCode、nodeType、参数契约 paramSchema 与危险 API 提示 risks。"
+        + "改自己名下的草稿传 componentId，新建不传。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
+    public String scriptDraftSave(
+        @ToolParam(description = "组件编码，全局唯一；新建必填") String componentCode,
+        @ToolParam(description = "组件名称，新建必填") String componentName,
+        @ToolParam(description = "完整 Java 类源码（@DatabusCmp 主类 + 内嵌 Cfg）") String scriptBody,
+        @ToolParam(description = "台账五分类：PROTOCOL/DATA/FLOW_CONTROL/AI/PLATFORM，缺省 PLATFORM", required = false) String category,
+        @ToolParam(description = "物料面板分组 key（flow/sequence/branch/loop/other/subflow/business），可空", required = false) String groupName,
+        @ToolParam(description = "组件描述", required = false) String description,
+        @ToolParam(description = "已有草稿的组件 id；传了就更新该草稿，不传则新建", required = false) Long componentId) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("componentCode", componentCode);
+        args.put("componentName", componentName);
+        args.put("scriptBody", scriptBody);
+        args.put("category", category);
+        args.put("groupName", groupName);
+        args.put("description", description);
+        args.put("componentId", componentId);
+        return execute(TOOL_COMPONENT_DRAFT_SAVE, args, PERMISSION_WRITE,
+            ctx -> doScriptDraftSave(ctx, componentId, componentCode, componentName, scriptBody,
+                category, groupName, description));
+    }
+
+    /**
+     * 组件级探针试跑：编成组件 → 临时节点跑一次 → 立刻摘除。
+     * <p>
+     * 与 {@code databus_chain_run} 分工不同：链路试跑验的是「串起来对不对」，这里验的是
+     * 「组件本身编得过、造得出、跑得动」。探针节点没有画布配置，脚本必须容忍 cfg 为空。
+     *
+     * @param scriptBody  完整 Java 源码
+     * @param requestData 试跑入参 JSON
+     * @return JSON 结果
+     */
+    @Tool(name = TOOL_COMPONENT_RUN, description = "组件级探针试跑：把一段 Java 脚本源码编成组件，"
+        + "用一个临时节点真实执行一次，跑完立刻从 FlowBus 摘除。"
+        + "验证的是组件本身：编译、实例化/依赖注入、process 逻辑能不能跑通。"
+        + "不建链路、不落库、不写执行记录、不占纠错轮数，也不投放物料面板。"
+        + "requestData 是试跑入参 JSON，作为上下文根 $；不传按空入参跑。"
+        + "注意：探针节点没有画布配置，getCmpData() 为空，脚本必须容忍 cfg 为 null。"
+        + "返回 success、costMs、执行后上下文快照 output（截断）、节点错误 nodeErrors、危险 API 提示 risks。"
+        + "编译失败时返回 errorType=VALIDATION 与 diagnostics（行列+原因），改好源码再调。"
+        + "它不替代链路试跑：串 EL、节点连线仍要用 databus_chain_run。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
+    public String componentRun(
+        @ToolParam(description = "完整 Java 类源码（@DatabusCmp 主类 + 内嵌 Cfg）") String scriptBody,
+        @ToolParam(description = "试跑入参 JSON，作为上下文根 $；不传按空入参跑", required = false) String requestData) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("scriptBody", scriptBody);
+        args.put("requestData", requestData);
+        return execute(TOOL_COMPONENT_RUN, args, PERMISSION_RUN,
+            ctx -> doComponentRun(scriptBody, requestData));
     }
 
     /**
@@ -379,11 +429,11 @@ public class DatabusAgentTools {
                                             String chainName, String cmpPropertyJson, String inputParamsJson,
                                             String logLevel, String note, String expectedUpdateTime, Boolean force) {
         CmpProperty tree = parseTree(cmpPropertyJson);
-        // 内联脚本拦截：脚本只允许走 databus_script_draft_save，链路树里出现脚本叶子一律不写库
+        // 内联脚本拦截：脚本只允许走 databus_component_draft_save，链路树里出现脚本叶子一律不写库
         List<DatabusExecutor.ScriptNodeSpec> scripts = databusExecutor.collectScriptNodes(tree);
         if (!scripts.isEmpty()) {
             throw new IllegalArgumentException("本链路含 " + scripts.size()
-                + " 个内联脚本节点，必须先调 databus_script_draft_save 落草稿、再把节点换成组件引用");
+                + " 个内联脚本节点，必须先调 databus_component_draft_save 落草稿、再把节点换成组件引用");
         }
         int nodeCount = countNodes(tree);
         String level = normalizeLogLevel(logLevel);
@@ -484,8 +534,8 @@ public class DatabusAgentTools {
             chainId = draftId;
         }
 
-        eventPublisher.publishCanvas(context, chainId, name, tree, elExpression, null, created);
-        eventPublisher.publishDraft(context, chainId, name);
+        eventPublisher.publishChainCanvas(context, chainId, name, tree, elExpression, null, created);
+        eventPublisher.publishChainDraft(context, chainId, name);
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("draftId", chainId);
@@ -706,6 +756,137 @@ public class DatabusAgentTools {
     }
 
     /**
+     * 落脚本草稿：service 负责编译与落 DRAFT 行，这里只做「回给模型什么」的裁剪。
+     * <p>
+     * 编译失败单独接住转 VALIDATION：模型拿到行列诊断才能自己改源码，甩成 RUNTIME 只会让它乱猜。
+     *
+     * @param context       调用上下文（取发起人写 create_by）
+     * @param componentId   已有草稿 id
+     * @param componentCode 组件编码
+     * @param componentName 组件名称
+     * @param scriptBody    完整 Java 源码
+     * @param category      台账五分类
+     * @param groupName     物料面板分组
+     * @param description   组件描述
+     * @return 结果载荷
+     */
+    private Map<String, Object> doScriptDraftSave(AgentRunContext context, Long componentId,
+                                                  String componentCode, String componentName, String scriptBody,
+                                                  String category, String groupName, String description) {
+        ScriptDraftBo bo = new ScriptDraftBo();
+        bo.setId(componentId);
+        bo.setComponentCode(componentCode);
+        bo.setComponentName(componentName);
+        bo.setScriptBody(scriptBody);
+        bo.setCategory(category);
+        bo.setGroupName(groupName);
+        bo.setDescription(description);
+        // create_by 只认会话身份：草稿所有权决定「谁能改」，不能让模型指定
+        bo.setCreateBy(context.userId());
+        try {
+            ScriptDraftResultVo result = componentService.saveScriptDraft(bo);
+            // 业务事件：工作区收到后刷组件树并自动开审阅 tab；
+            // 对话里再补一张资源卡，用户关掉 tab 后仍有可点入口
+            eventPublisher.publishComponentDraft(context, result.getId(),
+                result.getComponentCode(), result.getComponentName());
+            cardChannel.send(context.runId(), buildDraftReviewCard(context, result));
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("draftId", result.getId());
+            payload.put("componentCode", result.getComponentCode());
+            payload.put("componentName", result.getComponentName());
+            payload.put("status", result.getStatus());
+            payload.put("nodeType", result.getNodeType());
+            payload.put("fieldCount", result.getFieldCount());
+            payload.put("paramSchema", truncate(result.getParamSchema(), MAX_OUTPUT_VALUE_BYTES));
+            payload.put("dataExample", truncate(result.getDataExample(), MAX_OUTPUT_VALUE_BYTES));
+            payload.put("risks", result.getRisks());
+            payload.put("message", "草稿已落库，但尚未生效：需要人在组件审阅页点「采纳」后才会注册并投放物料面板。");
+            return payload;
+        } catch (ScriptCompileException e) {
+            return compileErrorPayload(e);
+        }
+    }
+
+    /**
+     * 草稿资源卡：会话里留一个「打开审阅」入口，不参与确认/选择，点击只跳 tab。
+     *
+     * @param context 当前 run 上下文
+     * @param result  落库结果
+     * @return 资源卡
+     */
+    private static AgentCard buildDraftReviewCard(AgentRunContext context, ScriptDraftResultVo result) {
+        String runId = context.runId() == null ? "run" : context.runId();
+        String cardId = runId + ":card-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        return new AgentCard(cardId, KIND_REF,
+            "草稿待审阅：" + result.getComponentName(),
+            "采纳后才会注册进 FlowBus 并出现在物料面板。",
+            null, List.of(), Boolean.FALSE, PRESENTATION_INLINE,
+            new AgentCard.Resource(RESOURCE_TYPE_COMPONENT,
+                String.valueOf(result.getId()), result.getComponentCode(), result.getComponentName()));
+    }
+
+    /**
+     * 组件级探针试跑：service 负责「即注即摘」，这里只把结果裁成模型看得懂的一段。
+     *
+     * @param scriptBody  完整 Java 源码
+     * @param requestData 试跑入参 JSON
+     * @return 结果载荷
+     */
+    private Map<String, Object> doComponentRun(String scriptBody, String requestData) {
+        ScriptProbeBo bo = new ScriptProbeBo();
+        bo.setScriptBody(scriptBody);
+        bo.setRequestData(requestData);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        try {
+            ScriptProbeResultVo result = componentService.probeRun(bo);
+            payload.put("success", result.getSuccess());
+            payload.put("costMs", result.getCostMs());
+            payload.put("nodeType", result.getNodeType());
+            payload.put("risks", result.getRisks());
+            payload.put("nodeErrors", result.getNodeErrors());
+            String output = result.getOutput();
+            payload.put("truncated", output != null && output.length() > MAX_OUTPUT_VALUE_BYTES);
+            payload.put("output", truncate(output, MAX_OUTPUT_VALUE_BYTES));
+            if (Boolean.TRUE.equals(result.getSuccess())) {
+                payload.put("message", "探针试跑通过（单节点无画布配置，cfg 为空）。");
+            } else {
+                String reason = truncate(result.getMessage(), MAX_ERROR_TEXT);
+                String errorType = classifyError(reason, List.of());
+                payload.put("message", reason);
+                payload.put("errorType", errorType);
+                payload.put("errorReason", reason);
+                payload.put("retryable", isRetryable(errorType));
+            }
+            return payload;
+        } catch (ScriptCompileException e) {
+            return compileErrorPayload(e);
+        }
+    }
+
+    /**
+     * 编译失败载荷：errorType 固定 VALIDATION，附行列诊断，标记可重试（改源码就能再调）。
+     *
+     * @param e 编译异常
+     * @return 错误载荷
+     */
+    private static Map<String, Object> compileErrorPayload(ScriptCompileException e) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("ok", false);
+        payload.put("errorType", ERROR_VALIDATION);
+        payload.put("errorReason", "脚本编译失败");
+        payload.put("message", truncate(e.getMessage(), MAX_ERROR_TEXT * 4));
+        List<ScriptDiagnostic> diagnostics = e.getDiagnostics();
+        if (diagnostics != null && !diagnostics.isEmpty()) {
+            payload.put("diagnostics", diagnostics.stream()
+                .limit(MAX_NODE_ERRORS)
+                .map(d -> (d.line() > 0 ? "第" + d.line() + "行第" + d.column() + "列：" : "") + d.message())
+                .toList());
+        }
+        payload.put("retryable", true);
+        return payload;
+    }
+
+    /**
      * 审批拦截时预填确认卡：事实来自规则扫描，不让模型自由发挥影响清单。
      * <p>
      * 选项必须带 description——前端把 label 渲染成按钮、description 渲染成按钮下的说明，
@@ -736,15 +917,15 @@ public class DatabusAgentTools {
             body.append("需要确认的节点：").append(String.join("、", riskyNames)).append("。");
         }
         List<AgentCard.Option> options = List.of(
-            new AgentCard.Option(AgentCardChannel.ACTION_CONFIRM, "确认执行",
+            new AgentCard.Option(ACTION_CONFIRM, "确认执行",
                 "按影响清单真实执行一次", "primary"),
             new AgentCard.Option("cancel", "取消",
                 "不执行，回到对话继续调整链路", "default"));
         String runId = context.runId() == null ? "run" : context.runId();
         String cardId = runId + ":card-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        return new AgentCard(cardId, AgentCard.KIND_CONFIRM, "试跑「" + chain.getChainName() + "」", body.toString(),
+        return new AgentCard(cardId, KIND_CONFIRM, "试跑「" + chain.getChainName() + "」", body.toString(),
             buildRunDetail(chain, payloadJson, outputPaths, expect),
-            options, Boolean.FALSE, AgentCard.PRESENTATION_INLINE);
+            options, Boolean.FALSE, PRESENTATION_INLINE, null);
     }
 
     /**

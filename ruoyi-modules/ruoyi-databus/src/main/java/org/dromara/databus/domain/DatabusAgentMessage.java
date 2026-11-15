@@ -42,7 +42,7 @@ public class DatabusAgentMessage implements Serializable {
     private Integer seq;
 
     /**
-     * databus:agent:canvas / draft / script-draft / run-end / auth
+     * databus:agent:chain:canvas:updated / chain:draft:saved / component:draft:saved / run:lifecycle:ended
      */
     private String eventCode;
 

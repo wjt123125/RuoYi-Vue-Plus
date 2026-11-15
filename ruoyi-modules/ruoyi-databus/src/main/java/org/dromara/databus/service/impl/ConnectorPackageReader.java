@@ -26,6 +26,9 @@ import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import static org.dromara.databus.constant.ConnectorConstants.MANIFEST_ENTRY;
+import static org.dromara.databus.constant.ConnectorConstants.SOURCE_DEV;
+
 /**
  * 连接器包读取与审核预览（从 DatabusConnectorServiceImpl 拆出的只读支撑类）。
  *
@@ -41,16 +44,6 @@ import java.util.zip.ZipInputStream;
 @Component
 @RequiredArgsConstructor
 public class ConnectorPackageReader {
-
-    /**
-     * 包内清单文件名（zip 根级，必选）
-     */
-    private static final String MANIFEST_ENTRY = "manifest.json";
-
-    /**
-     * 来源：dev 目录装载（没有 zip 实体，见 {@link #rejectDevRow}）
-     */
-    private static final String SOURCE_DEV = "DEV";
 
     /**
      * 包内可疑 API 描述符（内部名，点→斜杠）：读写文件 / 外连 / 反射 / 起进程 / 开线程。

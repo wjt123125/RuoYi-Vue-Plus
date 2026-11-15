@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 /**
  * AI agent 每一轮动手前的链路快照 databus_agent_snapshot
  * <p>
- * 只增不改：一行 = 某一轮 chain_save 动手前的链路全量快照（cmpProperty / elExpression /
+ * 只增不改：一行 = 某一轮 chain_draft_save 动手前的链路全量快照（cmpProperty / elExpression /
  * canvasData / inputParams / logLevel），供「回到 AI 动手前」按轮次回滚（设计文档 §9.2 / §16.1）。
  * payload 用 mediumtext：大链路的结构树 + 画布 JSON 可能超过 64KB，截断的快照等于回滚不了。
  *

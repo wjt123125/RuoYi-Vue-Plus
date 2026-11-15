@@ -3,12 +3,15 @@ package org.dromara.databus.executor;
 import com.yomahub.liteflow.lifecycle.PostProcessChainExecuteLifeCycle;
 import com.yomahub.liteflow.slot.Slot;
 import lombok.extern.slf4j.Slf4j;
+import org.dromara.databus.constant.ChainConstants;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+
+import static org.dromara.databus.constant.ChainConstants.MAX_DEPTH;
 
 /**
  * 链路嵌套深度探针（LiteFlow Chain 级生命周期钩子）。
@@ -22,7 +25,7 @@ import java.util.List;
  * <b>两个用途</b>：
  * <ul>
  *     <li>观测：depth/ownerChain 顺 {@link StepResultPayload} 通道带到前端，执行明细按层级缩进；</li>
- *     <li>熔断：栈深超过 {@link #MAX_DEPTH} 直接抛异常终止本次执行，兜住绕过发布校验
+ *     <li>熔断：栈深超过 {@link ChainConstants#MAX_DEPTH} 直接抛异常终止本次执行，兜住绕过发布校验
  *     （循环引用 DFS）直改数据库造成的 A→B→A 成环——否则引擎会无限递归到栈溢出。</li>
  * </ul>
  * <p>
@@ -39,12 +42,6 @@ import java.util.List;
 @Slf4j
 @Component
 public class ChainDepthTracker implements PostProcessChainExecuteLifeCycle {
-
-    /**
-     * 嵌套深度上限（含主链本身，即主链 + 9 层子链）。
-     * 正常业务嵌套 2-3 层足够，留足余量又能及时兜住意外成环。
-     */
-    public static final int MAX_DEPTH = 10;
 
     /** 当前线程正在执行的链栈，栈底＝主链、栈顶＝最内层子链。 */
     private static final ThreadLocal<Deque<String>> CHAIN_STACK = ThreadLocal.withInitial(ArrayDeque::new);

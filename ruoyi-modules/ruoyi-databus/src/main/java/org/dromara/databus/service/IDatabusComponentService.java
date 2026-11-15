@@ -3,6 +3,8 @@ package org.dromara.databus.service;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
+import org.dromara.databus.domain.bo.ScriptDraftBo;
+import org.dromara.databus.domain.bo.ScriptProbeBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
 import org.dromara.databus.domain.bo.ScriptSaveBo;
 import org.dromara.databus.domain.vo.ComponentDomainVo;
@@ -10,6 +12,8 @@ import org.dromara.databus.domain.vo.ComponentGroupVo;
 import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.DatabusComponentVersionVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
+import org.dromara.databus.domain.vo.ScriptDraftResultVo;
+import org.dromara.databus.domain.vo.ScriptProbeResultVo;
 import org.dromara.databus.domain.vo.ScriptRuntimeVo;
 import org.dromara.databus.domain.vo.ScriptSaveResultVo;
 
@@ -130,5 +134,41 @@ public interface IDatabusComponentService {
      * @return 健康列表
      */
     List<ScriptRuntimeVo> queryRuntimeHealth();
+
+    /**
+     * 落脚本草稿：编译通过才建草稿行（status=DRAFT），但不注册 FlowBus、不进物料面板。
+     * <p>草稿归发起人所有，只有本人能改；生效必须由人在审阅页点采纳（{@link #adoptScriptDraft}）。
+     *
+     * @param bo 草稿入参（createBy 由服务端按会话身份注入）
+     * @return 草稿行信息与物化契约
+     */
+    ScriptDraftResultVo saveScriptDraft(ScriptDraftBo bo);
+
+    /**
+     * 采纳脚本草稿：校验草稿态 → 先转 ENABLED → 再走一遍 {@link #saveScript} 保存管线。
+     * <p>同一事务：编译/实例化/注册任一步失败，状态与版本一起回滚，不会留下「已启用但跑不起来」的件。
+     *
+     * @param id 草稿组件主键
+     * @return 新版本号与物化契约
+     */
+    ScriptSaveResultVo adoptScriptDraft(Long id);
+
+    /**
+     * 组件级探针试跑：编译源码 → 造实例 → 用临时节点 id 注进 FlowBus → 单节点执行 → 立刻摘除。
+     * <p>不建链、不落库、不写执行记录；用于 AI 在落草稿前验证「组件本身能不能跑」。
+     *
+     * @param bo 探针入参
+     * @return 试跑结果
+     */
+    ScriptProbeResultVo probeRun(ScriptProbeBo bo);
+
+    /**
+     * 拒绝草稿：人在审阅页点「拒绝」时物理删掉 DRAFT 行。
+     * <p>草稿从未注册 FlowBus、未被任何链路引用，删除无副作用；非草稿行一律拒绝操作。
+     *
+     * @param id 草稿组件主键
+     * @return 是否删除成功
+     */
+    Boolean rejectScriptDraft(Long id);
 
 }

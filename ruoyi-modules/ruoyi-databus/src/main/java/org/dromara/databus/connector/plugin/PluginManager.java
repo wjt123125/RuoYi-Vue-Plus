@@ -6,6 +6,7 @@ import org.dromara.databus.connector.Connector;
 import org.dromara.databus.connector.ConnectorException;
 import org.dromara.databus.connector.ConnectorManifest;
 import org.dromara.databus.connector.ConnectorRegistry;
+import org.dromara.databus.constant.ConnectorConstants;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
@@ -25,6 +26,12 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+
+import static org.dromara.databus.constant.ConnectorConstants.DRIVER_SPI_RESOURCE;
+import static org.dromara.databus.constant.ConnectorConstants.HEALTH_MISSING_DRIVER;
+import static org.dromara.databus.constant.ConnectorConstants.HEALTH_NOT_LOADED;
+import static org.dromara.databus.constant.ConnectorConstants.HEALTH_OK;
+import static org.dromara.databus.constant.ConnectorConstants.LIB_PREFIX;
 
 /**
  * 连接器包管理器（万物皆包，方案 §4.3 / §4.2.1 / §1.4.3 / §6.1）。
@@ -48,21 +55,6 @@ import java.util.zip.ZipInputStream;
 @Slf4j
 @Component
 public class PluginManager {
-
-    /** zip 内连接器实现与驱动所在前缀 */
-    private static final String LIB_PREFIX = "lib/";
-
-    /** JDBC 驱动的 SPI 声明资源名：驱动 jar 都带，是「包里有哪些驱动」的无连接事实源（§4.2.1） */
-    private static final String DRIVER_SPI_RESOURCE = "META-INF/services/java.sql.Driver";
-
-    /** 健康态：实例在跑，且它要的驱动确实由包内提供 */
-    public static final String HEALTH_OK = "OK";
-
-    /** 健康态：驱动缺失或落到了平台那份（包内 lib/ 缺驱动 jar）——能看见但连不上 */
-    public static final String HEALTH_MISSING_DRIVER = "MISSING_DRIVER";
-
-    /** 健康态：运行中没有这个连接器的实例 */
-    public static final String HEALTH_NOT_LOADED = "NOT_LOADED";
 
     private final ConnectorRegistry registry;
 
@@ -264,14 +256,14 @@ public class PluginManager {
      *
      * <p>判据按新旧顺序分三支：
      * <ul>
-     *   <li>{@link #loadFailures} 有记录 → 照记录说（文案提到驱动归 {@link #HEALTH_MISSING_DRIVER}，
-     *       其余归 {@link #HEALTH_NOT_LOADED}）。这条<b>排在最前</b>：装载失败时上一版实例是故意留下的
+     *   <li>{@link #loadFailures} 有记录 → 照记录说（文案提到驱动归 {@link ConnectorConstants#HEALTH_MISSING_DRIVER}，
+     *       其余归 {@link ConnectorConstants#HEALTH_NOT_LOADED}）。这条<b>排在最前</b>：装载失败时上一版实例是故意留下的
      *       （{@code DevConnectorLoader} 校验不过就不卸旧的，保证「改坏了也能继续跑上一版」），
      *       若先看 Registry 有没有实例，这次失败会被那个旧实例永久盖住——界面上照样一片正常，
      *       而失败记录成功装载即清，所以它存在就说明最近一次装载确实没成。</li>
      *   <li>Registry 里有实例 → 问它要驱动名，看这个类是不是包内 loader 提供的；
-     *       找不到、或找到但来自平台，都是 {@link #HEALTH_MISSING_DRIVER}。</li>
-     *   <li>两边都没有 → {@link #HEALTH_NOT_LOADED}，从没装过或已被卸载。</li>
+     *       找不到、或找到但来自平台，都是 {@link ConnectorConstants#HEALTH_MISSING_DRIVER}。</li>
+     *   <li>两边都没有 → {@link ConnectorConstants#HEALTH_NOT_LOADED}，从没装过或已被卸载。</li>
      * </ul>
      *
      * <p>def 行的 status 不参与判定：一行 DISABLED 本来就不该有实例，那种行前端按 status 显示灰色，
@@ -338,7 +330,7 @@ public class PluginManager {
     /**
      * 健康判定结果。
      *
-     * @param health {@link #HEALTH_OK} / {@link #HEALTH_MISSING_DRIVER} / {@link #HEALTH_NOT_LOADED}
+     * @param health {@link ConnectorConstants#HEALTH_OK} / {@link ConnectorConstants#HEALTH_MISSING_DRIVER} / {@link ConnectorConstants#HEALTH_NOT_LOADED}
      * @param reason 不健康时的具体原因（人话，前端直显）；健康时为 {@code null}
      */
     public record ConnectorHealth(String health, String reason) {

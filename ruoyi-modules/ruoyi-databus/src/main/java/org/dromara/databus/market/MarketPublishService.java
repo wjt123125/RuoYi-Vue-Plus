@@ -25,8 +25,6 @@ import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.market.support.ChainForkRedirector;
 import org.dromara.databus.market.support.MarketClosure;
 import org.dromara.databus.market.support.MarketClosureLoader;
-import org.dromara.databus.market.support.MarketResourceTypes;
-import org.dromara.databus.market.support.MarketStates;
 import org.dromara.databus.market.support.MarketVoAssembler;
 import org.dromara.databus.service.IDatabusChainService;
 import org.dromara.databus.service.IDatabusConnectorService;
@@ -43,6 +41,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+
+import static org.dromara.databus.constant.ConnectorConstants.SOURCE_DEV;
+import static org.dromara.databus.constant.MarketConstants.CODE_SEPARATOR;
+import static org.dromara.databus.constant.MarketConstants.DISPLAY_SEPARATOR;
+import static org.dromara.databus.constant.MarketConstants.STATUS_OFFLINE;
+import static org.dromara.databus.constant.MarketConstants.STATUS_ONLINE;
+import static org.dromara.databus.constant.MarketConstants.STATUS_PENDING;
+import static org.dromara.databus.constant.MarketConstants.STATUS_REJECTED;
+import static org.dromara.databus.constant.MarketConstants.TYPE_CHAIN;
+import static org.dromara.databus.constant.MarketConstants.TYPE_COMPONENT;
+import static org.dromara.databus.constant.MarketConstants.TYPE_CONNECTOR;
 
 /**
  * 物料市场——上架与审核（设计文档 databus-material-market.md §七、§十，decisions §十四-6/7/8）。
@@ -67,26 +76,6 @@ import java.util.Set;
 @RequiredArgsConstructor
 @Component
 public class MarketPublishService {
-
-    private static final String TYPE_COMPONENT = MarketResourceTypes.COMPONENT;
-    private static final String TYPE_CHAIN = MarketResourceTypes.CHAIN;
-
-    /**
-     * 资源类型：连接器（§15.7：sourceId＝databus_connector_def 行 id，编码用全局唯一的 type）
-     */
-    private static final String TYPE_CONNECTOR = MarketResourceTypes.CONNECTOR;
-
-    /**
-     * 连接器来源：dev 目录装载（跑的是编译输出目录，没有落地的 zip，不放开提交上架）
-     */
-    private static final String CONNECTOR_SOURCE_DEV = "DEV";
-
-    private static final String STATUS_PENDING = MarketStates.STATUS_PENDING;
-    private static final String STATUS_ONLINE = MarketStates.STATUS_ONLINE;
-    private static final String STATUS_OFFLINE = MarketStates.STATUS_OFFLINE;
-    private static final String STATUS_REJECTED = MarketStates.STATUS_REJECTED;
-    private static final String CODE_SEPARATOR = MarketStates.CODE_SEPARATOR;
-    private static final String DISPLAY_SEPARATOR = MarketStates.DISPLAY_SEPARATOR;
 
     private final DatabusMarketItemMapper marketItemMapper;
 
@@ -176,7 +165,7 @@ public class MarketPublishService {
             }
             // dev 目录装载的连接器不能上架：它跑的是编译输出目录，package_path 下没有对应的 zip，
             // 审核人没有可核对的对象（下载原包 / 包内清单这两个入口对它也是拒的）
-            if (CONNECTOR_SOURCE_DEV.equals(source.getSource())) {
+            if (SOURCE_DEV.equals(source.getSource())) {
                 throw new ServiceException("连接器 " + source.getType()
                     + " 是 dev 目录装载的，不能提交上架（它没有落地的包文件，审核人无从核对）；"
                     + "请先 mvn package，再在「上架物料」里选择连接器并上传该 zip");

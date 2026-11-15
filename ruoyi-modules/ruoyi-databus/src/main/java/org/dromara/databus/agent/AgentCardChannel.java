@@ -16,6 +16,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.dromara.databus.constant.AgentConstants.EVENT_CARD;
+
 /**
  * 对话 SSE 的卡片回写通道（运行时 §16）。
  * <p>
@@ -31,21 +33,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 @RequiredArgsConstructor
 public class AgentCardChannel {
-
-    /**
-     * 卡片本身的 event_code：content 是卡片 JSON，刷新后据此还原。
-     */
-    public static final String EVENT_CARD = "card";
-
-    /**
-     * 卡片回执消息的 event_code，落 {@code databus_agent_message}，供工具层校验 userConfirmed。
-     */
-    public static final String EVENT_CARD_REPLY = "card_reply";
-
-    /**
-     * 回执动作：用户点了确认。
-     */
-    public static final String ACTION_CONFIRM = "confirm";
 
     private final Map<String, SseEmitter> emitters = new ConcurrentHashMap<>();
     private final DatabusAgentMessageMapper messageMapper;

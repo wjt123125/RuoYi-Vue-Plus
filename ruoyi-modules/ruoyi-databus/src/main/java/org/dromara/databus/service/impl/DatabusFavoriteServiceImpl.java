@@ -19,6 +19,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static org.dromara.databus.constant.CommonConstants.FAVORITE_TYPE_CHAIN;
+import static org.dromara.databus.constant.CommonConstants.FAVORITE_TYPE_COMPONENT;
+
 /**
  * 用户收藏 Service 实现。
  * <p>
@@ -31,16 +34,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Service
 public class DatabusFavoriteServiceImpl implements IDatabusFavoriteService {
-
-    /**
-     * 资源类型：链路
-     */
-    public static final String TYPE_CHAIN = "chain";
-
-    /**
-     * 资源类型：组件
-     */
-    public static final String TYPE_COMPONENT = "component";
 
     private final DatabusUserFavoriteMapper favoriteMapper;
 
@@ -59,11 +52,11 @@ public class DatabusFavoriteServiceImpl implements IDatabusFavoriteService {
         }
 
         List<Long> chainIds = rows.stream()
-            .filter(row -> TYPE_CHAIN.equals(row.getResourceType()))
+            .filter(row -> FAVORITE_TYPE_CHAIN.equals(row.getResourceType()))
             .map(DatabusUserFavorite::getResourceId)
             .toList();
         List<Long> componentIds = rows.stream()
-            .filter(row -> TYPE_COMPONENT.equals(row.getResourceType()))
+            .filter(row -> FAVORITE_TYPE_COMPONENT.equals(row.getResourceType()))
             .map(DatabusUserFavorite::getResourceId)
             .toList();
 
@@ -79,13 +72,13 @@ public class DatabusFavoriteServiceImpl implements IDatabusFavoriteService {
             DatabusFavoriteVo vo = new DatabusFavoriteVo();
             vo.setResourceType(row.getResourceType());
             vo.setResourceId(row.getResourceId());
-            if (TYPE_CHAIN.equals(row.getResourceType())) {
+            if (FAVORITE_TYPE_CHAIN.equals(row.getResourceType())) {
                 DatabusChain chain = chainMap.get(row.getResourceId());
                 if (chain != null) {
                     vo.setResourceName(chain.getChainName());
                     vo.setResourceCode(chain.getChainCode());
                 }
-            } else if (TYPE_COMPONENT.equals(row.getResourceType())) {
+            } else if (FAVORITE_TYPE_COMPONENT.equals(row.getResourceType())) {
                 DatabusComponent component = componentMap.get(row.getResourceId());
                 if (component != null) {
                     vo.setResourceName(component.getComponentName());
@@ -132,7 +125,7 @@ public class DatabusFavoriteServiceImpl implements IDatabusFavoriteService {
      * 资源类型白名单校验（chain / component）
      */
     private void validateResourceType(String resourceType) {
-        if (!TYPE_CHAIN.equals(resourceType) && !TYPE_COMPONENT.equals(resourceType)) {
+        if (!FAVORITE_TYPE_CHAIN.equals(resourceType) && !FAVORITE_TYPE_COMPONENT.equals(resourceType)) {
             throw new ServiceException("不支持资源类型：" + resourceType);
         }
     }

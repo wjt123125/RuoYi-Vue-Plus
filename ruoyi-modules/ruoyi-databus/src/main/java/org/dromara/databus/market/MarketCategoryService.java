@@ -10,7 +10,6 @@ import org.dromara.databus.domain.bo.MarketCategoryBo;
 import org.dromara.databus.domain.bo.MarketCategoryMergeBo;
 import org.dromara.databus.mapper.DatabusMarketCategoryMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
-import org.dromara.databus.market.support.MarketResourceTypes;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +17,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+
+import static org.dromara.databus.constant.MarketConstants.TYPE_CHAIN;
+import static org.dromara.databus.constant.MarketConstants.TYPE_COMPONENT;
+import static org.dromara.databus.constant.MarketConstants.TYPE_CONNECTOR;
 
 /**
  * 市场分类治理（新增 / 改名 / 排序 / 删除 / 合并）。
@@ -36,7 +39,7 @@ public class MarketCategoryService {
      * 分类允许的适用类型（空串＝通用）
      */
     private static final Set<String> ALLOWED_TYPES = Set.of(
-        "", MarketResourceTypes.COMPONENT, MarketResourceTypes.CHAIN, MarketResourceTypes.CONNECTOR);
+        "", TYPE_COMPONENT, TYPE_CHAIN, TYPE_CONNECTOR);
 
     private final DatabusMarketCategoryMapper categoryMapper;
 

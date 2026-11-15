@@ -34,7 +34,6 @@ import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.market.support.ChainForkRedirector;
-import org.dromara.databus.market.support.MarketResourceTypes;
 import org.dromara.databus.service.IDatabusChainService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +49,22 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import static org.dromara.databus.constant.ChainConstants.CHAIN_CODE_MAX_LEN;
+import static org.dromara.databus.constant.ChainConstants.CHAIN_NAME_MAX_LEN;
+import static org.dromara.databus.constant.ChainConstants.CHAIN_REF_TYPE;
+import static org.dromara.databus.constant.ChainConstants.COPY_CODE_SEQ_MAX;
+import static org.dromara.databus.constant.ChainConstants.COPY_CODE_SEQ_START;
+import static org.dromara.databus.constant.ChainConstants.COPY_NAME_SUFFIX;
+import static org.dromara.databus.constant.ChainConstants.DRAFT_VERSION;
+import static org.dromara.databus.constant.ChainConstants.REF_PATH_SEPARATOR;
+import static org.dromara.databus.constant.ChainConstants.TEMPLATE_DEFAULT_SORT;
+import static org.dromara.databus.constant.CommonConstants.TEMPLATE_FLAG_NO;
+import static org.dromara.databus.constant.CommonConstants.TEMPLATE_FLAG_YES;
+import static org.dromara.databus.constant.MarketConstants.STATUS_ONLINE;
+import static org.dromara.databus.constant.MarketConstants.STATUS_PENDING;
+import static org.dromara.databus.constant.MarketConstants.TYPE_CHAIN;
+import static org.dromara.databus.constant.MarketConstants.TYPE_COMPONENT;
 
 /**
  * 链路定义 Service 实现。
@@ -68,64 +83,9 @@ import java.util.stream.Collectors;
 public class DatabusChainServiceImpl implements IDatabusChainService {
 
     /**
-     * 草稿初始版本
-     */
-    private static final int DRAFT_VERSION = 1;
-
-    /**
-     * 精选模板标记（is_template：0否 1是）
-     */
-    private static final String TEMPLATE_FLAG_NO = "0";
-    private static final String TEMPLATE_FLAG_YES = "1";
-
-    /**
-     * 模板默认排序（未显式指定时）
-     */
-    private static final int TEMPLATE_DEFAULT_SORT = 0;
-
-    /**
-     * 链路名称/编码最大长度（与 Bo @Size 约束一致）
-     */
-    private static final int CHAIN_NAME_MAX_LEN = 100;
-    private static final int CHAIN_CODE_MAX_LEN = 100;
-
-    /**
-     * 副本名称后缀
-     */
-    private static final String COPY_NAME_SUFFIX = "副本";
-
-    /**
-     * 副本编码建议的起始序号（源编码_2、_3 ……）
-     */
-    private static final int COPY_CODE_SEQ_START = 2;
-
-    /**
-     * 副本编码建议序号上限（防御性，正常数据远到不了）
-     */
-    private static final int COPY_CODE_SEQ_MAX = 9999;
-
-    /**
      * 编码结尾「_数字」：建议值先剥离源编码既有 _N 尾缀，避免 xxx_2_2
      */
     private static final Pattern CODE_TRAILING_SEQ = Pattern.compile("_\\d+$");
-
-    /**
-     * 子流程引用节点的组件类型（与 ExpressParserEnum.CHAIN、前端画布同值）
-     */
-    private static final String CHAIN_REF_TYPE = "CHAIN";
-
-    /**
-     * 循环引用报错里的路径分隔符
-     */
-    private static final String REF_PATH_SEPARATOR = " → ";
-
-    /**
-     * 市场物料类型/状态（与 MarketResourceTypes / MarketStates 同值常量，改版冻结钩子使用）
-     */
-    private static final String MARKET_TYPE_CHAIN = "CHAIN";
-    private static final String MARKET_TYPE_COMPONENT = "COMPONENT";
-    private static final String MARKET_STATUS_ONLINE = "ONLINE";
-    private static final String MARKET_STATUS_PENDING = "PENDING";
 
     private final DatabusChainMapper chainMapper;
 
@@ -351,7 +311,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
      */
     private void cleanupInstallRecords(Collection<Long> ids) {
         List<DatabusInstall> installs = installMapper.selectList(Wrappers.<DatabusInstall>lambdaQuery()
-            .eq(DatabusInstall::getLocalResourceType, MarketResourceTypes.CHAIN)
+            .eq(DatabusInstall::getLocalResourceType, TYPE_CHAIN)
             .in(DatabusInstall::getLocalResourceId, ids));
         if (installs.isEmpty()) {
             return;
@@ -438,10 +398,10 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
      */
     private void freezeOnlineMarketItem(Long chainId) {
         marketItemMapper.update(null, Wrappers.<DatabusMarketItem>lambdaUpdate()
-            .eq(DatabusMarketItem::getResourceType, MARKET_TYPE_CHAIN)
+            .eq(DatabusMarketItem::getResourceType, TYPE_CHAIN)
             .eq(DatabusMarketItem::getSourceId, chainId)
-            .eq(DatabusMarketItem::getStatus, MARKET_STATUS_ONLINE)
-            .set(DatabusMarketItem::getStatus, MARKET_STATUS_PENDING)
+            .eq(DatabusMarketItem::getStatus, STATUS_ONLINE)
+            .set(DatabusMarketItem::getStatus, STATUS_PENDING)
             .set(DatabusMarketItem::getRemark, "")
             .set(DatabusMarketItem::getReviewBy, null)
             .set(DatabusMarketItem::getReviewTime, null)
@@ -480,7 +440,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         List<Long> closureChainIds = closure.values().stream().map(DatabusChain::getId).toList();
         Map<Long, DatabusMarketItem> chainItemMap = closureChainIds.isEmpty() ? Map.of()
             : marketItemMapper.selectList(Wrappers.<DatabusMarketItem>lambdaQuery()
-                    .eq(DatabusMarketItem::getResourceType, MARKET_TYPE_CHAIN)
+                    .eq(DatabusMarketItem::getResourceType, TYPE_CHAIN)
                     .in(DatabusMarketItem::getSourceId, closureChainIds))
                 .stream()
                 .collect(Collectors.toMap(DatabusMarketItem::getSourceId, item -> item, (a, b) -> a));
@@ -494,7 +454,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
             }
             if (Objects.equals(member.getCreateBy(), userId)) {
                 ChainPublishResultVo.GuideItemVo guide = new ChainPublishResultVo.GuideItemVo();
-                guide.setResourceType(MARKET_TYPE_CHAIN);
+                guide.setResourceType(TYPE_CHAIN);
                 guide.setSourceId(member.getId());
                 guide.setName(member.getChainName());
                 guideItems.add(guide);
@@ -521,7 +481,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
             List<Long> componentIds = componentMap.values().stream().map(DatabusComponent::getId).toList();
             Map<Long, DatabusMarketItem> componentItemMap = componentIds.isEmpty() ? Map.of()
                 : marketItemMapper.selectList(Wrappers.<DatabusMarketItem>lambdaQuery()
-                        .eq(DatabusMarketItem::getResourceType, MARKET_TYPE_COMPONENT)
+                        .eq(DatabusMarketItem::getResourceType, TYPE_COMPONENT)
                         .in(DatabusMarketItem::getSourceId, componentIds))
                     .stream()
                     .collect(Collectors.toMap(DatabusMarketItem::getSourceId, item -> item, (a, b) -> a));
@@ -533,7 +493,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
                 }
                 if (Objects.equals(component.getCreateBy(), userId)) {
                     ChainPublishResultVo.GuideItemVo guide = new ChainPublishResultVo.GuideItemVo();
-                    guide.setResourceType(MARKET_TYPE_COMPONENT);
+                    guide.setResourceType(TYPE_COMPONENT);
                     guide.setSourceId(component.getId());
                     guide.setName(component.getComponentName());
                     guideItems.add(guide);
@@ -547,7 +507,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
         // 联审入口（主链审核单）无从谈起。非作者发布他人链时静默跳过（上架仍属作者动作）。
         if (!chainItemMap.containsKey(chain.getId()) && Objects.equals(chain.getCreateBy(), userId)) {
             ChainPublishResultVo.GuideItemVo self = new ChainPublishResultVo.GuideItemVo();
-            self.setResourceType(MARKET_TYPE_CHAIN);
+            self.setResourceType(TYPE_CHAIN);
             self.setSourceId(chain.getId());
             self.setName(chain.getChainName());
             guideItems.add(0, self);

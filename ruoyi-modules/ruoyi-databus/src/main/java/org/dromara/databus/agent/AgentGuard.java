@@ -19,6 +19,10 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.dromara.databus.constant.AgentConstants.ACTION_CONFIRM;
+import static org.dromara.databus.constant.AgentConstants.EVENT_CARD_REPLY;
+import static org.dromara.databus.constant.AgentConstants.SINGLE_RUNNING;
+
 /**
  * 工具身份守卫（方案 §十五 守卫 ②–⑤）。
  * <p>
@@ -31,11 +35,6 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class AgentGuard {
-
-    /**
-     * 同一会话下多个进行中任务无法唯一定位身份，直接拒绝。
-     */
-    private static final int SINGLE_RUNNING = 1;
 
     private final DatabusAgentRunMapper runMapper;
     private final DatabusAgentMessageMapper messageMapper;
@@ -57,13 +56,13 @@ public class AgentGuard {
         }
         List<DatabusAgentMessage> replies = messageMapper.selectList(Wrappers.<DatabusAgentMessage>lambdaQuery()
             .eq(DatabusAgentMessage::getRunId, runId)
-            .eq(DatabusAgentMessage::getEventCode, AgentCardChannel.EVENT_CARD_REPLY)
+            .eq(DatabusAgentMessage::getEventCode, EVENT_CARD_REPLY)
             .orderByDesc(DatabusAgentMessage::getSeq));
         for (DatabusAgentMessage reply : replies) {
             try {
                 AgentCardReplyBo cardReply = JsonUtils.parseObject(reply.getContent(), AgentCardReplyBo.class);
                 if (cardReply != null) {
-                    return AgentCardChannel.ACTION_CONFIRM.equals(cardReply.getAction());
+                    return ACTION_CONFIRM.equals(cardReply.getAction());
                 }
             } catch (Exception e) {
                 log.warn("卡片回执解析失败 runId={}", runId, e);

@@ -68,6 +68,20 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
+import static org.dromara.databus.constant.AgentConstants.CONVERSATION_HISTORY_LIMIT;
+import static org.dromara.databus.constant.AgentConstants.DEFAULT_CONVERSATION_LIMIT;
+import static org.dromara.databus.constant.AgentConstants.EVENT_CARD;
+import static org.dromara.databus.constant.AgentConstants.EVENT_CARD_REPLY;
+import static org.dromara.databus.constant.AgentConstants.EVENT_RUN_LIFECYCLE_ENDED;
+import static org.dromara.databus.constant.AgentConstants.MAX_CONVERSATION_LIMIT;
+import static org.dromara.databus.constant.AgentConstants.OPERATION_CREATE;
+import static org.dromara.databus.constant.AgentConstants.PREVIOUS_SUMMARY_LIMIT;
+import static org.dromara.databus.constant.AgentConstants.SNAIL_AI_SUCCESS;
+import static org.dromara.databus.constant.AgentConstants.STEP_DIGEST_LIMIT;
+import static org.dromara.databus.constant.AgentConstants.TITLE_LIMIT;
+import static org.dromara.databus.constant.CommonConstants.OWNER_SYSTEM;
+import static org.dromara.databus.constant.CommonConstants.STATUS_DRAFT;
+
 /**
  * AI agent 任务服务实现。
  * <p>
@@ -84,42 +98,9 @@ import java.util.regex.Pattern;
 public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
 
     /**
-     * 收口消息的事件编码（推给前端的最终文字，同时用于刷新回放）。
-     */
-    private static final String EVENT_RUN_END = "databus:agent:run-end";
-
-    /**
-     * SnailAI 返回的成功状态码。
-     */
-    private static final int SNAIL_AI_SUCCESS = 1;
-
-    /**
-     * 会话历史最多回放多少轮（一次刷新不该拉全量历史）。
-     */
-    private static final int CONVERSATION_HISTORY_LIMIT = 50;
-
-    /**
-     * 会话列表默认 / 最大条数。
-     */
-    private static final int DEFAULT_CONVERSATION_LIMIT = 50;
-    private static final int MAX_CONVERSATION_LIMIT = 100;
-
-    /**
-     * 快照 operation=CREATE：该轮回滚的语义是删除整条新建链路，而不是写回结构。
-     */
-    private static final String OPERATION_CREATE = "CREATE";
-    private static final String STATUS_DRAFT = "DRAFT";
-    private static final String OWNER_SYSTEM = "SYSTEM";
-
-    /**
-     * 会话标题清洗后的上限：只防超长传输，真正的省略交给前端按栏宽做。
-     */
-    private static final int TITLE_LIMIT = 200;
-
-    /**
      * 标题清洗用：整段代码块、行首 markdown 记号、行内反引号/星号、连续空白。
      * <p>
-     * 刻意不动下划线——用户问句里常有 {@code chain_save}、{@code field_mapping} 这类标识符。
+     * 刻意不动下划线——用户问句里常有 {@code chain_draft_save}、{@code field_mapping} 这类标识符。
      */
     private static final Pattern TITLE_CODE_BLOCK = Pattern.compile("```[\\s\\S]*?```");
     private static final Pattern TITLE_LINE_PREFIX = Pattern.compile("(?m)^\\s*(?:#{1,6}|[-*+]|>)\\s+");
@@ -130,16 +111,6 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
      * 会话 id 白名单：只接受 UUID / 业务自生成的安全字符，拒绝把任意串塞进 SnailAI 会话（红线 15）。
      */
     private static final Pattern CONVERSATION_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{8,64}$");
-
-    /**
-     * 上一轮工具摘要总长度上限（超出明确标注截断，不静默丢弃）。
-     */
-    private static final int PREVIOUS_SUMMARY_LIMIT = 4000;
-
-    /**
-     * 单条工具入参 / 返回摘要长度上限。
-     */
-    private static final int STEP_DIGEST_LIMIT = 500;
 
     /**
      * 摘要脱敏：token / password / secret / api-key / authorization 的值一律打码。
@@ -197,7 +168,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         runMapper.insert(run);
         // 卡片回执落库：工具层据此判定 userConfirmed，模型自报的 true 不单独作数（运行时 §16）
         if (bo.getCardReply() != null) {
-            appendMessage(run.getRunId(), AgentCardChannel.EVENT_CARD_REPLY, null,
+            appendMessage(run.getRunId(), EVENT_CARD_REPLY, null,
                 JsonUtils.toJsonString(bo.getCardReply()));
         }
         return new AgentChatStartVo(run.getRunId(), conversationId);
@@ -401,12 +372,12 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         List<String> runIds = runs.stream().map(AgentRunVo::getRunId).toList();
         List<DatabusAgentMessage> messages = messageMapper.selectList(Wrappers.<DatabusAgentMessage>lambdaQuery()
             .in(DatabusAgentMessage::getRunId, runIds)
-            .in(DatabusAgentMessage::getEventCode, AgentCardChannel.EVENT_CARD, AgentCardChannel.EVENT_CARD_REPLY)
+            .in(DatabusAgentMessage::getEventCode, EVENT_CARD, EVENT_CARD_REPLY)
             .orderByAsc(DatabusAgentMessage::getSeq));
         Map<String, List<String>> cardsByRun = new LinkedHashMap<>();
         Map<String, List<String>> repliesByRun = new LinkedHashMap<>();
         for (DatabusAgentMessage message : messages) {
-            boolean isCard = AgentCardChannel.EVENT_CARD.equals(message.getEventCode());
+            boolean isCard = EVENT_CARD.equals(message.getEventCode());
             Map<String, List<String>> target = isCard ? cardsByRun : repliesByRun;
             target.computeIfAbsent(message.getRunId(), key -> new ArrayList<>()).add(message.getContent());
         }
@@ -725,7 +696,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             if (StringUtils.hasText(report)) {
                 // 同一会话可能改过多条链，收口消息归属到本轮最后一条链路
                 Long lastChainId = runMapper.selectLastChainId(run.getRunId());
-                appendMessage(run.getRunId(), EVENT_RUN_END, lastChainId, report);
+                appendMessage(run.getRunId(), EVENT_RUN_LIFECYCLE_ENDED, lastChainId, report);
             }
         });
     }

@@ -3,6 +3,8 @@ package org.dromara.databus.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.yomahub.liteflow.core.NodeComponent;
+import com.yomahub.liteflow.flow.FlowBus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.domain.PageResult;
@@ -11,6 +13,7 @@ import org.dromara.common.core.utils.MapstructUtils;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.component.schema.enums.EditorKind;
 import org.dromara.databus.component.schema.enums.WidgetKind;
 import org.dromara.databus.component.schema.model.CmpSchema;
@@ -23,6 +26,8 @@ import org.dromara.databus.domain.DatabusComponentDomain;
 import org.dromara.databus.domain.DatabusComponentGroup;
 import org.dromara.databus.domain.DatabusComponentVersion;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
+import org.dromara.databus.domain.bo.ScriptDraftBo;
+import org.dromara.databus.domain.bo.ScriptProbeBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
 import org.dromara.databus.enums.ComponentStatusEnum;
 import org.dromara.databus.enums.OwnerTypeEnum;
@@ -34,8 +39,12 @@ import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.ComponentSchemaBody;
 import org.dromara.databus.domain.vo.DatabusComponentVersionVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
+import org.dromara.databus.domain.vo.ScriptDraftResultVo;
+import org.dromara.databus.domain.vo.ScriptProbeResultVo;
 import org.dromara.databus.domain.vo.ScriptRuntimeVo;
 import org.dromara.databus.domain.vo.ScriptSaveResultVo;
+import org.dromara.databus.executor.DatabusExecutionResult;
+import org.dromara.databus.executor.DatabusExecutor;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentConnectorDepMapper;
 import org.dromara.databus.mapper.DatabusComponentDomainMapper;
@@ -57,7 +66,18 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import static org.dromara.databus.constant.CommonConstants.FLAG_YES;
+import static org.dromara.databus.constant.ComponentConstants.CATEGORY_DEFAULT;
+import static org.dromara.databus.constant.ComponentConstants.DEPRECATE_NOTE_RETIRED;
+import static org.dromara.databus.constant.ComponentConstants.DEPRECATED_NO;
+import static org.dromara.databus.constant.ComponentConstants.DEPRECATED_YES;
+import static org.dromara.databus.constant.ComponentConstants.PROBE_CHAIN_PREFIX;
+import static org.dromara.databus.constant.ComponentConstants.PROBE_NODE_PREFIX;
+import static org.dromara.databus.constant.ComponentConstants.SCRIPT_LANG_JAVA;
 
 /**
  * 组件元信息 Service 实现
@@ -70,30 +90,19 @@ import java.util.stream.Collectors;
 public class DatabusComponentServiceImpl implements IDatabusComponentService {
 
     /**
-     * 正常（未废弃）
+     * 危险 API 黑名单：只在草稿/探针结果里提示，不阻断（草稿本来就要人审）。
+     * 命中一条即回传一句人话原因，让审阅人一眼看到「这段脚本动了什么不该动的」。
      */
-    private static final String DEPRECATED_NO = "0";
-
-    /**
-     * 已废弃（软退役，§十二-5）：删除被链路引用的组件时不物理删，置 1 停止物料面板投放，
-     * 存量链路按 code 引用照常运行
-     */
-    private static final String DEPRECATED_YES = "1";
-
-    /**
-     * 软退役默认备注（原作者删除被引用组件时写入）
-     */
-    private static final String DEPRECATE_NOTE_RETIRED = "原作者已删除该组件，存量链路仍可运行，请尽快替换";
-
-    /**
-     * 一期脚本语言固定 java（javax.tools 完整类源码）
-     */
-    private static final String SCRIPT_LANG_JAVA = "java";
-
-    /**
-     * 字典表 char(1) 标记的肯定值（databus_component_domain.is_default）
-     */
-    private static final String FLAG_YES = "Y";
+    private static final List<DangerPattern> DANGEROUS_PATTERNS = List.of(
+        new DangerPattern(Pattern.compile("System\\s*\\.\\s*exit\\s*\\("), "调用 System.exit 会终止整个服务进程"),
+        new DangerPattern(Pattern.compile("Runtime\\s*\\.\\s*getRuntime\\s*\\("), "调用 Runtime 可执行系统命令或改动 JVM"),
+        new DangerPattern(Pattern.compile("\\bProcessBuilder\\b"), "使用 ProcessBuilder 可启动外部进程"),
+        new DangerPattern(Pattern.compile("\\bFiles\\s*\\.\\s*(write|delete|move|copy)\\s*\\("), "直接写/删本地文件"),
+        new DangerPattern(Pattern.compile("new\\s+FileOutputStream\\s*\\("), "直接写本地文件"),
+        new DangerPattern(Pattern.compile("\\bClass\\s*\\.\\s*forName\\s*\\("), "反射加载任意类"),
+        new DangerPattern(Pattern.compile("new\\s+Thread\\s*\\("), "组件内自建线程，可能逃出链路生命周期"),
+        new DangerPattern(Pattern.compile("while\\s*\\(\\s*true\\s*\\)"), "存在死循环风险")
+    );
 
     private final DatabusComponentMapper componentMapper;
 
@@ -112,6 +121,11 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
     private final JavaSourceCompiler scriptCompiler;
 
     private final ScriptComponentRegistrar scriptRegistrar;
+
+    /**
+     * 探针试跑复用试运行执行路径（executeByEl）：不建链路台账、不写执行记录
+     */
+    private final DatabusExecutor databusExecutor;
 
     @Override
     public DatabusComponentVo queryById(Long id) {
@@ -216,6 +230,10 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
             lqw.ne(DatabusComponent::getStatus, ComponentStatusEnum.DRAFT.getCode());
         } else {
             lqw.eq(DatabusComponent::getStatus, bo.getStatus());
+            if (ComponentStatusEnum.DRAFT.getCode().equals(bo.getStatus())) {
+                // 草稿只有发起人可见：所有权决定「谁能改」，不能出现在别人的列表里
+                lqw.eq(DatabusComponent::getCreateBy, LoginHelper.getUserId());
+            }
         }
         lqw.orderByAsc(DatabusComponent::getCategory)
             .orderByDesc(DatabusComponent::getCreateTime);
@@ -464,6 +482,226 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
     @Override
     public List<ScriptRuntimeVo> queryRuntimeHealth() {
         return scriptRegistrar.snapshot();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ScriptDraftResultVo saveScriptDraft(ScriptDraftBo bo) {
+        if (StringUtils.isBlank(bo.getScriptBody())) {
+            throw new ServiceException("脚本正文不能为空");
+        }
+        // 编译先行：编不过就不建草稿行，审阅页永远不会出现「点开全是红波浪线」的草稿
+        ScriptArtifact artifact = scriptCompiler.compile(bo.getScriptBody());
+        List<String> risks = scanDangerousApis(bo.getScriptBody());
+
+        DatabusComponent row;
+        if (bo.getId() == null) {
+            String code = StringUtils.trim(bo.getComponentCode());
+            if (StringUtils.isBlank(code)) {
+                throw new ServiceException("新建草稿必须给组件编码 componentCode");
+            }
+            if (StringUtils.isBlank(bo.getComponentName())) {
+                throw new ServiceException("新建草稿必须给组件名称 componentName");
+            }
+            Long count = componentMapper.selectCount(Wrappers.<DatabusComponent>lambdaQuery()
+                .eq(DatabusComponent::getComponentCode, code));
+            if (count != null && count > 0) {
+                throw new ServiceException("组件编码'" + code + "'已存在，改草稿请传 componentId");
+            }
+            row = new DatabusComponent();
+            row.setComponentCode(code);
+            row.setComponentName(bo.getComponentName().trim());
+            row.setCategory(StringUtils.isBlank(bo.getCategory()) ? CATEGORY_DEFAULT : bo.getCategory().trim());
+            row.setGroupName(StringUtils.trimToNull(bo.getGroupName()));
+            row.setDescription(StringUtils.trimToNull(bo.getDescription()));
+            row.setRemark(StringUtils.trimToNull(bo.getRemark()));
+            row.setStatus(ComponentStatusEnum.DRAFT.getCode());
+            row.setDeprecated(DEPRECATED_NO);
+            row.setOwnerType(OwnerTypeEnum.USER.getCode());
+            row.setVersion(0);
+            // 契约三列此刻只是「预演」：草稿不进物料面板，采纳时会随 saveScript 重算一遍
+            row.setNodeType(artifact.nodeType().name());
+            row.setEditor(EditorKind.FORM.jsonValue());
+            row.setParamSchema(artifact.paramSchemaJson());
+            row.setDataExample(artifact.dataExample());
+            // 正文必须落库：审阅页靠它渲染源码、试跑端点也靠它取源码，漏存等于草稿不可审不可跑
+            row.setScriptLang(SCRIPT_LANG_JAVA);
+            row.setScriptBody(bo.getScriptBody());
+            row.setCreateBy(bo.getCreateBy());
+            componentMapper.insert(row);
+        } else {
+            row = requireComponent(bo.getId());
+            if (!ComponentStatusEnum.DRAFT.getCode().equals(row.getStatus())) {
+                throw new ServiceException("只能更新草稿组件，当前状态为 " + row.getStatus()
+                    + "；要改已启用的件请走脚本编辑与保存");
+            }
+            if (bo.getCreateBy() != null && !bo.getCreateBy().equals(row.getCreateBy())) {
+                throw new ServiceException("只能更新自己创建的草稿");
+            }
+            DatabusComponent update = new DatabusComponent();
+            update.setId(row.getId());
+            update.setComponentName(StringUtils.trimToNull(bo.getComponentName()));
+            update.setGroupName(StringUtils.trimToNull(bo.getGroupName()));
+            update.setDescription(StringUtils.trimToNull(bo.getDescription()));
+            update.setRemark(StringUtils.trimToNull(bo.getRemark()));
+            if (StringUtils.isNotBlank(bo.getCategory())) {
+                update.setCategory(bo.getCategory().trim());
+            }
+            update.setScriptBody(bo.getScriptBody());
+            update.setNodeType(artifact.nodeType().name());
+            update.setEditor(EditorKind.FORM.jsonValue());
+            update.setParamSchema(artifact.paramSchemaJson());
+            if (artifact.dataExample() != null) {
+                update.setDataExample(artifact.dataExample());
+            }
+            componentMapper.updateById(update);
+            row.setScriptBody(bo.getScriptBody());
+        }
+
+        ScriptDraftResultVo result = new ScriptDraftResultVo();
+        result.setId(row.getId());
+        result.setComponentCode(row.getComponentCode());
+        result.setComponentName(row.getComponentName());
+        result.setStatus(ComponentStatusEnum.DRAFT.getCode());
+        result.setNodeType(artifact.nodeType().name());
+        result.setParamSchema(artifact.paramSchemaJson());
+        result.setDataExample(artifact.dataExample());
+        result.setFieldCount(artifact.fields().size());
+        result.setRisks(risks);
+        log.info("[databus-script] 脚本草稿已落库 id={}, code={}, 发起人={}",
+            row.getId(), row.getComponentCode(), bo.getCreateBy());
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ScriptSaveResultVo adoptScriptDraft(Long id) {
+        DatabusComponent row = requireComponent(id);
+        if (!ComponentStatusEnum.DRAFT.getCode().equals(row.getStatus())) {
+            throw new ServiceException("只有草稿组件可以采纳，当前状态为 " + row.getStatus());
+        }
+        if (StringUtils.isBlank(row.getScriptBody())) {
+            throw new ServiceException("草稿没有脚本正文，无法采纳");
+        }
+        // 先转状态再 saveScript：saveScript 内会按 contract 重新编译并注册 FlowBus，
+        // 任一步失败整个事务回滚，不会留下「已启用但跑不起来」的件
+        componentMapper.update(null, Wrappers.<DatabusComponent>lambdaUpdate()
+            .set(DatabusComponent::getStatus, ComponentStatusEnum.ENABLED.getCode())
+            .eq(DatabusComponent::getId, id));
+        ScriptSaveBo saveBo = new ScriptSaveBo();
+        saveBo.setId(id);
+        saveBo.setScriptLang(StringUtils.isBlank(row.getScriptLang()) ? SCRIPT_LANG_JAVA : row.getScriptLang());
+        saveBo.setScriptBody(row.getScriptBody());
+        ScriptSaveResultVo result = saveScript(saveBo);
+        log.info("[databus-script] 脚本草稿已采纳 code={}", row.getComponentCode());
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Boolean rejectScriptDraft(Long id) {
+        DatabusComponent row = requireComponent(id);
+        if (!ComponentStatusEnum.DRAFT.getCode().equals(row.getStatus())) {
+            throw new ServiceException("只有草稿组件可以拒绝，当前状态为 " + row.getStatus());
+        }
+        // 草稿从未注册 FlowBus、未被链路引用，物理删行即可；forget 只清宿主登记里的残留
+        boolean removed = componentMapper.deleteById(id) > 0;
+        if (removed) {
+            scriptRegistrar.forget(row.getComponentCode());
+            log.info("[databus-script] 脚本草稿已拒绝删除 code={}", row.getComponentCode());
+        }
+        return removed;
+    }
+
+    @Override
+    public ScriptProbeResultVo probeRun(ScriptProbeBo bo) {
+        if (StringUtils.isBlank(bo.getScriptBody())) {
+            throw new ServiceException("探针试跑必须给脚本正文");
+        }
+        ScriptArtifact artifact = scriptCompiler.compile(bo.getScriptBody());
+        // 只造实例不登记：探针借 FlowBus 临时上岗，跑完立刻摘，不进 active/health 台账
+        NodeComponent instance = scriptRegistrar.instantiate(artifact);
+        String probeNodeCode = PROBE_NODE_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String probeChainId = PROBE_CHAIN_PREFIX + UUID.randomUUID().toString().replace("-", "");
+
+        ScriptProbeResultVo vo = new ScriptProbeResultVo();
+        vo.setNodeType(artifact.nodeType().name());
+        vo.setRisks(scanDangerousApis(bo.getScriptBody()));
+        try {
+            FlowBus.addManagedNode(probeNodeCode, instance);
+        } catch (Exception e) {
+            throw new ServiceException("探针节点注册 FlowBus 失败：" + e.getMessage(), e);
+        }
+        try {
+            DatabusExecutionResult result = databusExecutor.executeByEl(
+                "THEN(" + probeNodeCode + ")", parseProbeRequest(bo.getRequestData()), null, probeChainId);
+            vo.setSuccess(result.isSuccess());
+            vo.setCostMs(result.getCostTime());
+            vo.setMessage(result.getMessage());
+            vo.setOutput(result.getContextJson());
+            vo.setNodeErrors(result.getSteps().stream()
+                .filter(step -> !step.isSuccess())
+                .map(step -> step.getNodeId() + "：" + step.getErrorMessage())
+                .toList());
+            return vo;
+        } finally {
+            removeProbe(probeNodeCode, probeChainId);
+        }
+    }
+
+    /**
+     * 摘探针：链和节点都按自己的临时 id 精确移除。
+     * <p>
+     * 摘失败只 warn 不抛——执行结果已经拿到，清理是收尾动作；漏摘的节点带
+     * {@code __agent_probe_} 前缀，重启即消失，也不会有链路引用它。
+     */
+    private void removeProbe(String probeNodeCode, String probeChainId) {
+        try {
+            FlowBus.removeChain(probeChainId);
+        } catch (Exception e) {
+            log.warn("[databus-script] 探针链清理失败 chainId={}：{}", probeChainId, e.getMessage());
+        }
+        try {
+            FlowBus.removeNode(probeNodeCode);
+        } catch (Exception e) {
+            log.warn("[databus-script] 探针节点清理失败 nodeId={}：{}", probeNodeCode, e.getMessage());
+        }
+    }
+
+    /**
+     * 探针入参：空串按空对象跑；非空必须是合法 JSON，否则直接给人话错误（别把解析异常甩给模型）。
+     */
+    private Object parseProbeRequest(String requestData) {
+        if (StringUtils.isBlank(requestData)) {
+            return new LinkedHashMap<String, Object>();
+        }
+        try {
+            return JsonUtils.parseObject(requestData, Object.class);
+        } catch (Exception e) {
+            throw new ServiceException("requestData 不是合法 JSON：" + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 危险 API 自查：命中即回传人话原因，不阻断落草稿/试跑——草稿本来就要人审。
+     */
+    private List<String> scanDangerousApis(String source) {
+        if (StringUtils.isBlank(source)) {
+            return List.of();
+        }
+        List<String> hits = new ArrayList<>();
+        for (DangerPattern danger : DANGEROUS_PATTERNS) {
+            if (danger.pattern().matcher(source).find()) {
+                hits.add(danger.reason());
+            }
+        }
+        return hits;
+    }
+
+    /**
+     * 危险 API 黑名单条目：正则 + 命中原因
+     */
+    private record DangerPattern(Pattern pattern, String reason) {
     }
 
     private DatabusComponent requireComponent(Long id) {

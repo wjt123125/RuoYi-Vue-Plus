@@ -2,6 +2,8 @@ package org.dromara.databus.domain.vo;
 
 import java.util.List;
 
+import static org.dromara.databus.constant.ComponentConstants.CURRENT_SCHEMA_VERSION;
+
 /**
  * /options 响应包络：带 schemaVersion 应对契约演进（schema JSON 契约 §5.1）。
  *
@@ -10,9 +12,6 @@ import java.util.List;
  * @author databus
  */
 public record ComponentOptionsVo(int schemaVersion, List<ComponentOptionVo> components) {
-
-    /** 当前 schema 契约版本。 */
-    public static final int CURRENT_SCHEMA_VERSION = 1;
 
     public ComponentOptionsVo {
         components = components == null ? List.of() : List.copyOf(components);

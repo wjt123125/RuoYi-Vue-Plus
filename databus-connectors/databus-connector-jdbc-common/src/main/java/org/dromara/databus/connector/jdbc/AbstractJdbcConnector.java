@@ -34,6 +34,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
+import static org.dromara.databus.connector.jdbc.JdbcConst.ARG_PREVIEW_LEN;
+import static org.dromara.databus.connector.jdbc.JdbcConst.COMPONENT_BATCH;
+import static org.dromara.databus.connector.jdbc.JdbcConst.COMPONENT_EXECUTE;
+import static org.dromara.databus.connector.jdbc.JdbcConst.COMPONENT_QUERY;
+import static org.dromara.databus.connector.jdbc.JdbcConst.CONNECTOR_FAMILY;
+import static org.dromara.databus.connector.jdbc.JdbcConst.CONNECTOR_ICON;
+import static org.dromara.databus.connector.jdbc.JdbcConst.DEFAULT_BATCH_SIZE;
+import static org.dromara.databus.connector.jdbc.JdbcConst.GROUP_ADVANCED;
+import static org.dromara.databus.connector.jdbc.JdbcConst.GROUP_MAIN;
+import static org.dromara.databus.connector.jdbc.JdbcConst.GROUP_URL;
+import static org.dromara.databus.connector.jdbc.JdbcConst.OPERATION_BATCH;
+import static org.dromara.databus.connector.jdbc.JdbcConst.OPERATION_EXECUTE;
+import static org.dromara.databus.connector.jdbc.JdbcConst.OPERATION_QUERY;
+
 /**
  * JDBC 连接器公共实现（方案 §三 / §四 / §六 / §七）。
  *
@@ -64,33 +78,11 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractJdbcConnector.class);
 
-    /** operation 名（§3.3，行业中立命名，不沿用 BPM rdsExecute 的 getString/getMap/... 八方法） */
-    public static final String OPERATION_QUERY = "query";
-    public static final String OPERATION_EXECUTE = "execute";
-    public static final String OPERATION_BATCH = "batch";
-
-    /** 组件注册名（§3.3 / §8.1：用户心智是「数据库」不是「JDBC」，故用 db* 前缀且不带协议名） */
-    private static final String CMP_QUERY = "dbQuery";
-    private static final String CMP_EXECUTE = "dbExecute";
-    private static final String CMP_BATCH = "dbBatch";
-
-    /** 连接器族（§8.3）：组件按族匹配，一个 dbQuery 服务所有 jdbc-* 库 */
-    private static final String FAMILY = "jdbc";
-
-    /** 图标（与平台 ProtocolJdbc 系组件同一枚，物料观感一致） */
-    private static final String ICON = "ph:database";
-
     /** resultMode 合法取值（§3.3 归位关系：first←getMap、rows←getMaps、scalar←getString/getInt/...） */
     private static final List<String> RESULT_MODES = List.of("rows", "first", "scalar");
 
-    /** 探活语句的查询超时（秒）：与 §3.5 的 3000ms 建连超时同量级，不留「连上了但探活挂死」的口子 */
-    private static final int PROBE_QUERY_TIMEOUT_SEC = 3;
-
-    /** 批量默认批大小 */
-    private static final int DEFAULT_BATCH_SIZE = 100;
-
-    /** logSql=true 时每个参数只回显的前缀长度（§7.3：args 可能含身份证等敏感数据） */
-    private static final int ARG_PREVIEW_LEN = 8;
+    /** 探活语句的查询超时（秒）：直接由 §3.5 的建连超时换算，不留「连上了但探活挂死」的口子 */
+    private static final int PROBE_QUERY_TIMEOUT_SEC = JdbcConnectionCfg.PROBE_TIMEOUT_MS / 1000;
 
     /** opts 传 null 时的缺省：四个字段全空，等于一律取连接配置里的值 */
     private static final QueryOptions DEFAULT_OPTIONS = new QueryOptions(null, null, null, null);
@@ -129,8 +121,8 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
         ConnectorDescriptor descriptor = new ConnectorDescriptor();
         descriptor.setType(type.getType());
         descriptor.setLabel(type.getLabel());
-        descriptor.setIcon(ICON);
-        descriptor.setFamily(FAMILY);
+        descriptor.setIcon(CONNECTOR_ICON);
+        descriptor.setFamily(CONNECTOR_FAMILY);
         descriptor.setConfigSchema(configSchema(type));
         descriptor.setGroups(configGroups());
 
@@ -139,11 +131,6 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
         descriptor.getOperations().add(batchOperation());
         return descriptor;
     }
-
-    /** 分组键：常规（主组）/ 连接串 / 高级 */
-    private static final String GROUP_MAIN = "default";
-    private static final String GROUP_URL = "url";
-    private static final String GROUP_ADVANCED = "advanced";
 
     /**
      * tab 顺序：常规 → 连接串 → 高级。
@@ -231,7 +218,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
 
     /** §3.3 / §8.1：query 的参数与产出 */
     private OperationDef queryOperation() {
-        OperationDef op = operation(OPERATION_QUERY, "SQL 查询", CMP_QUERY,
+        OperationDef op = operation(OPERATION_QUERY, "SQL 查询", COMPONENT_QUERY,
             List.of("rows", "row", "value", "rowCount", "columns"));
         op.getParams().put("sql", text("SQL", true, null, null, "TEXTAREA", null,
             "PreparedStatement + ? 绑定，SQL 文本原样透传不做方言转换"));
@@ -257,7 +244,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
 
     /** §3.3 / §8.1：execute 的参数与产出 */
     private OperationDef executeOperation() {
-        OperationDef op = operation(OPERATION_EXECUTE, "SQL 执行", CMP_EXECUTE,
+        OperationDef op = operation(OPERATION_EXECUTE, "SQL 执行", COMPONENT_EXECUTE,
             List.of("affectedRows", "generatedKeys"));
         op.getParams().put("sql", text("SQL", true, null, null, "TEXTAREA", null,
             "INSERT / UPDATE / DELETE / DDL；单组件内包一个事务，组件结束 commit、异常 rollback。"
@@ -272,7 +259,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
 
     /** §3.3 / §8.1：batch 的参数与产出 */
     private OperationDef batchOperation() {
-        OperationDef op = operation(OPERATION_BATCH, "批量执行", CMP_BATCH,
+        OperationDef op = operation(OPERATION_BATCH, "批量执行", COMPONENT_BATCH,
             List.of("affectedRows", "batchCount"));
         op.getParams().put("sql", text("SQL", true, null, null, "TEXTAREA", null,
             "同一条语句配多组参数；整体包在一个事务里，任一批失败全部回滚"));

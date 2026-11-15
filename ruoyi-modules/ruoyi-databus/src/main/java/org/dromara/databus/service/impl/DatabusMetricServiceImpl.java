@@ -38,6 +38,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import static org.dromara.databus.constant.CommonConstants.METRIC_DEFAULT_HOURS;
+import static org.dromara.databus.constant.CommonConstants.METRIC_DEFAULT_STREAM_LIMIT;
+import static org.dromara.databus.constant.CommonConstants.METRIC_DEFAULT_TOP_N;
+import static org.dromara.databus.constant.CommonConstants.METRIC_MAX_HOURS;
+import static org.dromara.databus.constant.CommonConstants.METRIC_MAX_STREAM_LIMIT;
+import static org.dromara.databus.constant.CommonConstants.METRIC_MAX_TOP_N;
+
 /**
  * 监控指标聚合 Service 实现。
  * <p>
@@ -58,36 +65,6 @@ import java.util.Objects;
 @RequiredArgsConstructor
 @Service
 public class DatabusMetricServiceImpl implements IDatabusMetricService {
-
-    /**
-     * 概览/趋势/排行榜默认窗口小时数。
-     */
-    private static final int DEFAULT_HOURS = 24;
-
-    /**
-     * 窗口小时数上限（30 天，与指标宽表保留期对齐）。
-     */
-    private static final int MAX_HOURS = 720;
-
-    /**
-     * 排行榜默认条数。
-     */
-    private static final int DEFAULT_TOP_N = 10;
-
-    /**
-     * 排行榜条数上限。
-     */
-    private static final int MAX_TOP_N = 50;
-
-    /**
-     * 错误流默认条数。
-     */
-    private static final int DEFAULT_STREAM_LIMIT = 20;
-
-    /**
-     * 错误流条数上限。
-     */
-    private static final int MAX_STREAM_LIMIT = 100;
 
     private final DatabusExecutionMapper executionMapper;
 
@@ -327,9 +304,9 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
      */
     private int clampHours(int hours) {
         if (hours <= 0) {
-            return DEFAULT_HOURS;
+            return METRIC_DEFAULT_HOURS;
         }
-        return Math.min(hours, MAX_HOURS);
+        return Math.min(hours, METRIC_MAX_HOURS);
     }
 
     /**
@@ -337,9 +314,9 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
      */
     private int clampTopN(int topN) {
         if (topN <= 0) {
-            return DEFAULT_TOP_N;
+            return METRIC_DEFAULT_TOP_N;
         }
-        return Math.min(topN, MAX_TOP_N);
+        return Math.min(topN, METRIC_MAX_TOP_N);
     }
 
     /**
@@ -347,9 +324,9 @@ public class DatabusMetricServiceImpl implements IDatabusMetricService {
      */
     private int clampStreamLimit(int limit) {
         if (limit <= 0) {
-            return DEFAULT_STREAM_LIMIT;
+            return METRIC_DEFAULT_STREAM_LIMIT;
         }
-        return Math.min(limit, MAX_STREAM_LIMIT);
+        return Math.min(limit, METRIC_MAX_STREAM_LIMIT);
     }
 
     /**

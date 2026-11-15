@@ -61,4 +61,20 @@ public final class BpmConst {
     public static final String RESP_MSG = "msg";
     public static final String RESP_ERROR_CODE = "errorCode";
     public static final String RESP_OK = "ok";
+
+    /* ---------------- 连接器标识 ---------------- */
+
+    /** Connector 类型标识，全局唯一 */
+    public static final String CONNECTOR_TYPE = "bpmHttp";
+
+    /* ---------------- 网关公共参数 ---------------- */
+
+    /** 平台固定签名算法标识（公共参数 sig_method 的值，不可改） */
+    public static final String SIG_METHOD = "HmacMD5";
+
+    /** 响应格式（公共参数 format 的值） */
+    public static final String FORMAT_JSON = "json";
+
+    /** form 业务参数名（BPM 端 @Param("payload") 绑定，JSON 字符串参与签名；不用 "body" 避开平台 type=body 验签分支） */
+    public static final String PARAM_PAYLOAD = "payload";
 }

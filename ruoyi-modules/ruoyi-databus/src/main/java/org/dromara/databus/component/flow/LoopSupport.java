@@ -5,6 +5,8 @@ import com.yomahub.liteflow.core.NodeForComponent;
 import com.yomahub.liteflow.core.NodeIteratorComponent;
 import org.dromara.databus.context.DatabusContext;
 
+import static org.dromara.databus.constant.ChainConstants.PROBE_HARD_LIMIT;
+
 /**
  * 循环索引占位符与 LiteFlow 循环下标的对接工具（规格档 databus-loop-component.md §3）。
  * <p>
@@ -27,9 +29,6 @@ import org.dromara.databus.context.DatabusContext;
  * @author databus
  */
 public final class LoopSupport {
-
-    /** 防御性上限：真实嵌套深度超过该值视为探测异常（业务上限由 DatabusContext 校验为 3 层）。 */
-    private static final int PROBE_HARD_LIMIT = 32;
 
     private LoopSupport() {
     }

@@ -43,6 +43,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.dromara.databus.constant.AlertConstants.DEFAULT_WINDOW_MINUTES;
+import static org.dromara.databus.constant.CommonConstants.FLAG_YES;
+
 /**
  * 数据总线告警引擎 Service 实现。
  * <p>
@@ -68,16 +71,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 @Service
 public class DatabusAlertServiceImpl implements IDatabusAlertService {
-
-    /**
-     * 启用标记。
-     */
-    private static final String ENABLED_YES = "Y";
-
-    /**
-     * 窗口分钟缺省值（表列默认 5，此处兜底异常数据）。
-     */
-    private static final int DEFAULT_WINDOW_MINUTES = 5;
 
     /**
      * 规则级评估锁（规则数有限，Map 不清理）；防事件评估与定时评估并发重复通知。
@@ -116,7 +109,7 @@ public class DatabusAlertServiceImpl implements IDatabusAlertService {
         validateNotifyChannels(bo);
         DatabusAlertRule add = MapstructUtils.convert(bo, DatabusAlertRule.class);
         add.setId(null);
-        add.setEnabled(StringUtils.isBlank(bo.getEnabled()) ? ENABLED_YES : bo.getEnabled());
+        add.setEnabled(StringUtils.isBlank(bo.getEnabled()) ? FLAG_YES : bo.getEnabled());
         normalizeThreshold(add);
         return ruleMapper.insert(add) > 0;
     }
@@ -129,7 +122,7 @@ public class DatabusAlertServiceImpl implements IDatabusAlertService {
         validateRuleType(bo);
         validateNotifyChannels(bo);
         DatabusAlertRule update = MapstructUtils.convert(bo, DatabusAlertRule.class);
-        update.setEnabled(StringUtils.isBlank(bo.getEnabled()) ? ENABLED_YES : bo.getEnabled());
+        update.setEnabled(StringUtils.isBlank(bo.getEnabled()) ? FLAG_YES : bo.getEnabled());
         normalizeThreshold(update);
         return ruleMapper.updateById(update) > 0;
     }
@@ -158,7 +151,7 @@ public class DatabusAlertServiceImpl implements IDatabusAlertService {
     public AlertEvaluateVo evaluate() {
         List<DatabusAlertRule> rules = ruleMapper.selectList(
             Wrappers.<DatabusAlertRule>lambdaQuery()
-                .eq(DatabusAlertRule::getEnabled, ENABLED_YES));
+                .eq(DatabusAlertRule::getEnabled, FLAG_YES));
         return evaluateRules(rules);
     }
 
@@ -169,7 +162,7 @@ public class DatabusAlertServiceImpl implements IDatabusAlertService {
         }
         List<DatabusAlertRule> rules = ruleMapper.selectList(
             Wrappers.<DatabusAlertRule>lambdaQuery()
-                .eq(DatabusAlertRule::getEnabled, ENABLED_YES)
+                .eq(DatabusAlertRule::getEnabled, FLAG_YES)
                 .eq(DatabusAlertRule::getChainCode, chainCode));
         return evaluateRules(rules);
     }

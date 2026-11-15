@@ -20,6 +20,10 @@ import org.springframework.stereotype.Service;
 import java.util.Collection;
 import java.util.List;
 
+import static org.dromara.databus.constant.CommonConstants.DIRECTORY_MAX_DEPTH;
+import static org.dromara.databus.constant.CommonConstants.DIRECTORY_NAME_MAX_LEN;
+import static org.dromara.databus.constant.CommonConstants.ROOT_PARENT;
+
 /**
  * 统一目录 Service 实现。
  * <p>
@@ -33,21 +37,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @Service
 public class DatabusDirectoryServiceImpl implements IDatabusDirectoryService {
-
-    /**
-     * 根目录哨兵值（parent_id=0 表示挂在根下）
-     */
-    private static final Long ROOT_PARENT = 0L;
-
-    /**
-     * 目录层级深限（防环校验向上爬的最大步数，防御性兜底）
-     */
-    private static final int MAX_DEPTH = 100;
-
-    /**
-     * 目录名称最大长度（与 Bo @Size 约束一致）
-     */
-    private static final int NAME_MAX_LEN = 100;
 
     private final DatabusDirectoryMapper directoryMapper;
 
@@ -185,8 +174,8 @@ public class DatabusDirectoryServiceImpl implements IDatabusDirectoryService {
         if (bo.getDirectoryName() == null || bo.getDirectoryName().isBlank()) {
             throw new ServiceException("目录名称不能为空");
         }
-        if (bo.getDirectoryName().length() > NAME_MAX_LEN) {
-            throw new ServiceException("目录名称长度不能超过" + NAME_MAX_LEN + "个字符");
+        if (bo.getDirectoryName().length() > DIRECTORY_NAME_MAX_LEN) {
+            throw new ServiceException("目录名称长度不能超过" + DIRECTORY_NAME_MAX_LEN + "个字符");
         }
     }
 
@@ -222,7 +211,7 @@ public class DatabusDirectoryServiceImpl implements IDatabusDirectoryService {
             }
             DatabusDirectory node = directoryMapper.selectById(cursor);
             cursor = node == null ? null : node.getParentId();
-            if (++depth > MAX_DEPTH) {
+            if (++depth > DIRECTORY_MAX_DEPTH) {
                 throw new ServiceException("目录层级超过上限，疑似环数据，请检查目录数据");
             }
         }

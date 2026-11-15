@@ -17,6 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.dromara.databus.constant.AgentConstants.EVENT_CHAIN_CANVAS_UPDATED;
+import static org.dromara.databus.constant.AgentConstants.EVENT_CHAIN_DRAFT_SAVED;
+import static org.dromara.databus.constant.AgentConstants.EVENT_COMPONENT_DRAFT_SAVED;
+
 /**
  * AI agent 业务事件发布器。
  * <p>
@@ -26,6 +30,9 @@ import java.util.Map;
  * <p>
  * seq 与 step 共用 run.next_seq（条件 UPDATE 原子自增），载荷必带 runId + seq，
  * 前端据此去重与保序；同时落 databus_agent_message 供刷新后回放。
+ * <p>
+ * 事件码统一为 {@code databus:agent:<域>:<对象>:<动作>}，五段全冒号、动作过去式（事件是事实不是命令），
+ * 命名正本见 docs/databus-agent-runtime.md §9.1。
  *
  * @author databus
  */
@@ -33,16 +40,6 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class AgentEventPublisher {
-
-    /**
-     * 画布已更新（全量 cmpProperty 快照）
-     */
-    public static final String EVENT_CANVAS = "databus:agent:canvas";
-
-    /**
-     * 草稿已落库（chainId）
-     */
-    public static final String EVENT_DRAFT = "databus:agent:draft";
 
     private final DatabusAgentRunMapper runMapper;
 
@@ -60,12 +57,12 @@ public class AgentEventPublisher {
      * @param created      本次是否新建链路：新建时前端即使画布未打开也自动开 tab
      */
     @Transactional(rollbackFor = Exception.class)
-    public void publishCanvas(AgentRunContext context, Long chainId, String chainName,
-                              CmpProperty cmpProperty, String elExpression, String revealNodeId,
-                              boolean created) {
+    public void publishChainCanvas(AgentRunContext context, Long chainId, String chainName,
+                                   CmpProperty cmpProperty, String elExpression, String revealNodeId,
+                                   boolean created) {
         int seq = nextSeq(context.runId());
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("eventCode", EVENT_CANVAS);
+        data.put("eventCode", EVENT_CHAIN_CANVAS_UPDATED);
         data.put("runId", context.runId());
         data.put("conversationId", context.conversationId());
         data.put("seq", seq);
@@ -79,7 +76,7 @@ public class AgentEventPublisher {
         }
         data.put("timestamp", System.currentTimeMillis());
 
-        saveMessage(context.runId(), seq, EVENT_CANVAS, chainId, JsonUtils.toJsonString(cmpProperty));
+        saveMessage(context.runId(), seq, EVENT_CHAIN_CANVAS_UPDATED, chainId, JsonUtils.toJsonString(cmpProperty));
         send(context, "画布已更新：" + (chainName == null ? chainId : chainName), data);
     }
 
@@ -91,10 +88,10 @@ public class AgentEventPublisher {
      * @param chainName 链路名称
      */
     @Transactional(rollbackFor = Exception.class)
-    public void publishDraft(AgentRunContext context, Long chainId, String chainName) {
+    public void publishChainDraft(AgentRunContext context, Long chainId, String chainName) {
         int seq = nextSeq(context.runId());
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("eventCode", EVENT_DRAFT);
+        data.put("eventCode", EVENT_CHAIN_DRAFT_SAVED);
         data.put("runId", context.runId());
         data.put("conversationId", context.conversationId());
         data.put("seq", seq);
@@ -102,8 +99,36 @@ public class AgentEventPublisher {
         data.put("chainName", chainName);
         data.put("timestamp", System.currentTimeMillis());
 
-        saveMessage(context.runId(), seq, EVENT_DRAFT, chainId, null);
+        saveMessage(context.runId(), seq, EVENT_CHAIN_DRAFT_SAVED, chainId, null);
         send(context, "草稿已保存：" + (chainName == null ? chainId : chainName), data);
+    }
+
+    /**
+     * 推「组件草稿已落库」：带组件 id，前端刷组件树并把审阅 tab 顶出来。
+     * <p>
+     * 草稿不是链路，{@code databus_agent_message.chain_id} 留空。
+     *
+     * @param context       当前 run 上下文
+     * @param componentId   草稿行主键
+     * @param componentCode 组件编码
+     * @param componentName 组件名称
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void publishComponentDraft(AgentRunContext context, Long componentId,
+                                      String componentCode, String componentName) {
+        int seq = nextSeq(context.runId());
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("eventCode", EVENT_COMPONENT_DRAFT_SAVED);
+        data.put("runId", context.runId());
+        data.put("conversationId", context.conversationId());
+        data.put("seq", seq);
+        data.put("componentId", componentId);
+        data.put("componentCode", componentCode);
+        data.put("componentName", componentName);
+        data.put("timestamp", System.currentTimeMillis());
+
+        saveMessage(context.runId(), seq, EVENT_COMPONENT_DRAFT_SAVED, null, componentCode);
+        send(context, "组件草稿已落库：" + (componentName == null ? componentCode : componentName), data);
     }
 
     private int nextSeq(String runId) {

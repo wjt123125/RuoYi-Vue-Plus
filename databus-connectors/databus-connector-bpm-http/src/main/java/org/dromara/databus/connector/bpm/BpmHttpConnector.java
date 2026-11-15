@@ -23,6 +23,13 @@ import org.springframework.web.client.RestClient;
 import java.util.List;
 import java.util.Map;
 
+import static org.dromara.databus.connector.bpm.BpmConst.CONNECTOR_TYPE;
+import static org.dromara.databus.connector.bpm.BpmConst.RESP_DATA;
+import static org.dromara.databus.connector.bpm.BpmConst.RESP_ERROR_CODE;
+import static org.dromara.databus.connector.bpm.BpmConst.RESP_MSG;
+import static org.dromara.databus.connector.bpm.BpmConst.RESP_OK;
+import static org.dromara.databus.connector.bpm.BpmConst.RESP_RESULT;
+
 /**
  * BPM HTTP 连接器：通过 HTTP 调用 BPM 端总线 app 的 12 个 @Mapping 端点。
  *
@@ -62,16 +69,6 @@ import java.util.Map;
 @Slf4j
 public class BpmHttpConnector implements Connector {
 
-    /** Connector 类型标识，全局唯一 */
-    public static final String TYPE = "bpmHttp";
-
-    /** BPM 端 ApiResponse 的字段名（与 BPM 端 BpmConst 保持一致语义） */
-    private static final String RESP_RESULT = "result";
-    private static final String RESP_DATA = "data";
-    private static final String RESP_MSG = "msg";
-    private static final String RESP_ERROR_CODE = "errorCode";
-    private static final String RESP_OK = "ok";
-
     /**
      * 本档用默认 RestClient（JDK HttpClient 工厂），超时通过 configure 方法按连接配置生效。
      * 不配置连接池/拦截器（与 HttpRequestComponent 一致范式）。
@@ -80,19 +77,19 @@ public class BpmHttpConnector implements Connector {
 
     @Override
     public String getType() {
-        return TYPE;
+        return CONNECTOR_TYPE;
     }
 
     @Override
     public ConnectorDescriptor describe() {
         ConnectorDescriptor desc = new ConnectorDescriptor();
-        desc.setType(TYPE);
+        desc.setType(CONNECTOR_TYPE);
         desc.setLabel("BPM HTTP 连接器");
         desc.setIcon("ph:plugs");
-        // 能力族＝type 本身：BPM 一族当前只有 bpmHttp 一个成员，故 family 直接取 TYPE。
+        // 能力族＝type 本身：BPM 一族当前只有 bpmHttp 一个成员，故 family 直接取 CONNECTOR_TYPE。
         // 组件侧 @DatabusProp(connectorFamily = "bpmHttp")（方案 §8.3）与本值逐字相等，
         // 编辑器 CONNECTION_SELECT 才过滤得出 bpm-default 连接；留空则该族组件下拉永远为空。
-        desc.setFamily(TYPE);
+        desc.setFamily(CONNECTOR_TYPE);
 
         // 连接配置 schema（驱动连接管理页表单动态渲染）
         desc.getConfigSchema().put("endpoint",
@@ -194,7 +191,7 @@ public class BpmHttpConnector implements Connector {
             case "fileUpload" -> fileUpload(connection, Json.convertValue(p, FileUploadRequest.class));
             case "fileDownload" -> fileDownload(connection, Json.convertValue(p, FileDownloadRequest.class));
             default -> throw new ConnectorException("OPERATION_NOT_SUPPORTED",
-                    "连接器 " + TYPE + " 不支持 operation=" + operation);
+                    "连接器 " + CONNECTOR_TYPE + " 不支持 operation=" + operation);
         };
     }
 

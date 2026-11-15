@@ -19,6 +19,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HexFormat;
 
+import static org.dromara.databus.constant.AlertConstants.SIGNATURE_HEADER;
+
 /**
  * Webhook 通知渠道：把 {@link AlertEvent} 原样序列化为 JSON POST 到外部地址。
  * <p>
@@ -31,11 +33,6 @@ import java.util.HexFormat;
 @Slf4j
 @Component
 public class WebhookAlertNotifier implements AlertNotifier {
-
-    /**
-     * 签名请求头名。
-     */
-    private static final String SIGNATURE_HEADER = "X-Databus-Signature";
 
     /**
      * 独立 RestClient：连接 5s / 读 10s，与业务 HTTP 资源隔离。

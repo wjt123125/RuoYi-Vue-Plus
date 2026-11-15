@@ -32,6 +32,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.dromara.databus.constant.ConnectorConstants.ENGINE_JVM;
+import static org.dromara.databus.constant.ConnectorConstants.LIB_DIR;
+import static org.dromara.databus.constant.ConnectorConstants.MANIFEST_ENTRY;
+import static org.dromara.databus.constant.ConnectorConstants.SOURCE_DEV;
+
 /**
  * 开发期连接器目录装载器（方案 §五，仅 dev profile 生效）。
  *
@@ -79,26 +84,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Profile("dev")
 @RequiredArgsConstructor
 public class DevConnectorLoader {
-
-    /**
-     * 来源角标：dev 目录装载（无特权，仅展示用）
-     */
-    private static final String SOURCE_DEV = "DEV";
-
-    /**
-     * 引擎档：jvm（目录装载只支持这一档）
-     */
-    private static final String ENGINE_JVM = "jvm";
-
-    /**
-     * 编译输出目录里的清单文件名（源在 {@code src/main/resources}，IDE 编译同步过来）
-     */
-    private static final String MANIFEST_FILE = "manifest.json";
-
-    /**
-     * 依赖 jar 目录（{@code target/lib}，maven prepare-package 生成；与 §2.4 红线二同一目录）
-     */
-    private static final String LIB_DIR = "lib";
 
     private final ConnectorRegistry connectorRegistry;
 
@@ -226,9 +211,9 @@ public class DevConnectorLoader {
         if (!Files.isDirectory(classesDir)) {
             throw new ServiceException("dev 装载目录不存在（请先编译该连接器模块）：" + classesDir);
         }
-        Path manifestPath = classesDir.resolve(MANIFEST_FILE);
+        Path manifestPath = classesDir.resolve(MANIFEST_ENTRY);
         if (!Files.isRegularFile(manifestPath)) {
-            throw new ServiceException("dev 装载目录缺少 " + MANIFEST_FILE + "：" + manifestPath
+            throw new ServiceException("dev 装载目录缺少 " + MANIFEST_ENTRY + "：" + manifestPath
                 + "（manifest.json 在 src/main/resources 下，IDE 编译会同步到 target/classes，请先编译该连接器模块）");
         }
         String manifestJson;

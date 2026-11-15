@@ -177,6 +177,17 @@ public class AgentChatController extends BaseController {
     }
 
     /**
+     * 撤销删除会话（复位软删标记，历史原样回来）。
+     *
+     * @param conversationId 会话 id
+     */
+    @PostMapping("/conversation/{conversationId}/restore")
+    public R<Void> restoreConversation(@PathVariable String conversationId) {
+        agentRunService.restoreConversation(conversationId);
+        return R.ok();
+    }
+
+    /**
      * 回放某个 run 已落库的消息（按 seq 升序）。
      *
      * @param runId run 句柄

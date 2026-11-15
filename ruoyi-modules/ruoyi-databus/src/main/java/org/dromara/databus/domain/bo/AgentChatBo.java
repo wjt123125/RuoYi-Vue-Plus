@@ -1,5 +1,6 @@
 package org.dromara.databus.domain.bo;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -32,5 +33,11 @@ public class AgentChatBo implements Serializable {
      */
     @Size(max = 64, message = "会话id长度不能超过{max}个字符")
     private String conversationId;
+
+    /**
+     * 卡片回执：用户在确认 / 选择卡片上点了哪一项（可选）
+     */
+    @Valid
+    private AgentCardReplyBo cardReply;
 
 }

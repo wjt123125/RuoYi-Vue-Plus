@@ -19,6 +19,7 @@ import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.agent.AgentChainSnapshot;
 import org.dromara.databus.agent.AgentApprovalService;
+import org.dromara.databus.agent.AgentCardChannel;
 import org.dromara.databus.agent.AgentStepRecorder;
 import org.dromara.databus.config.properties.DatabusAgentProperties;
 import org.dromara.databus.domain.DatabusAgentConversationMeta;
@@ -158,6 +159,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     private final OpenApiAgentClient agentClient;
     private final DatabusAgentProperties properties;
     private final AgentApprovalService approvalService;
+    private final AgentCardChannel cardChannel;
     private final TransactionTemplate transactionTemplate;
 
     /**
@@ -182,7 +184,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         DatabusAgentRun run = new DatabusAgentRun();
         run.setRunId(UUID.randomUUID().toString());
         run.setUserId(userId);
-        run.setIntent(bo.getContent());
+        run.setIntent(buildIntent(bo));
         run.setConversationId(conversationId);
         run.setRound(0);
         run.setStatus(AgentRunStatusEnum.RUNNING.getCode());
@@ -193,7 +195,26 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         // 红线 3：创建人显式落本人，不依赖填充器
         run.setCreateBy(userId);
         runMapper.insert(run);
+        // 卡片回执落库：工具层据此判定 userConfirmed，模型自报的 true 不单独作数（运行时 §16）
+        if (bo.getCardReply() != null) {
+            appendMessage(run.getRunId(), AgentCardChannel.EVENT_CARD_REPLY, null,
+                JsonUtils.toJsonString(bo.getCardReply()));
+        }
         return new AgentChatStartVo(run.getRunId(), conversationId);
+    }
+
+    /**
+     * 组装本轮意图：卡片回执追加为结构化提示，让模型知道用户点了哪一项。
+     *
+     * @param bo 对话入参
+     * @return 意图文本
+     */
+    private String buildIntent(AgentChatBo bo) {
+        if (bo.getCardReply() == null) {
+            return bo.getContent();
+        }
+        return bo.getContent() + "\n【卡片回执】用户已在卡片上选择 " + bo.getCardReply().getAction()
+            + "（cardId=" + bo.getCardReply().getCardId() + "）。";
     }
 
     @Override
@@ -205,15 +226,22 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         SseEmitter emitter = new SseEmitter(properties.getStreamTimeoutMs());
         AtomicBoolean settled = new AtomicBoolean(false);
         AtomicBoolean clientGone = new AtomicBoolean(false);
+        // 卡片要与模型文字同序，所以按 runId 登记本次连接，供工具执行线程回写（运行时 §16）
+        cardChannel.register(runId, emitter);
 
         Disposable[] subscription = new Disposable[1];
-        emitter.onCompletion(() -> dispose(subscription));
+        emitter.onCompletion(() -> {
+            cardChannel.unregister(runId, emitter);
+            dispose(subscription);
+        });
         emitter.onTimeout(() -> {
+            cardChannel.unregister(runId, emitter);
             dispose(subscription);
             settle(settled, run, AgentRunStatusEnum.STOPPED, null);
             emitter.complete();
         });
         emitter.onError(e -> {
+            cardChannel.unregister(runId, emitter);
             clientGone.set(true);
             settle(settled, run, AgentRunStatusEnum.STOPPED, null);
         });
@@ -359,7 +387,33 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             return List.of();
         }
         Collections.reverse(runs);
-        return runs.stream().map(this::toRunVo).toList();
+        List<AgentRunVo> vos = runs.stream().map(this::toRunVo).toList();
+        fillCards(vos);
+        return vos;
+    }
+
+    /**
+     * 一次批量补齐各 run 的卡片与回执：刷新后前端据此还原（只还原，不改卡片本身）。
+     *
+     * @param runs 会话内 run 列表
+     */
+    private void fillCards(List<AgentRunVo> runs) {
+        List<String> runIds = runs.stream().map(AgentRunVo::getRunId).toList();
+        List<DatabusAgentMessage> messages = messageMapper.selectList(Wrappers.<DatabusAgentMessage>lambdaQuery()
+            .in(DatabusAgentMessage::getRunId, runIds)
+            .in(DatabusAgentMessage::getEventCode, AgentCardChannel.EVENT_CARD, AgentCardChannel.EVENT_CARD_REPLY)
+            .orderByAsc(DatabusAgentMessage::getSeq));
+        Map<String, List<String>> cardsByRun = new LinkedHashMap<>();
+        Map<String, List<String>> repliesByRun = new LinkedHashMap<>();
+        for (DatabusAgentMessage message : messages) {
+            boolean isCard = AgentCardChannel.EVENT_CARD.equals(message.getEventCode());
+            Map<String, List<String>> target = isCard ? cardsByRun : repliesByRun;
+            target.computeIfAbsent(message.getRunId(), key -> new ArrayList<>()).add(message.getContent());
+        }
+        for (AgentRunVo vo : runs) {
+            vo.setCards(cardsByRun.getOrDefault(vo.getRunId(), List.of()));
+            vo.setCardReplies(repliesByRun.getOrDefault(vo.getRunId(), List.of()));
+        }
     }
 
     @Override
@@ -414,6 +468,15 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         Long userId = requireOwnedConversation(conversationId);
         DatabusAgentConversationMeta meta = loadOrInitMeta(conversationId, userId);
         meta.setDelFlag("1");
+        saveMeta(meta);
+    }
+
+    @Override
+    public void restoreConversation(String conversationId) {
+        Long userId = requireOwnedConversation(conversationId);
+        // 撤销删除只复位软删标记：run / step / message 一直没动，复位后列表自然回来
+        DatabusAgentConversationMeta meta = loadOrInitMeta(conversationId, userId);
+        meta.setDelFlag("0");
         saveMeta(meta);
     }
 

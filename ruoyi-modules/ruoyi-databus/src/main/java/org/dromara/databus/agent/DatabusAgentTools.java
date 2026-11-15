@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Function;
 
 /**
@@ -146,6 +147,7 @@ public class DatabusAgentTools {
     private final DatabusExecutor databusExecutor;
     private final ExpressGenerator expressGenerator;
     private final AgentApprovalService approvalService;
+    private final AgentCardChannel cardChannel;
     private final DatabusAgentProperties properties;
 
     /**
@@ -309,8 +311,9 @@ public class DatabusAgentTools {
         + "payloadJson 是试跑入参 JSON，作为上下文根 $；不传按空入参跑。"
         + "outputPaths 是 JSONPath 数组字符串（如 [\"$.user.id\"]），只回这些路径的值；不传则回上下文各顶层字段摘要。"
         + "expect 是断言数组字符串（如 [{\"path\":\"$.count\",\"op\":\"gte\",\"value\":1}]），只做判定不落库。"
-        + "执行前受会话审批模式约束：需要审批时会返回 errorType=REQUIRE_APPROVAL 与影响清单，"
-        + "必须先把影响告诉用户，用户明确同意后再带 userConfirmed=true 重新调用；不要自行判断风险。"
+        + "执行前受会话审批模式约束：需要审批时返回 errorType=REQUIRE_APPROVAL，确认卡片会由前端展示，"
+        + "你只需简短说一句「需要你确认」，不要复述影响清单、不要用文字再问一遍；"
+        + "userConfirmed 必须对应本轮收到的【卡片回执】，自行判断传 true 会被拒绝。"
         + "只能试跑草稿态、自己创建的链路；试跑不发布、不写执行记录，也不占纠错轮数。"
         + "失败时按 nodeErrors 改结构后再调 databus_chain_save，不要原样重跑；"
         + "不返回整包日志和上下文快照。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
@@ -624,18 +627,22 @@ public class DatabusAgentTools {
             throw new IllegalArgumentException("只能试跑自己创建的链路");
         }
 
-        // 会话级审批闸：判定只看规则扫描链路事实，模型传的 userConfirmed 只代表「用户已经说过同意」
+        // 会话级审批闸：判定只看规则扫描链路事实；userConfirmed 必须对得上本轮卡片回执
         AgentApprovalModeEnum mode = approvalService.getMode(context.conversationId(), context.userId());
         AgentApprovalService.Impact impact = approvalService.scan(chain.getCmpProperty());
-        boolean confirmed = Boolean.TRUE.equals(userConfirmed);
+        boolean confirmed = Boolean.TRUE.equals(userConfirmed) && agentGuard.hasCardConfirm(context.runId());
         AgentApprovalService.Decision decision = approvalService.decide(mode, impact, confirmed);
         if (!decision.allowed()) {
+            AgentCard card = buildApprovalCard(context, chain, impact, payloadJson, outputPaths, expect);
+            boolean delivered = cardChannel.send(context.runId(), card);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("ok", false);
             payload.put("errorType", "REQUIRE_APPROVAL");
             payload.put("mode", mode.getCode());
+            payload.put("cardId", card.cardId());
+            payload.put("cardDelivered", delivered);
             payload.put("impact", impactPayload(impact));
-            payload.put("message", approvalMessage(mode, impact, decision));
+            payload.put("message", approvalMessage(impact, decision, delivered));
             return payload;
         }
         log.info("[databus-agent] chain_run 放行 conversationId={} chainId={} mode={} autoPass={} reason={}",
@@ -699,6 +706,72 @@ public class DatabusAgentTools {
     }
 
     /**
+     * 审批拦截时预填确认卡：事实来自规则扫描，不让模型自由发挥影响清单。
+     * <p>
+     * 选项必须带 description——前端把 label 渲染成按钮、description 渲染成按钮下的说明，
+     * 用户不点开也能看清「点了会发生什么」。
+     *
+     * @param context     调用上下文
+     * @param chain       待执行链路
+     * @param impact      规则扫描结果
+     * @param payloadJson 试跑入参
+     * @param outputPaths 输出路径
+     * @param expect      断言
+     * @return 确认卡
+     */
+    private static AgentCard buildApprovalCard(AgentRunContext context, DatabusChainVo chain,
+                                               AgentApprovalService.Impact impact, String payloadJson,
+                                               String outputPaths, String expect) {
+        List<String> riskyNames = new ArrayList<>();
+        for (AgentApprovalService.ImpactNode node : impact.nodes()) {
+            if (isRisky(node.kind())) {
+                riskyNames.add(node.name() + "（" + node.reason() + "）");
+            }
+        }
+        StringBuilder body = new StringBuilder();
+        body.append("会真实执行：写节点 ")
+            .append(impact.writeCount()).append(" 个、外部调用节点 ")
+            .append(impact.externalCount()).append(" 个。");
+        if (!riskyNames.isEmpty()) {
+            body.append("需要确认的节点：").append(String.join("、", riskyNames)).append("。");
+        }
+        List<AgentCard.Option> options = List.of(
+            new AgentCard.Option(AgentCardChannel.ACTION_CONFIRM, "确认执行",
+                "按影响清单真实执行一次", "primary"),
+            new AgentCard.Option("cancel", "取消",
+                "不执行，回到对话继续调整链路", "default"));
+        String runId = context.runId() == null ? "run" : context.runId();
+        String cardId = runId + ":card-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        return new AgentCard(cardId, AgentCard.KIND_CONFIRM, "试跑「" + chain.getChainName() + "」", body.toString(),
+            buildRunDetail(chain, payloadJson, outputPaths, expect),
+            options, Boolean.FALSE, AgentCard.PRESENTATION_INLINE);
+    }
+
+    /**
+     * 确认卡的原文块：把真正要执行的那次调用按行摆出来，用户扫一眼就知道要跑什么。
+     * <p>
+     * 只列本次调用实际带的参数，空值不占行；不写解释性文案，解释留给 body。
+     */
+    private static String buildRunDetail(DatabusChainVo chain, String payloadJson, String outputPaths, String expect) {
+        StringBuilder detail = new StringBuilder(TOOL_CHAIN_RUN).append('\n');
+        detail.append("  chainId: ").append(chain.getId()).append('\n');
+        detail.append("  chainName: ").append(chain.getChainName());
+        String payload = trimToNull(payloadJson);
+        if (payload != null) {
+            detail.append('\n').append("  payload: ").append(payload);
+        }
+        String paths = trimToNull(outputPaths);
+        if (paths != null) {
+            detail.append('\n').append("  outputPaths: ").append(paths);
+        }
+        String assertions = trimToNull(expect);
+        if (assertions != null) {
+            detail.append('\n').append("  expect: ").append(assertions);
+        }
+        return detail.toString();
+    }
+
+    /**
      * 审批阻断时给模型看的影响清单：节点名 + 判定 + 依据，人话描述由模型转述。
      */
     private static Map<String, Object> impactPayload(AgentApprovalService.Impact impact) {
@@ -723,27 +796,21 @@ public class DatabusAgentTools {
     }
 
     /**
-     * 审批提示：按规则统计说清影响，不替用户做决定。
+     * 审批提示：卡片已负责把影响清单摆给用户，模型只需一句话提示，不再复述清单。
      */
-    private static String approvalMessage(AgentApprovalModeEnum mode, AgentApprovalService.Impact impact,
-                                          AgentApprovalService.Decision decision) {
+    private static String approvalMessage(AgentApprovalService.Impact impact,
+                                          AgentApprovalService.Decision decision, boolean cardDelivered) {
         StringBuilder sb = new StringBuilder();
-        sb.append("试跑会真实执行该链路：写节点 ").append(impact.writeCount())
-            .append(" 个、外部调用节点 ").append(impact.externalCount()).append(" 个。");
-        List<String> names = new ArrayList<>();
-        for (AgentApprovalService.ImpactNode node : impact.nodes()) {
-            if (isRisky(node.kind())) {
-                names.add(node.name() + "（" + node.reason() + "）");
-            }
-        }
-        if (!names.isEmpty()) {
-            sb.append("需要确认的节点：").append(String.join("、", names)).append("。");
-        }
-        sb.append(decision.reason()).append("。");
-        if (mode != AgentApprovalModeEnum.MANUAL) {
-            sb.append("请先把以上影响告诉用户；用户明确同意后，再带 userConfirmed=true 重新调用。");
+        sb.append("本次拦截原因：").append(impact.writeCount()).append(" 个写节点、")
+            .append(impact.externalCount()).append(" 个外部调用节点；")
+            .append(decision.reason()).append("。");
+        if (cardDelivered) {
+            sb.append("确认卡片已在对话中展示，本轮到此为止：不要复述影响清单、不要用文字再问一遍，")
+                .append("只需提示用户点卡片上的按钮。用户点确认后会收到【卡片回执】，")
+                .append("那时再带 userConfirmed=true 重新调用。");
         } else {
-            sb.append("请先告诉用户将要执行的影响；用户明确同意后，再带 userConfirmed=true 重新调用。");
+            sb.append("确认卡片未能送达前端（连接可能已断开），本轮到此为止：")
+                .append("请提示用户刷新后重试，不要带 userConfirmed=true 直接重调。");
         }
         return sb.toString();
     }

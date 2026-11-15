@@ -118,6 +118,13 @@ public interface IDatabusAgentRunService {
     void deleteConversation(String conversationId);
 
     /**
+     * 撤销删除会话：把 meta 行的 del_flag 复位，历史原样回来。
+     *
+     * @param conversationId 会话 id
+     */
+    void restoreConversation(String conversationId);
+
+    /**
      * 回到这次对话前：按 run 整体回滚，对本 run 动过的每条链取本 run 内最早一份快照，
      * UPDATE 写回原结构、CREATE 删除整条链路。
      *

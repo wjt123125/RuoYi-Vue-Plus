@@ -7,8 +7,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.databus.config.properties.DatabusAgentProperties;
+import org.dromara.databus.domain.DatabusAgentMessage;
 import org.dromara.databus.domain.DatabusAgentRun;
+import org.dromara.databus.domain.bo.AgentCardReplyBo;
 import org.dromara.databus.enums.AgentRunStatusEnum;
+import org.dromara.databus.mapper.DatabusAgentMessageMapper;
 import org.dromara.databus.mapper.DatabusAgentRunMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -35,7 +38,39 @@ public class AgentGuard {
     private static final int SINGLE_RUNNING = 1;
 
     private final DatabusAgentRunMapper runMapper;
+    private final DatabusAgentMessageMapper messageMapper;
     private final DatabusAgentProperties agentProperties;
+
+    /**
+     * 本次 run 最近一次卡片回执是否为「确认」。
+     * <p>
+     * 确认卡由后端规则预填，用户点选后回执随下一条用户消息落库（{@code event_code=card_reply}）。
+     * 只认最近一次回执：先点取消再点确认才算数，先确认后取消按取消处理。
+     * 模型自报的 {@code userConfirmed=true} 必须能在这里对上，否则按未确认处理。
+     *
+     * @param runId run 句柄
+     * @return true = 最近一次回执 action=confirm
+     */
+    public boolean hasCardConfirm(String runId) {
+        if (!StringUtils.hasText(runId)) {
+            return false;
+        }
+        List<DatabusAgentMessage> replies = messageMapper.selectList(Wrappers.<DatabusAgentMessage>lambdaQuery()
+            .eq(DatabusAgentMessage::getRunId, runId)
+            .eq(DatabusAgentMessage::getEventCode, AgentCardChannel.EVENT_CARD_REPLY)
+            .orderByDesc(DatabusAgentMessage::getSeq));
+        for (DatabusAgentMessage reply : replies) {
+            try {
+                AgentCardReplyBo cardReply = JsonUtils.parseObject(reply.getContent(), AgentCardReplyBo.class);
+                if (cardReply != null) {
+                    return AgentCardChannel.ACTION_CONFIRM.equals(cardReply.getAction());
+                }
+            } catch (Exception e) {
+                log.warn("卡片回执解析失败 runId={}", runId, e);
+            }
+        }
+        return false;
+    }
 
     /**
      * 执行守卫校验并返回身份快照。

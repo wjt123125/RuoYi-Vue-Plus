@@ -272,9 +272,9 @@ values
 -- 节点本身无业务语义，用途就是给 AI 反复 databus_chain_save 改名，不依赖连接器与组件前置。
 -- 用法：把 databus.agent.max-rounds 调小（如 2），一条消息内让 AI 连续写三次 → 第三次必被拦；
 --       断言本链停在第二次的名字、该 run 的 databus_agent_snapshot 只有 2 行。
--- 归属 admin（实测用 admin 账号登录工作台）。
+-- 归属 test（实测用 test 账号登录工作台）。
 -- ----------------------------
 insert into databus_chain
   (id, chain_code, chain_name, version, status, el_expression, canvas_data, cmp_property, log_level, create_time, remark, owner_type, create_dept, create_by)
 values
-  (1762000000000100038, 'round_limit_zz', '轮数测试链', 1, 'DRAFT', null, null, '{"type":"THEN","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue1","data":"{\\"path\\":\\"$.roundLimit.zz\\",\\"value\\":\\"init\\"}"}}]}', 'BASIC', sysdate(), 'AI 自纠轮数上限（databus.agent.max-rounds）实测专用：单 setValue 占位节点保证 EL 校验能过。实测时连续改名三次，第三次应返回「本次对话已用完 N 轮纠错，请先确认现有结果或新开会话」，且本链与快照均无第三次结果。', 'USER', @db_seed_admin_did, @db_seed_admin_uid);
+  (1762000000000100038, 'round_limit_zz', '轮数测试链', 1, 'DRAFT', null, null, '{"type":"THEN","children":[{"id":"setValue","type":"NodeComponent","properties":{"tag":"setValue1","data":"{\\"path\\":\\"$.roundLimit.zz\\",\\"value\\":\\"init\\"}"}}]}', 'BASIC', sysdate(), 'AI 自纠轮数上限（databus.agent.max-rounds）实测专用：单 setValue 占位节点保证 EL 校验能过。实测时连续改名三次，第三次应返回「本次对话已用完 N 轮纠错，请先确认现有结果或新开会话」，且本链与快照均无第三次结果。', 'USER', @db_seed_test_did, @db_seed_test_uid);

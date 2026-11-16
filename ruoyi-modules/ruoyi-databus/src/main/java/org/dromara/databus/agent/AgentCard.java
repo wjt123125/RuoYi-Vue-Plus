@@ -41,11 +41,12 @@ public record AgentCard(String cardId, String kind, String title, String body, S
     /**
      * 卡片指向的资源（ref 卡专用）。
      *
-     * @param type component / chain，前端按此决定开审阅 tab 还是画布
-     * @param id   主键，随 JSON 走字符串避免雪花 id 精度丢失
-     * @param code 业务编码，行不在树上时前端可按 code 兜底
-     * @param name 展示名
+     * @param type  component / chain，前端按此决定开审阅 tab 还是画布
+     * @param id    主键，随 JSON 走字符串避免雪花 id 精度丢失
+     * @param code  业务编码，行不在树上时前端可按 code 兜底
+     * @param name  展示名
+     * @param draft 是否草稿（仅 component）：前端据此露出「试运行」入口，开单节点预览链路
      */
-    public record Resource(String type, String id, String code, String name) {
+    public record Resource(String type, String id, String code, String name, Boolean draft) {
     }
 }

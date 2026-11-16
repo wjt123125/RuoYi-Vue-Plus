@@ -163,6 +163,23 @@ public interface IDatabusComponentService {
     ScriptProbeResultVo probeRun(ScriptProbeBo bo);
 
     /**
+     * 预览链路：把草稿行按真实组件编码临时注册进 FlowBus（只造实例 + 登记，不写库、不进台账）。
+     * <p>供画布上「草稿单节点链路」试运行使用；跑完必须调 {@link #unregisterDraftForPreview(String)} 摘除，
+     * 否则链路可能跑到旧草稿脚本。
+     *
+     * @param draftId 草稿组件主键
+     * @return 注册用的 nodeId（即组件编码）
+     */
+    String registerDraftForPreview(Long draftId);
+
+    /**
+     * 摘除 {@link #registerDraftForPreview(Long)} 注册的草稿节点；失败只 warn（执行结果已拿到）。
+     *
+     * @param nodeId 注册时返回的 nodeId
+     */
+    void unregisterDraftForPreview(String nodeId);
+
+    /**
      * 拒绝草稿：人在审阅页点「拒绝」时物理删掉 DRAFT 行。
      * <p>草稿从未注册 FlowBus、未被任何链路引用，删除无副作用；非草稿行一律拒绝操作。
      *

@@ -37,6 +37,7 @@ create table databus_component (
     editor            varchar(16)     default null              comment '配置形态（form/script）【契约缓存】',
     param_schema      text            default null              comment '参数 schema 体（仅 {"fields":[...]}，配置面板渲染契约）【契约缓存】',
     data_example      text            default null              comment '配置 JSON 示例（JSON 高级模式占位提示）【契约缓存】',
+    input_params      text            default null              comment '试运行入参登记表 JSON 数组（ChainInputParam：path/type/defaultValue/required；AI 落草稿时登记，画布预览链路据此预填入参）【试运行】',
     input_schema      text            default null              comment '输入 Schema（连线校验预留）【契约缓存】',
     output_schema     text            default null              comment '输出 Schema（连线校验预留）【契约缓存】',
     script_lang       varchar(16)     default null              comment '脚本语言（java/groovy 等，第二步脚本宿主启用）【工件】',

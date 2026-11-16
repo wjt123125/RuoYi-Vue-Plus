@@ -11,6 +11,7 @@ import org.dromara.databus.el.bean.ELInfo;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.executor.DatabusExecutionResult;
 import org.dromara.databus.executor.DatabusExecutor;
+import org.dromara.databus.service.IDatabusComponentService;
 import org.dromara.databus.service.IDatabusPreviewRunService;
 import org.springframework.stereotype.Service;
 
@@ -28,11 +29,18 @@ public class DatabusPreviewRunServiceImpl implements IDatabusPreviewRunService {
 
     private final DatabusExecutor databusExecutor;
 
+    private final IDatabusComponentService componentService;
+
     @Override
     public PreviewRunVo run(PreviewRunBo bo) {
         CmpProperty jsonEl = bo.getJsonEl();
         String elStr = null;
+        // 草稿组件没注册 FlowBus：执行前临时上岗，finally 摘除（失败分支是 return 不是抛，必须兜住）
+        String draftNodeId = null;
         try {
+            if (bo.getDraftComponentId() != null) {
+                draftNodeId = componentService.registerDraftForPreview(bo.getDraftComponentId());
+            }
             // 脚本节点（script/booleanScript）没有 @LiteflowComponent，EL 引用的 nodeId 必须先在
             // FlowBus 中注册才能通过 LiteFlowChainELBuilder.validate / setEL 编译；故在 generateEL
             // 之前先把画布上的脚本节点预注册（其他业务组件已由 Spring 扫描自动注册）。
@@ -54,6 +62,8 @@ public class DatabusPreviewRunServiceImpl implements IDatabusPreviewRunService {
         } catch (Exception e) {
             log.warn("preview-run 生成/执行失败: {}", e.getMessage());
             return PreviewRunVo.fail(elStr, "试运行失败：" + e.getMessage());
+        } finally {
+            componentService.unregisterDraftForPreview(draftNodeId);
         }
     }
 }

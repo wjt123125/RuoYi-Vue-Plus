@@ -1,6 +1,7 @@
 package org.dromara.databus.domain.vo;
 
 import lombok.Data;
+import org.dromara.databus.el.bean.ChainInputParam;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -53,6 +54,11 @@ public class ScriptDraftResultVo implements Serializable {
      * 物化：配置示例
      */
     private String dataExample;
+
+    /**
+     * 试运行入参登记表（预览链路预填默认值）
+     */
+    private List<ChainInputParam> inputParams;
 
     /**
      * 反射出的字段数

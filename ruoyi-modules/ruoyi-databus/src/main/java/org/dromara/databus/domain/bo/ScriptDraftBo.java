@@ -1,9 +1,11 @@
 package org.dromara.databus.domain.bo;
 
 import lombok.Data;
+import org.dromara.databus.el.bean.ChainInputParam;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * 脚本草稿落库入参（AI 造组件专用 {@code databus_component_draft_save}）。
@@ -54,6 +56,14 @@ public class ScriptDraftBo implements Serializable {
      * 脚本正文（完整 Java 类源码，含 @DatabusCmp 主类与内嵌 Cfg）
      */
     private String scriptBody;
+
+    /**
+     * 试运行入参登记表：AI 已在探针里跑通的样板入参（路径/类型/默认值/必填）。
+     * <p>
+     * 存到 databus_component.input_params，预览链路的试运行据此预填入参。
+     * 为空表示不登记（预览时入参就是 {}）。
+     */
+    private List<ChainInputParam> inputParams;
 
     /**
      * 备注（AI 可写危险 API 自查说明）

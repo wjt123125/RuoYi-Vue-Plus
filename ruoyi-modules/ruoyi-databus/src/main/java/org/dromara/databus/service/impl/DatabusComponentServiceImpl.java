@@ -524,6 +524,7 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
             row.setEditor(EditorKind.FORM.jsonValue());
             row.setParamSchema(artifact.paramSchemaJson());
             row.setDataExample(artifact.dataExample());
+            row.setInputParams(bo.getInputParams());
             // 正文必须落库：审阅页靠它渲染源码、试跑端点也靠它取源码，漏存等于草稿不可审不可跑
             row.setScriptLang(SCRIPT_LANG_JAVA);
             row.setScriptBody(bo.getScriptBody());
@@ -554,8 +555,15 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
             if (artifact.dataExample() != null) {
                 update.setDataExample(artifact.dataExample());
             }
+            // 入参登记：不传＝保留原登记，传了才覆盖（含显式空数组＝清空）
+            if (bo.getInputParams() != null) {
+                update.setInputParams(bo.getInputParams());
+            }
             componentMapper.updateById(update);
             row.setScriptBody(bo.getScriptBody());
+            if (bo.getInputParams() != null) {
+                row.setInputParams(bo.getInputParams());
+            }
         }
 
         ScriptDraftResultVo result = new ScriptDraftResultVo();
@@ -566,6 +574,7 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
         result.setNodeType(artifact.nodeType().name());
         result.setParamSchema(artifact.paramSchemaJson());
         result.setDataExample(artifact.dataExample());
+        result.setInputParams(row.getInputParams());
         result.setFieldCount(artifact.fields().size());
         result.setRisks(risks);
         log.info("[databus-script] 脚本草稿已落库 id={}, code={}, 发起人={}",
@@ -665,6 +674,45 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
             FlowBus.removeNode(probeNodeCode);
         } catch (Exception e) {
             log.warn("[databus-script] 探针节点清理失败 nodeId={}：{}", probeNodeCode, e.getMessage());
+        }
+    }
+
+    @Override
+    public String registerDraftForPreview(Long draftId) {
+        DatabusComponent row = requireComponent(draftId);
+        if (!ComponentStatusEnum.DRAFT.getCode().equals(row.getStatus())) {
+            throw new ServiceException("只有草稿组件支持画布预览，当前状态为 " + row.getStatus());
+        }
+        if (StringUtils.isBlank(row.getScriptBody())) {
+            throw new ServiceException("该草稿没有脚本正文，无法预览");
+        }
+        ScriptArtifact artifact = scriptCompiler.compile(row.getScriptBody());
+        validateDeclaredCode(artifact, row);
+        String nodeId = row.getComponentCode();
+        // 同编码已注册时不能硬替换：预览跑完会摘除节点，等于把线上组件一起删掉
+        if (FlowBus.getNode(nodeId) != null) {
+            throw new ServiceException("组件编码 " + nodeId + " 已被已注册组件占用，无法预览");
+        }
+        NodeComponent instance = scriptRegistrar.instantiate(artifact);
+        try {
+            FlowBus.addManagedNode(nodeId, instance);
+        } catch (Exception e) {
+            throw new ServiceException("预览节点注册 FlowBus 失败：" + e.getMessage(), e);
+        }
+        log.info("[databus-script] 预览草稿临时注册 code={} id={}", nodeId, draftId);
+        return nodeId;
+    }
+
+    @Override
+    public void unregisterDraftForPreview(String nodeId) {
+        if (StringUtils.isBlank(nodeId)) {
+            return;
+        }
+        try {
+            FlowBus.removeNode(nodeId);
+        } catch (Exception e) {
+            // 清理是收尾动作：结果已经拿到，摘失败只留痕
+            log.warn("[databus-script] 预览草稿节点清理失败 nodeId={}：{}", nodeId, e.getMessage());
         }
     }
 

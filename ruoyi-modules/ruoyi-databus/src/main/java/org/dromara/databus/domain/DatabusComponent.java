@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.dromara.common.mybatis.core.domain.BaseEntity;
+import org.dromara.databus.el.bean.ChainInputParam;
 
 import java.util.List;
 
@@ -111,6 +112,15 @@ public class DatabusComponent extends BaseEntity {
      * 配置 JSON 示例【契约缓存】
      */
     private String dataExample;
+
+    /**
+     * 试运行入参登记表（ChainInputParam 列表：路径/类型/默认值/必填）【试运行】
+     * <p>
+     * AI 落脚本草稿时一并登记；画布预览链路据此渲染登记表并预填入参。
+     * 默认值只服务人工试运行，真实执行不注入。
+     */
+    @TableField(value = "input_params", typeHandler = JacksonTypeHandler.class)
+    private List<ChainInputParam> inputParams;
 
     /**
      * 输入 Schema（连线校验预留）【契约缓存】

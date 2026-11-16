@@ -3,6 +3,7 @@ package org.dromara.databus.domain.vo;
 import io.github.linpeilie.annotations.AutoMapper;
 import lombok.Data;
 import org.dromara.databus.domain.DatabusComponent;
+import org.dromara.databus.el.bean.ChainInputParam;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -105,6 +106,11 @@ public class DatabusComponentVo implements Serializable {
      * 配置 JSON 示例
      */
     private String dataExample;
+
+    /**
+     * 试运行入参登记表（预览链路预填默认值；真实执行不注入）
+     */
+    private List<ChainInputParam> inputParams;
 
     /**
      * 输入 Schema

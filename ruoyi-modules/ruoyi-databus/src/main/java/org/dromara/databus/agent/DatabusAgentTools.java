@@ -322,6 +322,7 @@ public class DatabusAgentTools {
      * @param category      台账五分类
      * @param groupName     物料面板分组
      * @param description   组件描述
+     * @param inputParams   试运行入参登记表 JSON 数组
      * @param componentId   已有草稿 id（更新时传）
      * @return JSON 结果
      */
@@ -330,7 +331,9 @@ public class DatabusAgentTools {
         + "必须由人在组件审阅页点「采纳」才生效——落完草稿不要声称组件已可用，要提示用户去审阅页确认。"
         + "scriptBody 必须是完整 Java 类源码：含 @DatabusCmp 主类（继承 NodeComponent）和内嵌 Cfg 配置类；"
         + "动手前先 databus_component_get 看同类脚本的写法，不要凭记忆拼。"
-        + "落草稿前建议先 databus_component_run 单节点试跑，把编译错和运行错消灭在草稿之前。"
+        + "落草稿前建议先 databus_component_run 单节点试跑，把编译错和运行错消灭在草稿之前；"
+        + "试跑用的那份入参务必通过 inputParams 登记进来——人点草稿卡上的播放钮时，预览链路按登记表预填入参，"
+        + "不登记用户就只能对着空对象 {} 自己猜。"
         + "返回 draftId、componentCode、nodeType、参数契约 paramSchema 与危险 API 提示 risks。"
         + "改自己名下的草稿传 componentId，新建不传。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
     public String scriptDraftSave(
@@ -340,6 +343,9 @@ public class DatabusAgentTools {
         @ToolParam(description = "台账五分类：PROTOCOL/DATA/FLOW_CONTROL/AI/PLATFORM，缺省 PLATFORM", required = false) String category,
         @ToolParam(description = "物料面板分组 key（flow/sequence/branch/loop/other/subflow/business），可空", required = false) String groupName,
         @ToolParam(description = "组件描述", required = false) String description,
+        @ToolParam(description = "试运行入参登记表 JSON 数组，强烈建议填：把组件级探针试跑用的入参按 "
+            + "[{\"path\":\"$.name\",\"type\":\"text\",\"defaultValue\":\"张三\",\"required\":true}] 登记，"
+            + "path 是请求根 $ 下的路径；不传或传 [] 表示不登记。", required = false) String inputParams,
         @ToolParam(description = "已有草稿的组件 id；传了就更新该草稿，不传则新建", required = false) Long componentId) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("componentCode", componentCode);
@@ -348,10 +354,11 @@ public class DatabusAgentTools {
         args.put("category", category);
         args.put("groupName", groupName);
         args.put("description", description);
+        args.put("inputParams", inputParams);
         args.put("componentId", componentId);
         return execute(TOOL_COMPONENT_DRAFT_SAVE, args, PERMISSION_WRITE,
             ctx -> doScriptDraftSave(ctx, componentId, componentCode, componentName, scriptBody,
-                category, groupName, description));
+                category, groupName, description, inputParams));
     }
 
     /**
@@ -768,11 +775,13 @@ public class DatabusAgentTools {
      * @param category      台账五分类
      * @param groupName     物料面板分组
      * @param description   组件描述
+     * @param inputParams   试运行入参登记表 JSON 数组
      * @return 结果载荷
      */
     private Map<String, Object> doScriptDraftSave(AgentRunContext context, Long componentId,
                                                   String componentCode, String componentName, String scriptBody,
-                                                  String category, String groupName, String description) {
+                                                  String category, String groupName, String description,
+                                                  String inputParams) {
         ScriptDraftBo bo = new ScriptDraftBo();
         bo.setId(componentId);
         bo.setComponentCode(componentCode);
@@ -781,6 +790,7 @@ public class DatabusAgentTools {
         bo.setCategory(category);
         bo.setGroupName(groupName);
         bo.setDescription(description);
+        bo.setInputParams(parseInputParams(inputParams));
         // create_by 只认会话身份：草稿所有权决定「谁能改」，不能让模型指定
         bo.setCreateBy(context.userId());
         try {
@@ -799,6 +809,7 @@ public class DatabusAgentTools {
             payload.put("fieldCount", result.getFieldCount());
             payload.put("paramSchema", truncate(result.getParamSchema(), MAX_OUTPUT_VALUE_BYTES));
             payload.put("dataExample", truncate(result.getDataExample(), MAX_OUTPUT_VALUE_BYTES));
+            payload.put("inputParams", result.getInputParams());
             payload.put("risks", result.getRisks());
             payload.put("message", "草稿已落库，但尚未生效：需要人在组件审阅页点「采纳」后才会注册并投放物料面板。");
             return payload;
@@ -822,7 +833,8 @@ public class DatabusAgentTools {
             "采纳后才会注册进 FlowBus 并出现在物料面板。",
             null, List.of(), Boolean.FALSE, PRESENTATION_INLINE,
             new AgentCard.Resource(RESOURCE_TYPE_COMPONENT,
-                String.valueOf(result.getId()), result.getComponentCode(), result.getComponentName()));
+                String.valueOf(result.getId()), result.getComponentCode(), result.getComponentName(),
+                Boolean.TRUE));
     }
 
     /**

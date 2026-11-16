@@ -33,4 +33,10 @@ public class PreviewRunBo implements Serializable {
      * 链路入参登记表（执行前据此做必填校验；默认值不参与，前端只传登记结构）。
      */
     private List<ChainInputParam> inputParams;
+
+    /**
+     * 草稿组件主键：画布上是草稿组件（未注册 FlowBus）时传，执行前临时注册、跑完摘除。
+     * 为空即普通试运行，行为与以前完全一致。
+     */
+    private Long draftComponentId;
 }

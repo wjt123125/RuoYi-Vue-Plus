@@ -25,7 +25,7 @@ public class AgentChatBo implements Serializable {
      * 用户原话
      */
     @NotBlank(message = "内容不能为空")
-    @Size(max = 1000, message = "内容长度不能超过{max}个字符")
+    @Size(max = 4000, message = "内容长度不能超过{max}个字符")
     private String content;
 
     /**

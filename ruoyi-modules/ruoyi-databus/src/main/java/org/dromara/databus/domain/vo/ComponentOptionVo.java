@@ -3,7 +3,9 @@ package org.dromara.databus.domain.vo;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.dromara.databus.component.schema.enums.EditorKind;
 import org.dromara.databus.component.schema.enums.NodeTypeKind;
+import org.dromara.databus.component.schema.enums.WidgetKind;
 import org.dromara.databus.component.schema.model.CmpSchema;
+import org.dromara.databus.component.schema.model.PropSchema;
 import org.dromara.databus.domain.DatabusComponent;
 
 import java.util.List;
@@ -35,6 +37,8 @@ import static org.dromara.databus.constant.ComponentConstants.DOMAIN_SLOT;
  * @param tags          编目标签（仅自定义行有；内置件 null）
  * @param deprecated    是否废弃（内置件 null；废弃件老链路可见、面板置灰）
  * @param deprecateNote 废弃提示文案
+ * @param needsConnector 是否含连接选择字段（递归下钻 fields 判断；仅供检索提示，真实校验在执行期）
+ * @param connectorFamily 首个连接字段声明的连接器族，无连接字段或族未装载时为 null
  * @author databus
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -54,7 +58,9 @@ public record ComponentOptionVo(String code,
                                 ComponentSchemaBody schema,
                                 List<String> tags,
                                 Boolean deprecated,
-                                String deprecateNote) {
+                                String deprecateNote,
+                                boolean needsConnector,
+                                String connectorFamily) {
 
     /** node_type 是槽件的正本：非 NODE 即算子条件位，恒归 slot 域 */
     private static String deriveSlotDomain(NodeTypeKind nodeType) {
@@ -82,7 +88,9 @@ public record ComponentOptionVo(String code,
             new ComponentSchemaBody(cmp.fields()),
             null,
             null,
-            null
+            null,
+            needsConnector(cmp.fields()),
+            firstConnectorFamily(cmp.fields())
         );
     }
 
@@ -111,7 +119,9 @@ public record ComponentOptionVo(String code,
             body,
             row.getTags(),
             "1".equals(row.getDeprecated()),
-            row.getDeprecateNote()
+            row.getDeprecateNote(),
+            needsConnector(body == null ? null : body.fields()),
+            firstConnectorFamily(body == null ? null : body.fields())
         );
     }
 
@@ -141,8 +151,55 @@ public record ComponentOptionVo(String code,
             new ComponentSchemaBody(sys.fields()),
             row.getTags(),
             "1".equals(row.getDeprecated()),
-            row.getDeprecateNote()
+            row.getDeprecateNote(),
+            needsConnector(sys.fields()),
+            firstConnectorFamily(sys.fields())
         );
+    }
+
+    /**
+     * 字段树是否含连接选择位：必须递归下钻 OBJECT / OBJECT_ROWS 的 fields，
+     * 只扫顶层会静默漏依赖（口径同 DatabusComponentServiceImpl#collectConnectorFamilies）。
+     */
+    private static boolean needsConnector(List<PropSchema> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return false;
+        }
+        for (PropSchema field : fields) {
+            if (field == null) {
+                continue;
+            }
+            if (field.widget() == WidgetKind.CONNECTION_SELECT) {
+                return true;
+            }
+            if (needsConnector(field.fields())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 首个连接字段声明的连接器族；族为空表示连接器未装载，返回 null 交由调用方不过滤。
+     */
+    private static String firstConnectorFamily(List<PropSchema> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return null;
+        }
+        for (PropSchema field : fields) {
+            if (field == null) {
+                continue;
+            }
+            if (field.widget() == WidgetKind.CONNECTION_SELECT
+                && field.connectorFamily() != null && !field.connectorFamily().isBlank()) {
+                return field.connectorFamily();
+            }
+            String nested = firstConnectorFamily(field.fields());
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return null;
     }
 
     private static String firstNonBlank(String preferred, String fallback) {

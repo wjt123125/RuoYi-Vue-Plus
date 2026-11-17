@@ -9,12 +9,19 @@ import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.component.schema.enums.NodeTypeKind;
 import org.dromara.databus.config.properties.DatabusAgentProperties;
+import org.dromara.databus.connector.Connector;
+import org.dromara.databus.connector.ConnectorDescriptor;
+import org.dromara.databus.connector.ConnectorRegistry;
+import org.dromara.databus.connector.Connection;
+import org.dromara.databus.connector.sql.QueryOptions;
+import org.dromara.databus.connector.sql.SqlConnector;
 import org.dromara.databus.enums.AgentApprovalModeEnum;
 import org.dromara.databus.domain.bo.DatabusChainBo;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.PreviewRunBo;
 import org.dromara.databus.domain.bo.ScriptDraftBo;
 import org.dromara.databus.domain.vo.ComponentOptionVo;
+import org.dromara.databus.domain.vo.ConnectionOptionVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
 import org.dromara.databus.domain.vo.PreviewRunVo;
@@ -29,6 +36,7 @@ import org.dromara.databus.service.IDatabusAgentSnapshotService;
 import org.dromara.databus.service.IDatabusChainService;
 import org.dromara.databus.service.IDatabusComponentService;
 import org.dromara.databus.service.IDatabusPreviewRunService;
+import org.dromara.databus.service.ISysDatabusConnectionService;
 import org.dromara.databus.script.host.ScriptCompileException;
 import org.dromara.databus.script.host.ScriptDiagnostic;
 import org.springframework.ai.tool.annotation.Tool;
@@ -54,6 +62,7 @@ import static org.dromara.databus.constant.AgentConstants.ERROR_CONFIG;
 import static org.dromara.databus.constant.AgentConstants.ERROR_ENVIRONMENT;
 import static org.dromara.databus.constant.AgentConstants.ERROR_EXTERNAL;
 import static org.dromara.databus.constant.AgentConstants.ERROR_PERMISSION;
+import static org.dromara.databus.constant.AgentConstants.ERROR_REQUIRE_APPROVAL;
 import static org.dromara.databus.constant.AgentConstants.ERROR_RUNTIME;
 import static org.dromara.databus.constant.AgentConstants.ERROR_TIMEOUT;
 import static org.dromara.databus.constant.AgentConstants.ERROR_VALIDATION;
@@ -77,6 +86,9 @@ import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_SEARCH;
 import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_DRAFT_SAVE;
 import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_GET;
 import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_SEARCH;
+import static org.dromara.databus.constant.AgentConstants.TOOL_CONNECTION_SEARCH;
+import static org.dromara.databus.constant.AgentConstants.TOOL_CONNECTOR_SEARCH;
+import static org.dromara.databus.constant.AgentConstants.TOOL_DB_SCHEMA_SEARCH;
 import static org.dromara.databus.constant.ChainConstants.LOG_LEVEL_FULL;
 import static org.dromara.databus.constant.CommonConstants.OWNER_SYSTEM;
 import static org.dromara.databus.constant.CommonConstants.STATUS_DRAFT;
@@ -111,10 +123,22 @@ public class DatabusAgentTools {
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /**
+     * 表结构查询单次最多取回的行数（表清单 / 字段清单共用）
+     */
+    private static final int MAX_SCHEMA_ROWS = 2000;
+
+    /**
+     * 单张表最多回传的字段数，避免宽表撑爆上下文
+     */
+    private static final int MAX_SCHEMA_COLUMNS_PER_TABLE = 100;
+
     private final AgentGuard agentGuard;
     private final AgentStepRecorder stepRecorder;
     private final IDatabusChainService chainService;
     private final IDatabusComponentService componentService;
+    private final ISysDatabusConnectionService connectionService;
+    private final ConnectorRegistry connectorRegistry;
     private final IDatabusPreviewRunService previewRunService;
     private final IDatabusAgentSnapshotService snapshotService;
     private final AgentEventPublisher eventPublisher;
@@ -159,6 +183,7 @@ public class DatabusAgentTools {
     @Tool(name = TOOL_COMPONENT_SEARCH, description = "检索物料面板里可用的原子物料（只读），用于先找现成物料再决定要不要新做。"
         + "必须先给 keyword / tags / nodeType 至少一个过滤条件，禁止无过滤全量拉取。"
         + "返回 code、名称、分组、来源、节点类型、标签等摘要，不含完整 schema；"
+        + "摘要里的 needsConnector 标识该组件是否要配连接，为 true 时先调 databus_connection_search 拿 connectionId；"
         + "身份由服务端会话绑定，不要传 userId 之类的身份参数。")
     public String componentSearch(
         @ToolParam(description = "匹配 code / 名称 / 短名 / 描述 / 标签 的关键词片段", required = false) String keyword,
@@ -174,6 +199,80 @@ public class DatabusAgentTools {
         args.put("cursor", cursor);
         return execute(TOOL_COMPONENT_SEARCH, args,
             ctx -> doComponentSearch(keyword, tags, nodeType, pageSize, cursor));
+    }
+
+    /**
+     * 检索可用的数据连接（只读）。
+     *
+     * @param keyword         匹配 connectionId / connectionName 的关键词
+     * @param connectorFamily 连接器族精确过滤
+     * @param pageSize        本页条数
+     * @param cursor          上一页游标
+     * @return JSON 结果
+     */
+    @Tool(name = TOOL_CONNECTION_SEARCH, description = "检索可用的数据连接（只读），配任何 CONNECTION_SELECT 连接字段前必须先调它拿 connectionId，不许猜。"
+        + "只列已启用连接，返回 connectionId、connectionName、connectorType、connectorFamily 四个安全字段，不含配置与凭证。"
+        + "keyword 与 connectorFamily 都可留空，留空即列出全部可用连接；connectorFamily 按连接器族精确过滤（如 jdbc）。"
+        + "老链路上的连接若查不到，说明已停用或连接器未装载，不要照抄老链路。"
+        + "身份由服务端会话绑定，不要传 userId 之类的身份参数。")
+    public String connectionSearch(
+        @ToolParam(description = "匹配 connectionId / connectionName 的关键词片段，留空列出全部", required = false) String keyword,
+        @ToolParam(description = "连接器族精确过滤（如 jdbc），留空不过滤", required = false) String connectorFamily,
+        @ToolParam(description = "本页条数，默认 10，最大 20", required = false) Integer pageSize,
+        @ToolParam(description = "上一页返回的 nextCursor，首页不传", required = false) String cursor) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("keyword", keyword);
+        args.put("connectorFamily", connectorFamily);
+        args.put("pageSize", pageSize);
+        args.put("cursor", cursor);
+        return execute(TOOL_CONNECTION_SEARCH, args,
+            ctx -> doConnectionSearch(keyword, connectorFamily, pageSize, cursor));
+    }
+
+    /**
+     * 检索平台已装载的连接器类型（只读），用于「查不到连接时说清该建什么」。
+     *
+     * @param keyword 匹配 type / label / family 的关键词
+     * @return JSON 结果
+     */
+    @Tool(name = TOOL_CONNECTOR_SEARCH, description = "检索平台已装载的连接器类型（只读），回答「该建什么连接」：给 type、label、能力族 family、"
+        + "是否支持 SQL（sqlCapable）、操作清单与配置字段（字段名/标签/类型/必填/是否敏感）。"
+        + "只回字段定义，不回任何真实配置值；required=true 且 sensitive=true 的字段需要人准备凭据，必须由人在连接页填写。"
+        + "connection_search 查不到可用连接时，先调本工具说清该装/该建哪种连接器，不要自己编造连接器类型。"
+        + "身份由服务端会话绑定，不要传 userId 之类的身份参数。")
+    public String connectorSearch(
+        @ToolParam(description = "匹配连接器 type / label / family 的关键词片段，留空列出全部", required = false) String keyword) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("keyword", keyword);
+        return execute(TOOL_CONNECTOR_SEARCH, args, ctx -> doConnectorSearch(keyword));
+    }
+
+    /**
+     * 查看某个数据连接背后的库表与字段（只读），是写 SQL 与造组件前的数据依据。
+     *
+     * @param connectionId connection_search 返回的连接标识
+     * @param keyword      表名/表注释/字段名关键词
+     * @param pageSize     本页表数量
+     * @param cursor       上一页游标
+     * @return JSON 结果
+     */
+    @Tool(name = TOOL_DB_SCHEMA_SEARCH, description = "查看某个数据连接背后的库表与字段（只读）：返回表名、表注释、字段名、字段类型、是否可空、是否主键、字段注释。"
+        + "connectionId 必须来自 databus_connection_search，不许猜；写 SQL、造数据类组件之前必须先调它看真实结构，不许臆造表名与字段。"
+        + "keyword 可匹配表名、表注释或字段名（字段名命中时反查所属表）；留空按表名顺序列前 N 张表。"
+        + "当前只支持 MySQL / PostgreSQL 连接器；其他连接器会明确报错，此时请让用户直接提供表与字段。"
+        + "只回结构，不回任何业务数据行。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
+    public String dbSchemaSearch(
+        @ToolParam(description = "databus_connection_search 返回的 connectionId，必填") String connectionId,
+        @ToolParam(description = "表名 / 表注释 / 字段名的关键词片段，留空列出前 N 张表", required = false) String keyword,
+        @ToolParam(description = "本页表数量，默认 10，最大 20", required = false) Integer pageSize,
+        @ToolParam(description = "上一页返回的 nextCursor，首页不传", required = false) String cursor) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("connectionId", connectionId);
+        args.put("keyword", keyword);
+        args.put("pageSize", pageSize);
+        args.put("cursor", cursor);
+        return execute(TOOL_DB_SCHEMA_SEARCH, args,
+            ctx -> doDbSchemaSearch(connectionId, keyword, pageSize, cursor));
     }
 
     /**
@@ -202,6 +301,7 @@ public class DatabusAgentTools {
     @Tool(name = TOOL_COMPONENT_GET, description = "拿单个组件的整条记录（只读）：元信息、nodeType、paramSchema 配置项定义、脚本源码、版本与状态。"
         + "拼树前必须先调它确认入参定义，不许凭猜填参数。componentCode 与 componentId 二选一。"
         + "fields 可裁剪返回：meta（元信息与状态）/ schema（配置项定义）/ script（脚本源码），逗号分隔，默认全给。"
+        + "也支持读自己本次的组件草稿（status=DRAFT，仅限本人），meta 里 draft=true 表示尚未生效、还不能拼进链路。"
         + "身份由服务端会话绑定，不要传 userId 之类的身份参数。")
     public String componentGet(
         @ToolParam(description = "组件编码", required = false) String componentCode,
@@ -211,7 +311,8 @@ public class DatabusAgentTools {
         args.put("componentCode", componentCode);
         args.put("componentId", componentId);
         args.put("fields", fields);
-        return execute(TOOL_COMPONENT_GET, args, ctx -> doComponentGet(componentCode, componentId, fields));
+        return execute(TOOL_COMPONENT_GET, args,
+            ctx -> doComponentGet(ctx, componentCode, componentId, fields));
     }
 
     /**
@@ -383,17 +484,23 @@ public class DatabusAgentTools {
             stepRecorder.recordSuccess(context, tool, argsJson, result, System.currentTimeMillis() - began);
             return result;
         } catch (AgentGuardRejectedException e) {
-            String result = errorJson(e.getMessage());
+            boolean permissionDenied = e.getReason() == AgentGuardRejectedException.GuardReason.MISSING_PERMISSION_POINT;
+            String result = errorJson(e.getMessage(), permissionDenied ? ERROR_PERMISSION : ERROR_CONFIG, false);
             stepRecorder.recordReject(e.getRunId(), tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
             return result;
         } catch (ServiceException e) {
             // 业务校验（如轮数上限）直接给出原因，不套「工具执行失败」前缀
-            String result = errorJson(e.getMessage());
+            String result = errorJson(e.getMessage(), ERROR_VALIDATION, true);
+            stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
+            return result;
+        } catch (IllegalArgumentException e) {
+            // 参数、游标、页大小非法：模型改参数可重试
+            String result = errorJson(e.getMessage(), ERROR_VALIDATION, true);
             stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
             return result;
         } catch (Exception e) {
             log.warn("[databus-agent] 工具 {} 执行失败", tool, e);
-            String result = errorJson("工具执行失败：" + e.getMessage());
+            String result = errorJson("工具执行失败：" + e.getMessage(), ERROR_RUNTIME, true);
             stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
             return result;
         }
@@ -595,9 +702,325 @@ public class DatabusAgentTools {
             item.put("tags", cmp.tags());
             item.put("deprecated", cmp.deprecated());
             item.put("deprecateNote", cmp.deprecateNote());
+            item.put("needsConnector", cmp.needsConnector());
+            item.put("connectorFamily", cmp.connectorFamily());
             items.add(item);
         }
         return pagePayload(matched.size(), items, offset, size);
+    }
+
+    private Map<String, Object> doConnectionSearch(String keyword, String connectorFamily,
+                                                   Integer pageSize, String cursor) {
+        String kw = trimToNull(keyword);
+        String family = trimToNull(connectorFamily);
+        int size = normalizePageSize(pageSize);
+        int offset = parseCursor(cursor);
+
+        List<ConnectionOptionVo> matched = new ArrayList<>();
+        for (ConnectionOptionVo conn : connectionService.queryOptions()) {
+            // 族为空代表连接器未装载，此时不做族过滤（与前端「宁可多列不可用项」同口径）
+            if (family != null && !family.equalsIgnoreCase(conn.connectorFamily())) {
+                continue;
+            }
+            if (kw != null && !matchesConnection(conn, kw)) {
+                continue;
+            }
+            matched.add(conn);
+        }
+        if (kw != null) {
+            matched.sort(Comparator.comparingInt((ConnectionOptionVo conn) -> connectionRelevance(conn, kw))
+                .thenComparing(conn -> conn.connectionId() == null ? "" : conn.connectionId()));
+        }
+
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (int i = offset; i < matched.size() && items.size() < size; i++) {
+            ConnectionOptionVo conn = matched.get(i);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("connectionId", conn.connectionId());
+            item.put("connectionName", conn.connectionName());
+            item.put("connectorType", conn.connectorType());
+            item.put("connectorFamily", conn.connectorFamily());
+            items.add(item);
+        }
+        Map<String, Object> payload = pagePayload(matched.size(), items, offset, size);
+        if (matched.isEmpty()) {
+            payload.put("message", "没有匹配的已启用连接，不要编造 connectionId，"
+                + "请让用户确认连接已创建并启用（连接器未装载时 connectorFamily 为空）。");
+        }
+        return payload;
+    }
+
+    private static boolean matchesConnection(ConnectionOptionVo conn, String keyword) {
+        String k = keyword.toLowerCase(Locale.ROOT);
+        return lower(conn.connectionId()).contains(k) || lower(conn.connectionName()).contains(k);
+    }
+
+    private static int connectionRelevance(ConnectionOptionVo conn, String keyword) {
+        String k = keyword.toLowerCase(Locale.ROOT);
+        String id = lower(conn.connectionId());
+        if (id.equals(k)) {
+            return 0;
+        }
+        if (id.startsWith(k)) {
+            return 1;
+        }
+        return lower(conn.connectionName()).contains(k) ? 2 : 3;
+    }
+
+    private static String lower(String text) {
+        return text == null ? "" : text.toLowerCase(Locale.ROOT);
+    }
+
+    private Map<String, Object> doConnectorSearch(String keyword) {
+        String kw = trimToNull(keyword);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (Map.Entry<String, Connector> entry : connectorRegistry.all().entrySet()) {
+            ConnectorDescriptor descriptor;
+            try {
+                descriptor = entry.getValue().describe();
+            } catch (RuntimeException e) {
+                // 单个连接器 describe 失败不影响整张能力清单
+                log.warn("[databus-agent] 连接器 {} describe 失败，已跳过: {}", entry.getKey(), e.getMessage());
+                continue;
+            }
+            if (descriptor == null) {
+                continue;
+            }
+            String type = descriptor.getType() == null ? entry.getKey() : descriptor.getType();
+            String label = descriptor.getLabel();
+            String family = descriptor.getFamily();
+            if (kw != null && !containsIgnoreCase(type, kw)
+                && !containsIgnoreCase(label, kw) && !containsIgnoreCase(family, kw)) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("type", type);
+            item.put("version", versionOfKey(entry.getKey()));
+            item.put("label", label);
+            item.put("family", family);
+            item.put("sqlCapable", entry.getValue() instanceof SqlConnector);
+            List<Map<String, Object>> operations = new ArrayList<>();
+            for (ConnectorDescriptor.OperationDef op : descriptor.getOperations()) {
+                Map<String, Object> operation = new LinkedHashMap<>();
+                operation.put("name", op.getName());
+                operation.put("label", op.getLabel());
+                operation.put("componentId", op.getComponentId());
+                operations.add(operation);
+            }
+            item.put("operations", operations);
+            item.put("configFields", configFieldSummary(descriptor));
+            items.add(item);
+        }
+        items.sort(Comparator.comparing(item -> String.valueOf(item.get("type"))));
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("totalCount", items.size());
+        payload.put("items", items);
+        if (items.isEmpty()) {
+            payload.put("message", "没有匹配的连接器：平台未安装该类型连接器，请让用户到物料市场安装并启用后再建连接。");
+        }
+        return payload;
+    }
+
+    /**
+     * 配置字段摘要：只给「要填什么」，不给任何真实配置值。
+     */
+    private static List<Map<String, Object>> configFieldSummary(ConnectorDescriptor descriptor) {
+        List<Map<String, Object>> fields = new ArrayList<>();
+        for (Map.Entry<String, ConnectorDescriptor.ConfigField> entry : descriptor.getConfigSchema().entrySet()) {
+            ConnectorDescriptor.ConfigField field = entry.getValue();
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("name", entry.getKey());
+            item.put("label", field.getLabel());
+            item.put("type", field.getType());
+            item.put("required", field.isRequired());
+            item.put("sensitive", field.isSensitive());
+            item.put("description", field.getDescription());
+            fields.add(item);
+        }
+        return fields;
+    }
+
+    private static String versionOfKey(String key) {
+        int index = key == null ? -1 : key.indexOf('@');
+        return index < 0 ? null : key.substring(index + 1);
+    }
+
+    /**
+     * 连接查不到时的报错文案：区分「真没有这个连接」与「连接在，但后端装载失败」。
+     * <p>
+     * 后者在 {@code loadEnabledConnections()} 里被静默跳过（单条转换失败不阻断其它连接），
+     * 如果笼统报「不存在或已停用」，会让用户白跑一趟去重建连接。
+     */
+    private String connectionMissingMessage(String connId) {
+        boolean loadFailed = connectionService.queryOptions().stream()
+            .anyMatch(option -> connId.equalsIgnoreCase(option.connectionId()));
+        return loadFailed
+            ? "连接 " + connId + " 存在但后端加载失败（连接器版本或凭据异常），请让用户查看后端日志里的「连接转换失败」"
+            : "连接 " + connId + " 不存在或已停用：先调 databus_connection_search 确认，不要拿老链路的连接顶替";
+    }
+
+    /**
+     * 表结构查询：只读 information_schema / pg_catalog，不碰业务数据行。
+     * <p>
+     * 连接必须来自 {@code connection_search} 且处于启用态；连接器必须是 SqlConnector，
+     * 方言当前只支持 MySQL / PostgreSQL，其余连接器明确报错让用户提供结构，不猜。
+     */
+    private Map<String, Object> doDbSchemaSearch(String connectionId, String keyword,
+                                                 Integer pageSize, String cursor) {
+        String connId = trimToNull(connectionId);
+        if (connId == null) {
+            throw new IllegalArgumentException("connectionId 不能为空：先调 databus_connection_search 拿连接，再查表结构");
+        }
+        Connection conn = connectionService.loadEnabledConnections().stream()
+            .filter(item -> connId.equalsIgnoreCase(item.getId()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException(connectionMissingMessage(connId)));
+
+        Connector connector = connectorRegistry.ofType(conn.getConnectorType(), conn.getConnectorVersion());
+        if (!(connector instanceof SqlConnector sqlConnector)) {
+            throw new IllegalArgumentException("连接 " + connId + " 的连接器 " + conn.getConnectorType()
+                + " 不是 SQL 连接器，无法查表结构；请让用户直接提供表与字段");
+        }
+        String connectorType = lower(conn.getConnectorType());
+        boolean mysql;
+        if (connectorType.contains("mysql")) {
+            mysql = true;
+        } else if (connectorType.contains("postgres") || connectorType.contains("pgsql")) {
+            mysql = false;
+        } else {
+            throw new IllegalArgumentException("连接 " + connId + " 的连接器类型 " + conn.getConnectorType()
+                + " 暂不支持表结构查询（当前支持 MySQL / PostgreSQL）：请让用户直接提供表名与字段");
+        }
+
+        String kw = trimToNull(keyword);
+        int size = normalizePageSize(pageSize);
+        int offset = parseCursor(cursor);
+        // 列名统一转小写，避免不同驱动大小写差异让模型对不上字段
+        QueryOptions opts = new QueryOptions(null, MAX_SCHEMA_ROWS, 200, "LOWER");
+
+        List<Map<String, Object>> tableRows = sqlConnector.queryForList(conn,
+            mysql
+                ? "SELECT table_name AS table_name, table_comment AS table_comment FROM information_schema.tables "
+                    + "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' ORDER BY table_name"
+                : "SELECT c.relname AS table_name, obj_description(c.oid, 'pg_class') AS table_comment "
+                    + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    + "WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
+                    + "ORDER BY c.relname",
+            List.of(), opts);
+
+        Map<String, String> tableComments = new LinkedHashMap<>();
+        for (Map<String, Object> row : tableRows) {
+            String table = stringValue(row.get("table_name"));
+            if (table != null) {
+                tableComments.put(table, stringValue(row.get("table_comment")));
+            }
+        }
+
+        List<String> matched = new ArrayList<>();
+        if (kw == null) {
+            matched.addAll(tableComments.keySet());
+        } else {
+            for (Map.Entry<String, String> entry : tableComments.entrySet()) {
+                if (containsIgnoreCase(entry.getKey(), kw) || containsIgnoreCase(entry.getValue(), kw)) {
+                    matched.add(entry.getKey());
+                }
+            }
+            if (matched.isEmpty()) {
+                // 表名/表注释没命中时按字段名反查所属表
+                List<Map<String, Object>> columnHits = sqlConnector.queryForList(conn,
+                    mysql
+                        ? "SELECT DISTINCT table_name AS table_name FROM information_schema.columns "
+                            + "WHERE table_schema = DATABASE() AND column_name LIKE ? ORDER BY table_name"
+                        : "SELECT DISTINCT c.relname AS table_name FROM pg_class c "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "JOIN pg_attribute a ON a.attrelid = c.oid "
+                            + "WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
+                            + "AND a.attnum > 0 AND NOT a.attisdropped AND a.attname LIKE ? ORDER BY c.relname",
+                    List.<Object>of("%" + kw + "%"), opts);
+                for (Map<String, Object> row : columnHits) {
+                    String table = stringValue(row.get("table_name"));
+                    if (table != null && !matched.contains(table)) {
+                        matched.add(table);
+                    }
+                }
+            }
+        }
+
+        List<String> pageTables = new ArrayList<>();
+        for (int i = offset; i < matched.size() && pageTables.size() < size; i++) {
+            pageTables.add(matched.get(i));
+        }
+        Map<String, List<Map<String, Object>>> columnsByTable = queryColumns(sqlConnector, conn, mysql, pageTables, opts);
+
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (String table : pageTables) {
+            List<Map<String, Object>> columns = columnsByTable.getOrDefault(table, List.of());
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("tableName", table);
+            item.put("tableComment", tableComments.get(table));
+            item.put("columns", columns);
+            item.put("columnsTruncated", columns.size() >= MAX_SCHEMA_COLUMNS_PER_TABLE);
+            items.add(item);
+        }
+        Map<String, Object> payload = pagePayload(matched.size(), items, offset, size);
+        payload.put("connectionId", connId);
+        payload.put("connectorType", conn.getConnectorType());
+        payload.put("dialect", mysql ? "mysql" : "postgresql");
+        if (matched.isEmpty()) {
+            payload.put("message", "该连接下没有匹配的表：换个关键词，或直接问用户表名；不要臆造表名与字段。");
+        }
+        return payload;
+    }
+
+    private static Map<String, List<Map<String, Object>>> queryColumns(SqlConnector sqlConnector, Connection conn,
+                                                                       boolean mysql, List<String> tables,
+                                                                       QueryOptions opts) {
+        Map<String, List<Map<String, Object>>> columnsByTable = new LinkedHashMap<>();
+        if (tables.isEmpty()) {
+            return columnsByTable;
+        }
+        String placeholders = String.join(", ", tables.stream().map(table -> "?").toList());
+        String sql = mysql
+            ? "SELECT table_name AS table_name, column_name AS column_name, data_type AS data_type, "
+                + "column_comment AS column_comment, column_key AS column_key, is_nullable AS is_nullable "
+                + "FROM information_schema.columns WHERE table_schema = DATABASE() "
+                + "AND table_name IN (" + placeholders + ") ORDER BY table_name, ordinal_position"
+            : "SELECT c.relname AS table_name, a.attname AS column_name, "
+                + "format_type(a.atttypid, a.atttypmod) AS data_type, "
+                + "col_description(c.oid, a.attnum) AS column_comment, "
+                + "CASE WHEN EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisprimary "
+                + "AND a.attnum = ANY(i.indkey)) THEN 'PRI' ELSE '' END AS column_key, "
+                + "CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable "
+                + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                + "JOIN pg_attribute a ON a.attrelid = c.oid "
+                + "WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
+                + "AND a.attnum > 0 AND NOT a.attisdropped AND c.relname IN (" + placeholders + ") "
+                + "ORDER BY c.relname, a.attnum";
+        List<Object> args = new ArrayList<>(tables.size());
+        args.addAll(tables);
+        for (Map<String, Object> row : sqlConnector.queryForList(conn, sql, args, opts)) {
+            String table = stringValue(row.get("table_name"));
+            if (table == null) {
+                continue;
+            }
+            List<Map<String, Object>> columns = columnsByTable.computeIfAbsent(table, key -> new ArrayList<>());
+            if (columns.size() >= MAX_SCHEMA_COLUMNS_PER_TABLE) {
+                continue;
+            }
+            Map<String, Object> column = new LinkedHashMap<>();
+            column.put("name", stringValue(row.get("column_name")));
+            column.put("type", stringValue(row.get("data_type")));
+            column.put("nullable", "YES".equalsIgnoreCase(stringValue(row.get("is_nullable"))));
+            column.put("primaryKey", "PRI".equalsIgnoreCase(stringValue(row.get("column_key"))));
+            column.put("comment", stringValue(row.get("column_comment")));
+            columns.add(column);
+        }
+        return columnsByTable;
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private Map<String, Object> doChainGet(AgentRunContext context, Long chainId) {
@@ -661,7 +1084,7 @@ public class DatabusAgentTools {
             boolean delivered = cardChannel.send(context.runId(), card);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("ok", false);
-            payload.put("errorType", "REQUIRE_APPROVAL");
+            payload.put("errorType", ERROR_REQUIRE_APPROVAL);
             payload.put("mode", mode.getCode());
             payload.put("cardId", card.cardId());
             payload.put("cardDelivered", delivered);
@@ -1194,7 +1617,8 @@ public class DatabusAgentTools {
         }
     }
 
-    private Map<String, Object> doComponentGet(String componentCode, Long componentId, String fields) {
+    private Map<String, Object> doComponentGet(AgentRunContext context, String componentCode,
+                                               Long componentId, String fields) {
         String code = trimToNull(componentCode);
         if (componentId == null && code == null) {
             throw new IllegalArgumentException("componentCode 与 componentId 至少给一个");
@@ -1204,17 +1628,19 @@ public class DatabusAgentTools {
         if (componentId != null) {
             cmp = componentService.queryById(componentId);
         } else {
-            DatabusComponentBo bo = new DatabusComponentBo();
-            bo.setComponentCode(code);
-            PageResult<DatabusComponentVo> page = componentService.queryPageList(bo, pageQuery(0, MAX_PAGE_SIZE));
-            cmp = page.getRows().stream()
-                .filter(row -> row.getComponentCode() != null && row.getComponentCode().equalsIgnoreCase(code))
-                .findFirst()
-                .orElse(null);
+            // 先找生效/停用的正式组件，找不到再回捞自己的草稿，避免草稿与正式同码时把草稿当正式用
+            cmp = findComponentByCode(code, null);
+            if (cmp == null) {
+                cmp = findComponentByCode(code, STATUS_DRAFT);
+            }
         }
         if (cmp == null) {
             throw new IllegalArgumentException("组件不存在：" + (code == null ? componentId : code)
-                + "（草稿态组件在采纳前查不到）");
+                + "（他人的草稿不可见；自己的草稿需用 componentCode 查）");
+        }
+        boolean draft = STATUS_DRAFT.equals(cmp.getStatus());
+        if (draft && !Objects.equals(cmp.getCreateBy(), context.userId())) {
+            throw new IllegalArgumentException("组件 " + cmp.getComponentCode() + " 是他人的草稿，不可读取");
         }
 
         List<String> parts = splitFields(fields);
@@ -1232,6 +1658,7 @@ public class DatabusAgentTools {
             payload.put("editor", cmp.getEditor());
             payload.put("tags", cmp.getTags());
             payload.put("status", cmp.getStatus());
+            payload.put("draft", draft);
             payload.put("version", cmp.getVersion());
             payload.put("scriptLang", cmp.getScriptLang());
             payload.put("deprecated", cmp.getDeprecated());
@@ -1249,6 +1676,17 @@ public class DatabusAgentTools {
             payload.put("scriptBody", cmp.getScriptBody());
         }
         return payload;
+    }
+
+    private DatabusComponentVo findComponentByCode(String code, String status) {
+        DatabusComponentBo bo = new DatabusComponentBo();
+        bo.setComponentCode(code);
+        bo.setStatus(status);
+        PageResult<DatabusComponentVo> page = componentService.queryPageList(bo, pageQuery(0, MAX_PAGE_SIZE));
+        return page.getRows().stream()
+            .filter(row -> row.getComponentCode() != null && row.getComponentCode().equalsIgnoreCase(code))
+            .findFirst()
+            .orElse(null);
     }
 
     private static Map<String, Object> pagePayload(long total, List<Map<String, Object>> items, int offset, int size) {
@@ -1453,10 +1891,12 @@ public class DatabusAgentTools {
         return total;
     }
 
-    private static String errorJson(String message) {
+    private static String errorJson(String message, String errorType, boolean retryable) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("ok", false);
+        payload.put("errorType", errorType);
         payload.put("error", message == null || message.isBlank() ? "未知错误" : message);
+        payload.put("retryable", retryable);
         return JsonUtils.toJsonString(payload);
     }
 

@@ -217,7 +217,9 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
             .map(SysDatabusConnection::getConnectorDefId)
             .filter(Objects::nonNull)
             .collect(Collectors.toSet());
-        Map<Long, DatabusConnectorDef> defs = defIds.isEmpty() ? Map.of()
+        // 用可变 Map 而非 Map.of()：defIds 为空时连接自身的 connectorDefId 也是 null，
+        // 下面 defs.get(null) 在不可变 Map 上会抛 NPE，导致整条连接被当成「转换失败」跳过
+        Map<Long, DatabusConnectorDef> defs = defIds.isEmpty() ? new LinkedHashMap<>()
             : connectorDefMapper.selectByIds(defIds).stream()
                 .collect(Collectors.toMap(DatabusConnectorDef::getId, d -> d));
         List<Connection> connections = new ArrayList<>(entities.size());
@@ -226,8 +228,8 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
                 connections.add(toRuntimeConnection(entity, defs.get(entity.getConnectorDefId())));
             } catch (Exception e) {
                 // 单条转换失败不阻断执行，记录后跳过；后续组件取该 connectionId 会抛"未注册"
-                log.error("连接转换失败 id={} connectionId={} err={}",
-                    entity.getId(), entity.getConnectionId(), e.getMessage());
+                log.error("连接转换失败 id={} connectionId={}",
+                    entity.getId(), entity.getConnectionId(), e);
             }
         }
         return connections;

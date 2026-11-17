@@ -124,6 +124,12 @@ public final class AgentConstants {
 
     public static final String TOOL_COMPONENT_DRAFT_SAVE = "databus_component_draft_save";
 
+    public static final String TOOL_CONNECTION_SEARCH = "databus_connection_search";
+
+    public static final String TOOL_CONNECTOR_SEARCH = "databus_connector_search";
+
+    public static final String TOOL_DB_SCHEMA_SEARCH = "databus_db_schema_search";
+
     /* ---------------- 权限码 ---------------- */
 
     /**
@@ -166,6 +172,11 @@ public final class AgentConstants {
     public static final String ERROR_TIMEOUT = "TIMEOUT";
 
     public static final String ERROR_RUNTIME = "RUNTIME";
+
+    /**
+     * 待用户确认（试跑审批卡）：不是执行失败，不参与 retryable 语义
+     */
+    public static final String ERROR_REQUIRE_APPROVAL = "REQUIRE_APPROVAL";
 
     /* ---------------- 工具与记录的阈值 ---------------- */
 

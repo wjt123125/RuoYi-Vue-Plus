@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.json.utils.JsonUtils;
+import org.dromara.databus.agent.AgentGuardRejectedException.GuardReason;
 import org.dromara.databus.config.properties.DatabusAgentProperties;
 import org.dromara.databus.domain.DatabusAgentMessage;
 import org.dromara.databus.domain.DatabusAgentRun;
@@ -82,7 +83,7 @@ public class AgentGuard {
         // ② 上下文存在：取 SnailAI 透传的 conversationId
         String conversationId = AgentChatContextHolder.getContext().getConversationId();
         if (!StringUtils.hasText(conversationId)) {
-            throw new AgentGuardRejectedException(null, "缺少会话上下文（conversationId 为空），已拒绝执行");
+            throw new AgentGuardRejectedException(null, GuardReason.TASK_CONTEXT_UNAVAILABLE, "缺少会话上下文（conversationId 为空），已拒绝执行");
         }
 
         // ② 反查 run：必须且只能有一条进行中任务
@@ -91,10 +92,10 @@ public class AgentGuard {
             .eq(DatabusAgentRun::getStatus, AgentRunStatusEnum.RUNNING.getCode())
             .orderByDesc(DatabusAgentRun::getCreateTime));
         if (running.isEmpty()) {
-            throw new AgentGuardRejectedException(null, "会话 " + conversationId + " 没有进行中的任务，已拒绝执行");
+            throw new AgentGuardRejectedException(null, GuardReason.TASK_CONTEXT_UNAVAILABLE, "会话 " + conversationId + " 没有进行中的任务，已拒绝执行");
         }
         if (running.size() > SINGLE_RUNNING) {
-            throw new AgentGuardRejectedException(null, "会话 " + conversationId + " 存在多个进行中的任务，无法确定调用身份，已拒绝执行");
+            throw new AgentGuardRejectedException(null, GuardReason.TASK_CONTEXT_UNAVAILABLE, "会话 " + conversationId + " 存在多个进行中的任务，无法确定调用身份，已拒绝执行");
         }
 
         DatabusAgentRun run = running.get(0);
@@ -102,10 +103,10 @@ public class AgentGuard {
         // ⑤ 归属时效：过期任务就地置 EXPIRED
         if (run.getExpireTime() != null && run.getExpireTime().isBefore(LocalDateTime.now())) {
             stopExpired(run.getRunId());
-            throw new AgentGuardRejectedException(run.getRunId(), "任务已过期，已拒绝执行");
+            throw new AgentGuardRejectedException(run.getRunId(), GuardReason.TASK_EXPIRED, "任务已过期，已拒绝执行");
         }
         if (run.getUserId() == null) {
-            throw new AgentGuardRejectedException(run.getRunId(), "任务缺少发起人快照，已拒绝执行");
+            throw new AgentGuardRejectedException(run.getRunId(), GuardReason.TASK_CONTEXT_UNAVAILABLE, "任务缺少发起人快照，已拒绝执行");
         }
 
         // ③ 权限点校验：用发起时的快照，不看当前登录态
@@ -113,7 +114,7 @@ public class AgentGuard {
         try {
             permissions = JsonUtils.parseArray(run.getPermissions(), String.class);
         } catch (Exception e) {
-            throw new AgentGuardRejectedException(run.getRunId(), "任务权限快照损坏，已拒绝执行");
+            throw new AgentGuardRejectedException(run.getRunId(), GuardReason.TASK_CONTEXT_UNAVAILABLE, "任务权限快照损坏，已拒绝执行");
         }
         AgentRunContext context = new AgentRunContext(
             run.getRunId(),
@@ -122,7 +123,7 @@ public class AgentGuard {
             permissions,
             run.getRound() == null ? 0 : run.getRound());
         if (!context.hasPermission(permission)) {
-            throw new AgentGuardRejectedException(run.getRunId(), "当前用户缺少权限点 " + permission + "，已拒绝执行");
+            throw new AgentGuardRejectedException(run.getRunId(), GuardReason.MISSING_PERMISSION_POINT, "当前用户缺少权限点 " + permission + "，已拒绝执行");
         }
         return context;
     }

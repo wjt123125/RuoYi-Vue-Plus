@@ -24,7 +24,7 @@ create table if not exists databus_agent_run (
     id                   bigint(20)      not null                   comment '主键',
     run_id               varchar(64)     not null                   comment 'run 句柄，UUID，交给前端与 AI',
     user_id              bigint(20)      not null                   comment '发起人（身份快照来源，工具层据此 setCreateBy）',
-    intent               varchar(1000)   default null               comment '用户原话',
+    intent               text            default null               comment '用户原话',
     conversation_id      varchar(64)     default null               comment 'SnailAI 会话 id',
     round                int(11)         default 0                  comment '已用纠错轮数，上限取 databus.agent.max-rounds',
     status               varchar(20)     not null default 'RUNNING' comment 'RUNNING / FINISHED / FAILED / STOPPED / EXPIRED / SUPERSEDED',

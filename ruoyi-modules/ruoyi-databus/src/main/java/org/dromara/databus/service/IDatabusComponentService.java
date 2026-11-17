@@ -4,7 +4,6 @@ import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.ScriptDraftBo;
-import org.dromara.databus.domain.bo.ScriptProbeBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
 import org.dromara.databus.domain.bo.ScriptSaveBo;
 import org.dromara.databus.domain.vo.ComponentDomainVo;
@@ -13,7 +12,6 @@ import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.DatabusComponentVersionVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
 import org.dromara.databus.domain.vo.ScriptDraftResultVo;
-import org.dromara.databus.domain.vo.ScriptProbeResultVo;
 import org.dromara.databus.domain.vo.ScriptRuntimeVo;
 import org.dromara.databus.domain.vo.ScriptSaveResultVo;
 
@@ -152,15 +150,6 @@ public interface IDatabusComponentService {
      * @return 新版本号与物化契约
      */
     ScriptSaveResultVo adoptScriptDraft(Long id);
-
-    /**
-     * 组件级探针试跑：编译源码 → 造实例 → 用临时节点 id 注进 FlowBus → 单节点执行 → 立刻摘除。
-     * <p>不建链、不落库、不写执行记录；用于 AI 在落草稿前验证「组件本身能不能跑」。
-     *
-     * @param bo 探针入参
-     * @return 试跑结果
-     */
-    ScriptProbeResultVo probeRun(ScriptProbeBo bo);
 
     /**
      * 预览链路：把草稿行按真实组件编码临时注册进 FlowBus（只造实例 + 登记，不写库、不进台账）。

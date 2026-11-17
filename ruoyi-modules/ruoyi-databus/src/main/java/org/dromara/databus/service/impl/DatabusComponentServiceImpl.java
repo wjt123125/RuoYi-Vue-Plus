@@ -27,7 +27,6 @@ import org.dromara.databus.domain.DatabusComponentGroup;
 import org.dromara.databus.domain.DatabusComponentVersion;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.ScriptDraftBo;
-import org.dromara.databus.domain.bo.ScriptProbeBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
 import org.dromara.databus.enums.ComponentStatusEnum;
 import org.dromara.databus.enums.OwnerTypeEnum;
@@ -40,11 +39,8 @@ import org.dromara.databus.domain.vo.ComponentSchemaBody;
 import org.dromara.databus.domain.vo.DatabusComponentVersionVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
 import org.dromara.databus.domain.vo.ScriptDraftResultVo;
-import org.dromara.databus.domain.vo.ScriptProbeResultVo;
 import org.dromara.databus.domain.vo.ScriptRuntimeVo;
 import org.dromara.databus.domain.vo.ScriptSaveResultVo;
-import org.dromara.databus.executor.DatabusExecutionResult;
-import org.dromara.databus.executor.DatabusExecutor;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentConnectorDepMapper;
 import org.dromara.databus.mapper.DatabusComponentDomainMapper;
@@ -66,7 +62,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -75,8 +70,6 @@ import static org.dromara.databus.constant.ComponentConstants.CATEGORY_DEFAULT;
 import static org.dromara.databus.constant.ComponentConstants.DEPRECATE_NOTE_RETIRED;
 import static org.dromara.databus.constant.ComponentConstants.DEPRECATED_NO;
 import static org.dromara.databus.constant.ComponentConstants.DEPRECATED_YES;
-import static org.dromara.databus.constant.ComponentConstants.PROBE_CHAIN_PREFIX;
-import static org.dromara.databus.constant.ComponentConstants.PROBE_NODE_PREFIX;
 import static org.dromara.databus.constant.ComponentConstants.SCRIPT_LANG_JAVA;
 
 /**
@@ -121,11 +114,6 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
     private final JavaSourceCompiler scriptCompiler;
 
     private final ScriptComponentRegistrar scriptRegistrar;
-
-    /**
-     * 探针试跑复用试运行执行路径（executeByEl）：不建链路台账、不写执行记录
-     */
-    private final DatabusExecutor databusExecutor;
 
     @Override
     public DatabusComponentVo queryById(Long id) {
@@ -342,7 +330,8 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
         }
         List<DatabusComponent> rows = componentMapper.selectByIds(ids);
         // 引用分流（§十二-5）：被链路引用的转软退役（deprecated=1 不物理删——市场安装者共享同一份
-        // 组件，存量链路按 code 引用须继续可运行）；未引用的才硬删 + 清理脚本宿主
+        // 组件，存量链路按 code 引用须继续可运行）；未引用的真删 + 清理脚本宿主。
+        // 必须真删：唯一键 uk_component_code 不含 del_flag，逻辑删留下的行会让该编码永久不可复用
         Set<Long> retireIds = findReferencedIds(rows);
         List<Long> removeIds = rows.stream()
             .map(DatabusComponent::getId)
@@ -355,7 +344,7 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
                 .map(DatabusComponent::getComponentCode)
                 .filter(StringUtils::isNotBlank)
                 .toList();
-            removed = componentMapper.deleteByIds(removeIds) > 0;
+            removed = componentMapper.deletePhysicallyByIds(removeIds) > 0;
             if (removed) {
                 // 清理脚本宿主引用（FlowBus 节点不主动摘除：硬删件残留节点无执行入口，重启消失；
                 // 软退役件保留宿主，存量链路继续运行）
@@ -613,68 +602,14 @@ public class DatabusComponentServiceImpl implements IDatabusComponentService {
         if (!ComponentStatusEnum.DRAFT.getCode().equals(row.getStatus())) {
             throw new ServiceException("只有草稿组件可以拒绝，当前状态为 " + row.getStatus());
         }
-        // 草稿从未注册 FlowBus、未被链路引用，物理删行即可；forget 只清宿主登记里的残留
-        boolean removed = componentMapper.deleteById(id) > 0;
+        // 草稿从未注册 FlowBus、未被链路引用、没有版本行，必须真删：逻辑删会留下 del_flag=1 的行，
+        // 而唯一键 uk_component_code 不含 del_flag，这个编码就再也建不了草稿
+        boolean removed = componentMapper.deletePhysicallyByIds(List.of(id)) > 0;
         if (removed) {
             scriptRegistrar.forget(row.getComponentCode());
             log.info("[databus-script] 脚本草稿已拒绝删除 code={}", row.getComponentCode());
         }
         return removed;
-    }
-
-    @Override
-    public ScriptProbeResultVo probeRun(ScriptProbeBo bo) {
-        if (StringUtils.isBlank(bo.getScriptBody())) {
-            throw new ServiceException("探针试跑必须给脚本正文");
-        }
-        ScriptArtifact artifact = scriptCompiler.compile(bo.getScriptBody());
-        // 只造实例不登记：探针借 FlowBus 临时上岗，跑完立刻摘，不进 active/health 台账
-        NodeComponent instance = scriptRegistrar.instantiate(artifact);
-        String probeNodeCode = PROBE_NODE_PREFIX + UUID.randomUUID().toString().replace("-", "");
-        String probeChainId = PROBE_CHAIN_PREFIX + UUID.randomUUID().toString().replace("-", "");
-
-        ScriptProbeResultVo vo = new ScriptProbeResultVo();
-        vo.setNodeType(artifact.nodeType().name());
-        vo.setRisks(scanDangerousApis(bo.getScriptBody()));
-        try {
-            FlowBus.addManagedNode(probeNodeCode, instance);
-        } catch (Exception e) {
-            throw new ServiceException("探针节点注册 FlowBus 失败：" + e.getMessage(), e);
-        }
-        try {
-            DatabusExecutionResult result = databusExecutor.executeByEl(
-                "THEN(" + probeNodeCode + ")", parseProbeRequest(bo.getRequestData()), null, probeChainId);
-            vo.setSuccess(result.isSuccess());
-            vo.setCostMs(result.getCostTime());
-            vo.setMessage(result.getMessage());
-            vo.setOutput(result.getContextJson());
-            vo.setNodeErrors(result.getSteps().stream()
-                .filter(step -> !step.isSuccess())
-                .map(step -> step.getNodeId() + "：" + step.getErrorMessage())
-                .toList());
-            return vo;
-        } finally {
-            removeProbe(probeNodeCode, probeChainId);
-        }
-    }
-
-    /**
-     * 摘探针：链和节点都按自己的临时 id 精确移除。
-     * <p>
-     * 摘失败只 warn 不抛——执行结果已经拿到，清理是收尾动作；漏摘的节点带
-     * {@code __agent_probe_} 前缀，重启即消失，也不会有链路引用它。
-     */
-    private void removeProbe(String probeNodeCode, String probeChainId) {
-        try {
-            FlowBus.removeChain(probeChainId);
-        } catch (Exception e) {
-            log.warn("[databus-script] 探针链清理失败 chainId={}：{}", probeChainId, e.getMessage());
-        }
-        try {
-            FlowBus.removeNode(probeNodeCode);
-        } catch (Exception e) {
-            log.warn("[databus-script] 探针节点清理失败 nodeId={}：{}", probeNodeCode, e.getMessage());
-        }
     }
 
     @Override

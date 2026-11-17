@@ -31,16 +31,6 @@ public final class ComponentConstants {
     public static final String SCRIPT_LANG_JAVA = "java";
 
     /**
-     * AI 试跑用的临时节点 id 前缀
-     */
-    public static final String PROBE_NODE_PREFIX = "__agent_probe_";
-
-    /**
-     * AI 试跑用的临时链路 id 前缀
-     */
-    public static final String PROBE_CHAIN_PREFIX = "__agent_probe_chain_";
-
-    /**
      * 未归类组件的默认分类
      */
     public static final String CATEGORY_DEFAULT = "PLATFORM";

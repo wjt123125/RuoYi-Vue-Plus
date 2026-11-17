@@ -14,7 +14,6 @@ import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.ScriptAdoptBo;
-import org.dromara.databus.domain.bo.ScriptProbeBo;
 import org.dromara.databus.domain.bo.ScriptRollbackBo;
 import org.dromara.databus.domain.bo.ScriptSaveBo;
 import org.dromara.databus.domain.vo.ComponentDomainVo;
@@ -22,7 +21,6 @@ import org.dromara.databus.domain.vo.ComponentGroupVo;
 import org.dromara.databus.domain.vo.ComponentOptionsVo;
 import org.dromara.databus.domain.vo.DatabusComponentVersionVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
-import org.dromara.databus.domain.vo.ScriptProbeResultVo;
 import org.dromara.databus.domain.vo.ScriptRuntimeVo;
 import org.dromara.databus.domain.vo.ScriptSaveResultVo;
 import org.dromara.databus.script.host.ScriptCompileException;
@@ -196,20 +194,6 @@ public class DatabusComponentController extends BaseController {
             return R.ok(componentService.adoptScriptDraft(bo.getId()));
         } catch (ScriptCompileException e) {
             return R.ok(ScriptSaveResultVo.fail(e.getMessage(), e.getDiagnostics()));
-        }
-    }
-
-    /**
-     * 审阅页试跑：把草稿源码挂到临时节点上跑一次，跑完立刻摘除，不落库、不写执行记录。
-     * <p>与 AI 的 databus_component_run 同一实现，供人在采纳前自己验一遍。
-     */
-    @SaCheckPermission("databus:component:edit")
-    @PostMapping("/script/probe")
-    public R<ScriptProbeResultVo> probe(@Validated @RequestBody ScriptProbeBo bo) {
-        try {
-            return R.ok(componentService.probeRun(bo));
-        } catch (ScriptCompileException e) {
-            return R.ok(ScriptProbeResultVo.fail(e.getMessage(), e.getDiagnostics()));
         }
     }
 

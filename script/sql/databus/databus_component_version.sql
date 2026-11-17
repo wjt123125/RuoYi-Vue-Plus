@@ -8,7 +8,8 @@
 --   不覆盖、不删除历史行（remark 记录回滚来源）。
 --
 -- 与主表关系：逻辑外键 component_id → databus_component.id（不建物理 FK，
---   组件删除走逻辑删 del_flag，版本行随组件留存审计；无级联）。
+--   组件未引用时物理删行、被链路引用时转 deprecated=1，两种都无级联；
+--   版本行按 component_id 留存为孤立审计记录）。
 --
 -- 幂等：create table if not exists，本片段可直接重复执行（不动存量版本数据）。
 -- ----------------------------

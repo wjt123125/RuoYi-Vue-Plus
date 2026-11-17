@@ -124,8 +124,6 @@ public final class AgentConstants {
 
     public static final String TOOL_COMPONENT_DRAFT_SAVE = "databus_component_draft_save";
 
-    public static final String TOOL_COMPONENT_RUN = "databus_component_run";
-
     /* ---------------- 权限码 ---------------- */
 
     /**

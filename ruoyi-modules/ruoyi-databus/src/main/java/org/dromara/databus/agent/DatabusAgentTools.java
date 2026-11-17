@@ -14,13 +14,11 @@ import org.dromara.databus.domain.bo.DatabusChainBo;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
 import org.dromara.databus.domain.bo.PreviewRunBo;
 import org.dromara.databus.domain.bo.ScriptDraftBo;
-import org.dromara.databus.domain.bo.ScriptProbeBo;
 import org.dromara.databus.domain.vo.ComponentOptionVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
 import org.dromara.databus.domain.vo.PreviewRunVo;
 import org.dromara.databus.domain.vo.ScriptDraftResultVo;
-import org.dromara.databus.domain.vo.ScriptProbeResultVo;
 import org.dromara.databus.el.bean.ChainInputParam;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.ELInfo;
@@ -78,7 +76,6 @@ import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_RUN;
 import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_SEARCH;
 import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_DRAFT_SAVE;
 import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_GET;
-import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_RUN;
 import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_SEARCH;
 import static org.dromara.databus.constant.ChainConstants.LOG_LEVEL_FULL;
 import static org.dromara.databus.constant.CommonConstants.OWNER_SYSTEM;
@@ -331,8 +328,7 @@ public class DatabusAgentTools {
         + "必须由人在组件审阅页点「采纳」才生效——落完草稿不要声称组件已可用，要提示用户去审阅页确认。"
         + "scriptBody 必须是完整 Java 类源码：含 @DatabusCmp 主类（继承 NodeComponent）和内嵌 Cfg 配置类；"
         + "动手前先 databus_component_get 看同类脚本的写法，不要凭记忆拼。"
-        + "落草稿前建议先 databus_component_run 单节点试跑，把编译错和运行错消灭在草稿之前；"
-        + "试跑用的那份入参务必通过 inputParams 登记进来——人点草稿卡上的播放钮时，预览链路按登记表预填入参，"
+        + "试运行用的那份入参务必通过 inputParams 登记进来——人点草稿卡上的播放钮时，预览链路按登记表预填入参，"
         + "不登记用户就只能对着空对象 {} 自己猜。"
         + "返回 draftId、componentCode、nodeType、参数契约 paramSchema 与危险 API 提示 risks。"
         + "改自己名下的草稿传 componentId，新建不传。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
@@ -343,7 +339,7 @@ public class DatabusAgentTools {
         @ToolParam(description = "台账五分类：PROTOCOL/DATA/FLOW_CONTROL/AI/PLATFORM，缺省 PLATFORM", required = false) String category,
         @ToolParam(description = "物料面板分组 key（flow/sequence/branch/loop/other/subflow/business），可空", required = false) String groupName,
         @ToolParam(description = "组件描述", required = false) String description,
-        @ToolParam(description = "试运行入参登记表 JSON 数组，强烈建议填：把组件级探针试跑用的入参按 "
+        @ToolParam(description = "试运行入参登记表 JSON 数组，强烈建议填：把组件试运行用的入参按 "
             + "[{\"path\":\"$.name\",\"type\":\"text\",\"defaultValue\":\"张三\",\"required\":true}] 登记，"
             + "path 是请求根 $ 下的路径；不传或传 [] 表示不登记。", required = false) String inputParams,
         @ToolParam(description = "已有草稿的组件 id；传了就更新该草稿，不传则新建", required = false) Long componentId) {
@@ -359,35 +355,6 @@ public class DatabusAgentTools {
         return execute(TOOL_COMPONENT_DRAFT_SAVE, args, PERMISSION_WRITE,
             ctx -> doScriptDraftSave(ctx, componentId, componentCode, componentName, scriptBody,
                 category, groupName, description, inputParams));
-    }
-
-    /**
-     * 组件级探针试跑：编成组件 → 临时节点跑一次 → 立刻摘除。
-     * <p>
-     * 与 {@code databus_chain_run} 分工不同：链路试跑验的是「串起来对不对」，这里验的是
-     * 「组件本身编得过、造得出、跑得动」。探针节点没有画布配置，脚本必须容忍 cfg 为空。
-     *
-     * @param scriptBody  完整 Java 源码
-     * @param requestData 试跑入参 JSON
-     * @return JSON 结果
-     */
-    @Tool(name = TOOL_COMPONENT_RUN, description = "组件级探针试跑：把一段 Java 脚本源码编成组件，"
-        + "用一个临时节点真实执行一次，跑完立刻从 FlowBus 摘除。"
-        + "验证的是组件本身：编译、实例化/依赖注入、process 逻辑能不能跑通。"
-        + "不建链路、不落库、不写执行记录、不占纠错轮数，也不投放物料面板。"
-        + "requestData 是试跑入参 JSON，作为上下文根 $；不传按空入参跑。"
-        + "注意：探针节点没有画布配置，getCmpData() 为空，脚本必须容忍 cfg 为 null。"
-        + "返回 success、costMs、执行后上下文快照 output（截断）、节点错误 nodeErrors、危险 API 提示 risks。"
-        + "编译失败时返回 errorType=VALIDATION 与 diagnostics（行列+原因），改好源码再调。"
-        + "它不替代链路试跑：串 EL、节点连线仍要用 databus_chain_run。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
-    public String componentRun(
-        @ToolParam(description = "完整 Java 类源码（@DatabusCmp 主类 + 内嵌 Cfg）") String scriptBody,
-        @ToolParam(description = "试跑入参 JSON，作为上下文根 $；不传按空入参跑", required = false) String requestData) {
-        Map<String, Object> args = new LinkedHashMap<>();
-        args.put("scriptBody", scriptBody);
-        args.put("requestData", requestData);
-        return execute(TOOL_COMPONENT_RUN, args, PERMISSION_RUN,
-            ctx -> doComponentRun(scriptBody, requestData));
     }
 
     /**
@@ -835,44 +802,6 @@ public class DatabusAgentTools {
             new AgentCard.Resource(RESOURCE_TYPE_COMPONENT,
                 String.valueOf(result.getId()), result.getComponentCode(), result.getComponentName(),
                 Boolean.TRUE));
-    }
-
-    /**
-     * 组件级探针试跑：service 负责「即注即摘」，这里只把结果裁成模型看得懂的一段。
-     *
-     * @param scriptBody  完整 Java 源码
-     * @param requestData 试跑入参 JSON
-     * @return 结果载荷
-     */
-    private Map<String, Object> doComponentRun(String scriptBody, String requestData) {
-        ScriptProbeBo bo = new ScriptProbeBo();
-        bo.setScriptBody(scriptBody);
-        bo.setRequestData(requestData);
-        Map<String, Object> payload = new LinkedHashMap<>();
-        try {
-            ScriptProbeResultVo result = componentService.probeRun(bo);
-            payload.put("success", result.getSuccess());
-            payload.put("costMs", result.getCostMs());
-            payload.put("nodeType", result.getNodeType());
-            payload.put("risks", result.getRisks());
-            payload.put("nodeErrors", result.getNodeErrors());
-            String output = result.getOutput();
-            payload.put("truncated", output != null && output.length() > MAX_OUTPUT_VALUE_BYTES);
-            payload.put("output", truncate(output, MAX_OUTPUT_VALUE_BYTES));
-            if (Boolean.TRUE.equals(result.getSuccess())) {
-                payload.put("message", "探针试跑通过（单节点无画布配置，cfg 为空）。");
-            } else {
-                String reason = truncate(result.getMessage(), MAX_ERROR_TEXT);
-                String errorType = classifyError(reason, List.of());
-                payload.put("message", reason);
-                payload.put("errorType", errorType);
-                payload.put("errorReason", reason);
-                payload.put("retryable", isRetryable(errorType));
-            }
-            return payload;
-        } catch (ScriptCompileException e) {
-            return compileErrorPayload(e);
-        }
     }
 
     /**

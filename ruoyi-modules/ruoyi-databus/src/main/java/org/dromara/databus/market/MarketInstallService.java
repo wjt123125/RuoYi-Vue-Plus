@@ -432,7 +432,8 @@ public class MarketInstallService {
                 // 安装记录一般已经被 chainService.cleanupInstallRecords 删掉了，下面再删一次只是保险
                 // （副本行已经不在时 deleteByIds 不会动记录，这一步保证卸载后不留下指向已删资源的记录）
             } else if (TYPE_COMPONENT.equals(resourceType)) {
-                componentMapper.deleteById(resourceId);
+                // 早期 FORK 装组件留下的本地副本：真删，否则逻辑删残留会一直占着 uk_component_code
+                componentMapper.deletePhysicallyByIds(List.of(resourceId));
             }
         }
         installMapper.deleteById(record.getId());

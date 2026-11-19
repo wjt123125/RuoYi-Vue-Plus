@@ -21,7 +21,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.sql.SQLTimeoutException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.time.LocalDate;
@@ -323,7 +322,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
             return result;
         } catch (SQLException e) {
             log.error("[db] 探活失败 type={}", getType(), e);
-            throw new ConnectorException("JDBC_TEST_CONNECTION_FAILED", classify(e), e);
+            throw new ConnectorException("JDBC_TEST_CONNECTION_FAILED", String.valueOf(e.getMessage()), e);
         }
     }
 
@@ -401,7 +400,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
         } catch (SQLException e) {
             log.error("[db] 执行失败 connId={} type={} stmt={}", conn.getId(), getType(),
                 JdbcSqlGuard.statementType(sql), e);
-            throw new ConnectorException("JDBC_EXECUTE_FAILED", "SQL 执行失败：" + classify(e), e);
+            throw new ConnectorException("JDBC_EXECUTE_FAILED", "SQL 执行失败：" + e.getMessage(), e);
         }
     }
 
@@ -452,7 +451,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
         } catch (SQLException e) {
             log.error("[db] 批量执行失败 connId={} type={} stmt={} groups={}", conn.getId(), getType(),
                 JdbcSqlGuard.statementType(sql), argsList.size(), e);
-            throw new ConnectorException("JDBC_BATCH_FAILED", "批量执行失败（已回滚）：" + classify(e), e);
+            throw new ConnectorException("JDBC_BATCH_FAILED", "批量执行失败（已回滚）：" + e.getMessage(), e);
         }
     }
 
@@ -580,7 +579,7 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
             }
         } catch (SQLException e) {
             log.error("[db] 查询失败 connId={} type={}", conn.getId(), getType(), e);
-            throw new ConnectorException("JDBC_QUERY_FAILED", "SQL 查询失败：" + classify(e), e);
+            throw new ConnectorException("JDBC_QUERY_FAILED", "SQL 查询失败：" + e.getMessage(), e);
         }
     }
 
@@ -699,36 +698,6 @@ public abstract class AbstractJdbcConnector implements SqlConnector {
             preview.add(s.length() <= ARG_PREVIEW_LEN ? s : s.substring(0, ARG_PREVIEW_LEN) + "***");
         }
         return preview.toString();
-    }
-
-    /**
-     * SQLException → 三态归一化（§3.5）。不回原文：内网 IP / 库名 / 驱动版本都是 SSRF 回读素材。
-     */
-    private String classify(SQLException e) {
-        String state = e.getSQLState();
-        if (e instanceof SQLTimeoutException) {
-            return "连接或查询超时";
-        }
-        if (state != null && state.startsWith("08")) {
-            return "拒绝连接（数据库不可达或端口不通）";
-        }
-        if ("28000".equals(state) || "28P01".equals(state)) {
-            return "认证失败（用户名或密码不正确）";
-        }
-        if (state != null && state.startsWith("3D")) {
-            return "数据库不存在";
-        }
-        String message = String.valueOf(e.getMessage()).toLowerCase();
-        if (message.contains("timeout") || message.contains("timed out")) {
-            return "连接或查询超时";
-        }
-        if (message.contains("refused") || message.contains("unreachable")) {
-            return "拒绝连接（数据库不可达或端口不通）";
-        }
-        if (message.contains("password") || message.contains("authentication") || message.contains("login")) {
-            return "认证失败（用户名或密码不正确）";
-        }
-        return "连接失败（详见服务端日志）";
     }
 
     private void rollbackQuietly(java.sql.Connection c) {

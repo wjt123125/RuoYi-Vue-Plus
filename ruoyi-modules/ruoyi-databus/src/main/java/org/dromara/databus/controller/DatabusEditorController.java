@@ -66,7 +66,7 @@ public class DatabusEditorController extends BaseController {
     }
 
     /**
-     * 试运行（阶段 1C）：基于当前画布内容生成 EL、语法校验通过后直接按 EL 真执行（不落库），
+     * 试运行：基于当前画布内容生成 EL、语法校验通过后直接按 EL 真执行（不落库），
      * 返回每步成败耗时与上下文快照。执行失败也以 HTTP 200 返回，错误信息在 errorMessage 中。
      * 六步逻辑已抽到 {@link IDatabusPreviewRunService}，AI 工具与人工界面共用。
      *

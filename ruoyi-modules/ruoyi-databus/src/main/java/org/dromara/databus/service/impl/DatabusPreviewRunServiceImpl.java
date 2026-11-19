@@ -17,6 +17,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * 试运行服务唯一实现：六步与抽取前 Controller 行为逐字一致（§3.12）。
+ * <p>
+ * 试跑是临时现场，结果只回前端、不落库；需要复盘时由用户把结果卡片贴进对话，
+ * 数据随消息快照保存在会话附件里，不额外建表。
  *
  * @author databus
  */

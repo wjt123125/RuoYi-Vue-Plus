@@ -169,10 +169,10 @@ public final class JdbcPoolRegistry {
         try {
             return new HikariDataSource(hc);
         } catch (RuntimeException e) {
-            // 建池失败不留半死对象；异常原文可能含内网 host，只回类型 + 归一化提示（§3.5）
+            // 建池失败不留半死对象；原始异常直接上抛，前端折叠展示
             log.error("[db] 建池失败 connId={} db={}", connectionId, type.getDbType(), e);
             throw new ConnectorException("JDBC_POOL_INIT_FAILED",
-                "连接池初始化失败（connId=" + connectionId + "）：" + classify(e), e);
+                "连接池初始化失败（connId=" + connectionId + "）：" + e.getMessage(), e);
         }
     }
 
@@ -221,21 +221,5 @@ public final class JdbcPoolRegistry {
     private static String maskKey(String key) {
         int idx = key.indexOf(':');
         return idx < 0 ? key : key.substring(0, idx) + ":*";
-    }
-
-    /** 异常归一化：不回显可能含内网 host / 库名的原文（§3.5 unverified 严档） */
-    private static String classify(Throwable e) {
-        String msg = String.valueOf(e.getMessage());
-        String lower = msg.toLowerCase();
-        if (lower.contains("timeout") || lower.contains("timed out")) {
-            return "连接超时";
-        }
-        if (lower.contains("refused") || lower.contains("connect failed") || lower.contains("unreachable")) {
-            return "拒绝连接";
-        }
-        if (lower.contains("password") || lower.contains("authentication") || lower.contains("login failed")) {
-            return "认证失败";
-        }
-        return "数据库不可达或参数有误（详见服务端日志）";
     }
 }

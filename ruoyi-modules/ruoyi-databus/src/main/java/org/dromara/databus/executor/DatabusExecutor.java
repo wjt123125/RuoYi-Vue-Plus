@@ -177,7 +177,7 @@ public class DatabusExecutor {
         Date startTime = new Date();
         log.info("[databus] 开始试运行(EL 直执) executionId={}", executionId);
 
-        // 注意：脚本节点（script/booleanScript）的预注册由调用方 DatabusEditorController.previewRun
+        // 注意：脚本节点（script/booleanScript）的预注册由调用方（试运行服务）
         // 在 generateEL 之前调 registerScriptNodes 完成——确保 validateEL 校验时 FlowBus
         // 已含脚本 nodeId（validate 会查 FlowBus.getNodeMap，未注册的 nodeId 会校验失败）。
 
@@ -226,7 +226,7 @@ public class DatabusExecutor {
      * 最外层再兜一道遍历异常，失败后让后续 EL 编译暴露真实问题（nodeId 缺失会在 setEL 时
      * 抛 NodeBuildException，调用方 catch 后返回失败结果）。
      * <p>
-     * 调用时机：{@code DatabusEditorController.previewRun} 在 generateEL/EL 校验之前调用——
+     * 调用时机：试运行服务在 generateEL/EL 校验之前调用——
      * validate 会查 FlowBus.getNodeMap，未注册的 nodeId 会导致校验失败。
      *
      * @param jsonEl 画布组件树根（null 直接返回）

@@ -1,5 +1,6 @@
 package org.dromara.databus.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.Dict;
 import com.aizuda.snail.ai.common.model.Result;
 import com.aizuda.snail.ai.common.openapi.dto.OpenApiChatRequest;
@@ -149,23 +150,16 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         if (properties.getAgentId() == null) {
             throw new ServiceException("AI 助手未配置 databus.agent.agent-id");
         }
+        // 只带附件（选中一段日志直接问）也是合法消息，所以两个字段都空才拦
+        if (!StringUtils.hasText(bo.getContent()) && CollUtil.isEmpty(bo.getAttachments())) {
+            throw new ServiceException("内容不能为空");
+        }
         String conversationId = resolveConversationId(bo.getConversationId());
         supersedeActiveRuns(userId, conversationId);
 
-        DatabusAgentRun run = new DatabusAgentRun();
-        run.setRunId(UUID.randomUUID().toString());
-        run.setUserId(userId);
-        run.setIntent(buildIntent(bo));
-        run.setConversationId(conversationId);
-        run.setRound(0);
-        run.setStatus(AgentRunStatusEnum.RUNNING.getCode());
-        run.setSideEffectApproved("0");
-        run.setPermissions(JsonUtils.toJsonString(snapshotPermissions(loginUser)));
-        run.setExpireTime(LocalDateTime.now().plusMinutes(properties.getRunTtlMinutes()));
-        run.setNextSeq(1);
-        // 红线 3：创建人显式落本人，不依赖填充器
-        run.setCreateBy(userId);
-        runMapper.insert(run);
+        String attachments = CollUtil.isEmpty(bo.getAttachments())
+            ? null : JsonUtils.toJsonString(bo.getAttachments());
+        DatabusAgentRun run = createRun(userId, loginUser, conversationId, buildIntent(bo), attachments);
         // 卡片回执落库：工具层据此判定 userConfirmed，模型自报的 true 不单独作数（运行时 §16）
         if (bo.getCardReply() != null) {
             appendMessage(run.getRunId(), EVENT_CARD_REPLY, null,
@@ -175,16 +169,48 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     }
 
     /**
+     * 建一个进行中的 run 并落库。
+     *
+     * @param userId         发起人
+     * @param loginUser      登录用户（权限点快照来源）
+     * @param conversationId 会话 id
+     * @param intent         本轮意图
+     * @param attachments    上下文附件 JSON，可为空
+     * @return 已落库的 run
+     */
+    private DatabusAgentRun createRun(Long userId, LoginUser loginUser, String conversationId, String intent,
+                                      String attachments) {
+        DatabusAgentRun run = new DatabusAgentRun();
+        run.setRunId(UUID.randomUUID().toString());
+        run.setUserId(userId);
+        run.setIntent(intent);
+        run.setConversationId(conversationId);
+        run.setAttachments(attachments);
+        run.setRound(0);
+        run.setStatus(AgentRunStatusEnum.RUNNING.getCode());
+        run.setSideEffectApproved("0");
+        run.setPermissions(JsonUtils.toJsonString(snapshotPermissions(loginUser)));
+        run.setExpireTime(LocalDateTime.now().plusMinutes(properties.getRunTtlMinutes()));
+        run.setNextSeq(1);
+        // 红线 3：创建人显式落本人，不依赖填充器
+        run.setCreateBy(userId);
+        runMapper.insert(run);
+        return run;
+    }
+
+    /**
      * 组装本轮意图：卡片回执追加为结构化提示，让模型知道用户点了哪一项。
      *
      * @param bo 对话入参
      * @return 意图文本
      */
     private String buildIntent(AgentChatBo bo) {
+        // 只带附件时没有原话，intent 落空串而不是 null，避免后续拼接出现 "null"
+        String content = bo.getContent() == null ? "" : bo.getContent();
         if (bo.getCardReply() == null) {
-            return bo.getContent();
+            return content;
         }
-        return bo.getContent() + "\n【卡片回执】用户已在卡片上选择 " + bo.getCardReply().getAction()
+        return content + "\n【卡片回执】用户已在卡片上选择 " + bo.getCardReply().getAction()
             + "（cardId=" + bo.getCardReply().getCardId() + "）。";
     }
 
@@ -224,8 +250,13 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             request.setAgentId(properties.getAgentId());
             request.setOpenId(resolveOpenId(run.getUserId(), loginUser == null ? null : loginUser.getNickname()));
             request.setConversationId(run.getConversationId());
-            // 跨 run 续接：本轮 intent + 上一轮工具摘要（含 nextCursor 等关键词），否则「继续加载下一页」拿不到游标
-            request.setContent(buildChatContent(run));
+            // 跨 run 续接：本轮附件 + 原话 + 上一轮工具摘要（含 nextCursor 等关键词），否则「继续加载下一页」拿不到游标
+            String content = buildChatContent(run);
+            request.setContent(content);
+            // 装配规则会演进，把本次实际发送的内容留一份快照，事后才能回答「模型当时看到了什么」
+            runMapper.update(null, Wrappers.<DatabusAgentRun>lambdaUpdate()
+                .eq(DatabusAgentRun::getRunId, run.getRunId())
+                .set(DatabusAgentRun::getResolvedPrompt, content));
         } catch (Exception e) {
             log.warn("准备 AI 对话失败 runId={}", runId, e);
             settle(settled, run, AgentRunStatusEnum.FAILED, null);
@@ -557,6 +588,107 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         return result;
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteRun(String runId) {
+        DatabusAgentRun run = requireOwnedRun(runId);
+        ensureSettled(run, "删除");
+        // 逻辑删除即可：step / message 保留，但历史回放与上下文续接都不再看到这一轮
+        runMapper.deleteById(run.getId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AgentChatStartVo retryRun(String runId) {
+        DatabusAgentRun old = requireOwnedRun(runId);
+        ensureSettled(old, "重试");
+        LoginUser loginUser = LoginHelper.getLoginUser();
+        if (loginUser == null) {
+            throw new ServiceException("当前登录用户为空");
+        }
+        if (properties.getAgentId() == null) {
+            throw new ServiceException("AI 助手未配置 databus.agent.agent-id");
+        }
+        // 只允许最后一轮：新 run 的 create_time 排在末尾，重试中间轮会让历史顺序错位
+        List<DatabusAgentRun> runs = listConversationRuns(old.getUserId(), old.getConversationId());
+        for (int i = 0; i < runs.size(); i++) {
+            if (runId.equals(runs.get(i).getRunId()) && i < runs.size() - 1) {
+                throw new ServiceException("只能重试最后一轮回复");
+            }
+        }
+        // 旧轮次逻辑删除，新轮次沿用原意图与同一批附件重新发起：前端只替换这一条回复，不新增用户气泡
+        runMapper.deleteById(old.getId());
+        supersedeActiveRuns(old.getUserId(), old.getConversationId());
+        DatabusAgentRun run = createRun(old.getUserId(), loginUser, old.getConversationId(), old.getIntent(),
+            old.getAttachments());
+        return new AgentChatStartVo(run.getRunId(), run.getConversationId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public List<AgentRollbackVo> revertRun(String runId) {
+        DatabusAgentRun run = requireOwnedRun(runId);
+        ensureSettled(run, "回退");
+        List<DatabusAgentRun> runs = listConversationRuns(run.getUserId(), run.getConversationId());
+        int index = -1;
+        for (int i = 0; i < runs.size(); i++) {
+            if (runId.equals(runs.get(i).getRunId())) {
+                index = i;
+                break;
+            }
+        }
+        if (index < 0) {
+            throw new ServiceException("任务不存在");
+        }
+        List<DatabusAgentRun> reverted = runs.subList(index, runs.size());
+        for (DatabusAgentRun item : reverted) {
+            if (AgentRunStatusEnum.RUNNING.getCode().equals(item.getStatus())) {
+                throw new ServiceException("还有任务在进行中，结束后才能回退");
+            }
+        }
+        // 由近及远逐个撤销：最后写回的这份就是「本轮发起前」的结构
+        Map<Long, AgentRollbackVo> rolled = new LinkedHashMap<>();
+        for (int i = reverted.size() - 1; i >= 0; i--) {
+            DatabusAgentRun item = reverted.get(i);
+            if (snapshotService.listEarliestByRun(item.getRunId()).isEmpty()) {
+                continue;
+            }
+            for (AgentRollbackVo vo : rollbackRun(item.getRunId())) {
+                rolled.put(vo.getChainId(), vo);
+            }
+        }
+        // 历史一起截断：刷新后不再回放出这一轮及之后的对话
+        runMapper.deleteBatchIds(reverted.stream().map(DatabusAgentRun::getId).toList());
+        return new ArrayList<>(rolled.values());
+    }
+
+    /**
+     * 会话内全部有效 run，按时间正序（同刻按自增 id），重试与回退都靠这个顺序定位轮次。
+     *
+     * @param userId         归属用户
+     * @param conversationId 会话 id
+     * @return 按发生顺序排列的 run
+     */
+    private List<DatabusAgentRun> listConversationRuns(Long userId, String conversationId) {
+        return runMapper.selectList(Wrappers.<DatabusAgentRun>lambdaQuery()
+            .eq(DatabusAgentRun::getUserId, userId)
+            .eq(DatabusAgentRun::getConversationId, conversationId)
+            .orderByAsc(DatabusAgentRun::getCreateTime)
+            .orderByAsc(DatabusAgentRun::getId));
+    }
+
+    /**
+     * 未结束的 run 不允许做删除 / 重试 / 回退。
+     *
+     * @param run    任务
+     * @param action 动作名（用于提示）
+     */
+    private void ensureSettled(DatabusAgentRun run, String action) {
+        if (AgentRunStatusEnum.RUNNING.getCode().equals(run.getStatus())) {
+            throw new ServiceException("任务还在进行中，结束后才能" + action);
+        }
+    }
+
     /**
      * 把快照里的链路结构整条写回（回滚的 UPDATE 分支）。
      *
@@ -610,8 +742,10 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     }
 
     /**
-     * 组装本轮发给模型的内容：本轮 intent + 同一会话上一轮已结束 run 的工具摘要。
+     * 组装本轮发给模型的内容：附件引用材料 + 用户问题 + 同一会话上一轮已结束 run 的工具摘要。
      * <p>
+     * 顺序固定为「附件块 → 用户问题 → 上一轮摘要」：模型先读引用材料再读问题，最后才是续接线索；
+     * 用户只带附件没写原话时，不输出空的「用户问题：」标题。
      * 上一轮摘要取 databus_agent_step 的 tool / args_digest / result_digest，截断并脱敏，
      * 明确标注「上一轮工具摘要」，让模型在用户追问「继续加载下一页」时能拿到 nextCursor。
      *
@@ -620,8 +754,25 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
      */
     private String buildChatContent(DatabusAgentRun run) {
         String intent = run.getIntent() == null ? "" : run.getIntent();
+        StringBuilder content = new StringBuilder();
+        String attachments = AgentContextAssembler.assemble(run.getAttachments());
+        if (StringUtils.hasText(attachments)) {
+            content.append(attachments);
+        }
+        if (StringUtils.hasText(intent)) {
+            if (content.length() > 0) {
+                content.append("\n\n");
+            }
+            content.append("用户问题：").append(intent);
+        }
         String summary = buildPreviousRoundSummary(run);
-        return summary == null ? intent : intent + "\n\n" + summary;
+        if (summary != null) {
+            if (content.length() > 0) {
+                content.append("\n\n");
+            }
+            content.append(summary);
+        }
+        return content.toString();
     }
 
     private String buildPreviousRoundSummary(DatabusAgentRun run) {
@@ -866,6 +1017,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         vo.setRunId(run.getRunId());
         vo.setConversationId(run.getConversationId());
         vo.setIntent(run.getIntent());
+        vo.setAttachments(run.getAttachments());
         vo.setStatus(run.getStatus());
         vo.setReport(run.getReport());
         vo.setRound(run.getRound());

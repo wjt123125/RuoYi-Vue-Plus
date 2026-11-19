@@ -1,17 +1,18 @@
 package org.dromara.databus.domain.bo;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * AI 对话发起业务对象。
  * <p>
  * conversationId 为空时由后端生成并回传（前端只存这个 id，run 状态归后端）。
+ * content 可以不填：只带附件（选中一段日志直接问）也是合法的一条消息。
  *
  * @author databus
  */
@@ -22,11 +23,17 @@ public class AgentChatBo implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 用户原话
+     * 用户原话（可为空，与 attachments 至少有一个）
      */
-    @NotBlank(message = "内容不能为空")
     @Size(max = 4000, message = "内容长度不能超过{max}个字符")
     private String content;
+
+    /**
+     * 上下文附件（终端日志 / 试跑结果 / 编译报错 / 画布节点等的选段或引用）
+     */
+    @Valid
+    @Size(max = 20, message = "单条消息最多带{max}条上下文")
+    private List<AgentContextItemBo> attachments;
 
     /**
      * SnailAI 会话 id（为空则新开一个会话）

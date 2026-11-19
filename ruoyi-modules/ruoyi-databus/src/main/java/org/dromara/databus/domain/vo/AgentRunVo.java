@@ -37,6 +37,11 @@ public class AgentRunVo implements Serializable {
     private String intent;
 
     /**
+     * 上下文附件原始 JSON 数组（前端自己 JSON.parse 回显，后端不反解文本）
+     */
+    private String attachments;
+
+    /**
      * 状态
      */
     private String status;

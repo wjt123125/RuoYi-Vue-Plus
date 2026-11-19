@@ -221,6 +221,39 @@ public class AgentChatController extends BaseController {
     }
 
     /**
+     * 删除一轮对话：逻辑删除该 run，历史回放不再出现。
+     *
+     * @param runId run 句柄
+     */
+    @DeleteMapping("/run/{runId}")
+    public R<Void> deleteRun(@PathVariable String runId) {
+        agentRunService.deleteRun(runId);
+        return R.ok();
+    }
+
+    /**
+     * 原地重试：隐藏旧 run，沿用原意图重新发起。
+     *
+     * @param runId 被重试的旧 run 句柄
+     * @return 新 run 句柄与会话 id
+     */
+    @PostMapping("/run/{runId}/retry")
+    public R<AgentChatStartVo> retry(@PathVariable String runId) {
+        return R.ok(agentRunService.retryRun(runId));
+    }
+
+    /**
+     * 回退到本轮对话发起前：撤销本轮及之后各轮的链路改动，并截断这些轮次的历史。
+     *
+     * @param runId run 句柄
+     * @return 被回滚的链路
+     */
+    @PostMapping("/run/{runId}/revert")
+    public R<List<AgentRollbackVo>> revert(@PathVariable String runId) {
+        return R.ok(agentRunService.revertRun(runId));
+    }
+
+    /**
      * 读取会话级操作审批模式。
      *
      * @param conversationId 会话 id

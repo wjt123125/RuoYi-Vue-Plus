@@ -134,6 +134,30 @@ public interface IDatabusAgentRunService {
     List<AgentRollbackVo> rollbackRun(String runId);
 
     /**
+     * 删除一轮对话：逻辑删除该 run，历史回放不再出现这一轮。
+     *
+     * @param runId run 句柄
+     */
+    void deleteRun(String runId);
+
+    /**
+     * 原地重试：隐藏旧 run，沿用原意图重新建一个 run（前端只替换这一条回复）。
+     *
+     * @param runId 被重试的旧 run 句柄
+     * @return 新 run 句柄与会话 id
+     */
+    AgentChatStartVo retryRun(String runId);
+
+    /**
+     * 回退到本轮对话发起前：由近及远撤销本轮及之后各轮的链路改动，
+     * 并删除这些轮次的历史，刷新后不再回放。
+     *
+     * @param runId run 句柄
+     * @return 被回滚的链路（deleted=true 表示整条已删除）
+     */
+    List<AgentRollbackVo> revertRun(String runId);
+
+    /**
      * 读取会话级操作审批模式（无记录按 MANUAL，FULL 在部署未开放时归一为 MANUAL）。
      *
      * @param conversationId 会话 id

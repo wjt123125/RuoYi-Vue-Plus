@@ -70,6 +70,21 @@ public class DatabusAgentRun extends BaseEntity {
     private String permissions;
 
     /**
+     * 上下文附件（JSON 数组，结构见 AgentContextItemBo）。
+     * <p>
+     * 单独存一列而不是拼进 intent：用户原话要能原样展示与检索，附件还要供刷新时结构化回显；
+     * 给模型的文本由后端按需装配，见 resolvedPrompt。
+     */
+    private String attachments;
+
+    /**
+     * 实际发给模型的完整内容快照（附件装配块 + 用户问题 + 上一轮工具摘要）。
+     * <p>
+     * 装配规则会随版本变化，落快照才能事后回答「模型当时到底看到了什么」。
+     */
+    private String resolvedPrompt;
+
+    /**
      * AI 动手前的链路快照（最新一份，多轮见 databus_agent_snapshot）
      */
     private String beforePayload;

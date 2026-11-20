@@ -42,9 +42,16 @@ public class AgentChatBo implements Serializable {
     private String conversationId;
 
     /**
-     * 卡片回执：用户在确认 / 选择卡片上点了哪一项（可选）
+     * 卡片回执：用户在确认 / 选择卡片上点了哪些项（可选）
      */
     @Valid
     private AgentCardReplyBo cardReply;
+
+    /**
+     * 系统事件：草稿采纳 / 拒绝等客观事实（可选）。
+     * 只带事件、没有正文也是合法的一条消息，展示文案由后端目录生成。
+     */
+    @Valid
+    private AgentSystemEventBo systemEvent;
 
 }

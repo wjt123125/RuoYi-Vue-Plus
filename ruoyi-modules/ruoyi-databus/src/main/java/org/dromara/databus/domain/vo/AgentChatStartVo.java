@@ -26,12 +26,30 @@ public class AgentChatStartVo implements Serializable {
      */
     private String conversationId;
 
+    /**
+     * 本轮意图（原样进模型上下文；卡片回执轮次是带 cardId 的结构化说明，不能上屏）
+     */
+    private String intent;
+
+    /**
+     * 用户可见的回执文案（卡片轮次才有）。
+     * <p>
+     * 与 intent 分开：intent 带 cardId 等给模型看的说明，二者混用就会把内部措辞漏到界面上。
+     */
+    private String display;
+
     public AgentChatStartVo() {
     }
 
-    public AgentChatStartVo(String runId, String conversationId) {
+    public AgentChatStartVo(String runId, String conversationId, String intent) {
+        this(runId, conversationId, intent, null);
+    }
+
+    public AgentChatStartVo(String runId, String conversationId, String intent, String display) {
         this.runId = runId;
         this.conversationId = conversationId;
+        this.intent = intent;
+        this.display = display;
     }
 
 }

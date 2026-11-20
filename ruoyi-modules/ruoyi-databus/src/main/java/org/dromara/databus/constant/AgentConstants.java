@@ -50,9 +50,19 @@ public final class AgentConstants {
     public static final String EVENT_CARD_REPLY = "card_reply";
 
     /**
+     * 系统事件（草稿采纳 / 拒绝等）：前端上报事实，只进模型上下文，不进用户气泡
+     */
+    public static final String EVENT_SYSTEM_EVENT = "system_event";
+
+    /**
      * 卡片动作：确认
      */
     public static final String ACTION_CONFIRM = "confirm";
+
+    /**
+     * 卡片动作：用户取消整张卡（一项都不选）。协议保留键，不对应任何选项
+     */
+    public static final String ACTION_CANCEL = "cancel";
 
     /* ---------------- 卡片协议 ---------------- */
 
@@ -75,6 +85,26 @@ public final class AgentConstants {
      * 卡片呈现方式：会话内联
      */
     public static final String PRESENTATION_INLINE = "inline";
+
+    /**
+     * 卡片呈现方式：弹层。前端把它从消息流抽出，顶替输入区等用户回执
+     */
+    public static final String PRESENTATION_DIALOG = "dialog";
+
+    /**
+     * 卡片协议版本：缺省按 1 处理
+     */
+    public static final int CARD_PROTOCOL_VERSION = 1;
+
+    /**
+     * 选择卡单次最多选项数，超过则拒绝
+     */
+    public static final int MAX_CARD_OPTIONS = 6;
+
+    /**
+     * 卡片自由输入内容长度上限
+     */
+    public static final int MAX_CARD_FREE_TEXT = 500;
 
     /**
      * 资源类型：组件
@@ -129,6 +159,8 @@ public final class AgentConstants {
     public static final String TOOL_CONNECTOR_SEARCH = "databus_connector_search";
 
     public static final String TOOL_DB_SCHEMA_SEARCH = "databus_db_schema_search";
+
+    public static final String TOOL_ASK_USER = "databus_ask_user";
 
     /* ---------------- 权限码 ---------------- */
 

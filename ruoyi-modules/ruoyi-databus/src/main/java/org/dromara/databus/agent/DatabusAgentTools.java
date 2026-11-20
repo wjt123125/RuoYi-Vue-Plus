@@ -49,10 +49,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -66,8 +68,7 @@ import static org.dromara.databus.constant.AgentConstants.ERROR_REQUIRE_APPROVAL
 import static org.dromara.databus.constant.AgentConstants.ERROR_RUNTIME;
 import static org.dromara.databus.constant.AgentConstants.ERROR_TIMEOUT;
 import static org.dromara.databus.constant.AgentConstants.ERROR_VALIDATION;
-import static org.dromara.databus.constant.AgentConstants.KIND_CONFIRM;
-import static org.dromara.databus.constant.AgentConstants.KIND_REF;
+import static org.dromara.databus.constant.AgentConstants.MAX_CARD_OPTIONS;
 import static org.dromara.databus.constant.AgentConstants.MAX_CHECK_VALUE_BYTES;
 import static org.dromara.databus.constant.AgentConstants.MAX_ERROR_TEXT;
 import static org.dromara.databus.constant.AgentConstants.MAX_NODE_ERRORS;
@@ -77,8 +78,8 @@ import static org.dromara.databus.constant.AgentConstants.PERMISSION_ADD;
 import static org.dromara.databus.constant.AgentConstants.PERMISSION_READ;
 import static org.dromara.databus.constant.AgentConstants.PERMISSION_RUN;
 import static org.dromara.databus.constant.AgentConstants.PERMISSION_WRITE;
-import static org.dromara.databus.constant.AgentConstants.PRESENTATION_INLINE;
 import static org.dromara.databus.constant.AgentConstants.RESOURCE_TYPE_COMPONENT;
+import static org.dromara.databus.constant.AgentConstants.TOOL_ASK_USER;
 import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_DRAFT_SAVE;
 import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_GET;
 import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_RUN;
@@ -406,6 +407,39 @@ public class DatabusAgentTools {
         args.put("expect", expect);
         return execute(TOOL_CHAIN_RUN, args, PERMISSION_RUN,
             ctx -> doChainRun(ctx, chainId, payloadJson, userConfirmed, outputPaths, expect));
+    }
+
+    /**
+     * 向用户提一个需要拍板的问题：单选 / 多选 / 自由输入三合一。
+     * <p>
+     * 卡片由服务端生成并推送，本轮到此为止；用户点选后回执随下一条消息回来，
+     * 服务端会按卡片选项做白名单校验，模型不能伪造 action。
+     *
+     * @param question      问题正文
+     * @param options       选项清单
+     * @param multiSelect   是否多选
+     * @param allowFreeText 是否允许自由输入
+     * @return JSON 结果
+     */
+    @Tool(name = TOOL_ASK_USER, description = "向用户提一个需要拍板的问题：单选、多选、自由输入三合一。"
+        + "适合「请选一个方案 / 勾选要处理的项 / 还需要用户补充说明」这类必须由人决定的分叉。"
+        + "options 给 1-6 个，每项必须带 key（英文短标识）、label（按钮文案）、description（说明点了会发生什么）；"
+        + "允许多选把 multiSelect 设为 true，允许用户自己写答案把 allowFreeText 设为 true。"
+        + "question 只写要用户决定什么，不要写「可多选」「单选」「请选择」这类选择方式提示，多选会渲染复选框、单选不会，用户自己看得出来。"
+        + "调用后本轮必须结束，等待卡片回执；不要再用文字重复同一个问题，也不要在同一轮继续往下做。"
+        + "审批放行有专门的确认卡，不要用本工具替代。身份由服务端会话绑定，不要传 userId 之类的身份参数。")
+    public String askUser(
+        @ToolParam(description = "问题正文，一句话说清要用户决定什么") String question,
+        @ToolParam(description = "选项列表，1-6 个，每项含 key / label / description") List<AskOption> options,
+        @ToolParam(description = "是否允许多选，默认 false", required = false) Boolean multiSelect,
+        @ToolParam(description = "是否允许用户自由输入（相当于 E 选项），默认 false", required = false) Boolean allowFreeText) {
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("question", question);
+        args.put("options", options);
+        args.put("multiSelect", multiSelect);
+        args.put("allowFreeText", allowFreeText);
+        return execute(TOOL_ASK_USER, args,
+            ctx -> doAskUser(ctx, question, options, multiSelect, allowFreeText));
     }
 
     /**
@@ -1218,13 +1252,89 @@ public class DatabusAgentTools {
     private static AgentCard buildDraftReviewCard(AgentRunContext context, ScriptDraftResultVo result) {
         String runId = context.runId() == null ? "run" : context.runId();
         String cardId = runId + ":card-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        return new AgentCard(cardId, KIND_REF,
+        return AgentCard.ref(cardId,
             "草稿待审阅：" + result.getComponentName(),
             "采纳后才会注册进 FlowBus 并出现在物料面板。",
-            null, List.of(), Boolean.FALSE, PRESENTATION_INLINE,
             new AgentCard.Resource(RESOURCE_TYPE_COMPONENT,
                 String.valueOf(result.getId()), result.getComponentCode(), result.getComponentName(),
                 Boolean.TRUE));
+    }
+
+    /**
+     * 生成选择卡并推给前端。
+     *
+     * @param context       调用上下文
+     * @param question      问题正文
+     * @param options       已校验的选项
+     * @param multiSelect   是否多选
+     * @param allowFreeText 是否允许自由输入
+     * @return 选择卡
+     */
+    private static AgentCard buildAskUserCard(AgentRunContext context, String question,
+                                              List<AgentCard.Option> options, boolean multiSelect,
+                                              boolean allowFreeText) {
+        String runId = context.runId() == null ? "run" : context.runId();
+        String cardId = runId + ":card-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        return AgentCard.choice(cardId, question, options, multiSelect, allowFreeText);
+    }
+
+    /**
+     * 提问工具的业务体：校验选项 → 推卡 → 告诉模型本轮到此为止。
+     *
+     * @param context       调用上下文
+     * @param question      问题正文
+     * @param options       选项清单
+     * @param multiSelect   是否多选
+     * @param allowFreeText 是否允许自由输入
+     * @return 结果载荷
+     */
+    private Map<String, Object> doAskUser(AgentRunContext context, String question, List<AskOption> options,
+                                          Boolean multiSelect, Boolean allowFreeText) {
+        String title = trimToNull(question);
+        if (title == null) {
+            throw new IllegalArgumentException("question 不能为空");
+        }
+        if (options == null || options.isEmpty()) {
+            throw new IllegalArgumentException("options 至少给 1 个选项");
+        }
+        if (options.size() > MAX_CARD_OPTIONS) {
+            throw new IllegalArgumentException("options 最多 " + MAX_CARD_OPTIONS + " 个");
+        }
+        List<AgentCard.Option> cardOptions = new ArrayList<>();
+        Set<String> keys = new LinkedHashSet<>();
+        for (int i = 0; i < options.size(); i++) {
+            AskOption option = options.get(i);
+            String label = option == null ? null : trimToNull(option.label());
+            if (label == null) {
+                throw new IllegalArgumentException("第 " + (i + 1) + " 个选项缺少 label");
+            }
+            String key = option.key() == null ? "" : option.key().trim();
+            // 没给 key 就按 A/B/C 顺序补，保证回执一定有稳定标识
+            if (key.isEmpty()) {
+                key = String.valueOf((char) ('A' + i));
+            }
+            if (key.length() > 32) {
+                throw new IllegalArgumentException("选项 key 长度不能超过 32：" + key);
+            }
+            if (!keys.add(key)) {
+                throw new IllegalArgumentException("选项 key 重复：" + key);
+            }
+            String description = trimToNull(option.description());
+            cardOptions.add(new AgentCard.Option(key, label,
+                description == null ? label : description, "default"));
+        }
+
+        AgentCard card = buildAskUserCard(context, title, cardOptions,
+            Boolean.TRUE.equals(multiSelect), Boolean.TRUE.equals(allowFreeText));
+        boolean delivered = cardChannel.send(context.runId(), card);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("cardId", card.cardId());
+        payload.put("cardDelivered", delivered);
+        payload.put("awaitingUser", true);
+        payload.put("message", delivered
+            ? "选择卡片已展示，本轮到此为止：不要再用文字重复提问，收到【卡片回执】后再继续。"
+            : "选择卡片未能送达前端（连接可能已断开），本轮到此为止：请提示用户刷新后重试。");
+        return payload;
     }
 
     /**
@@ -1253,7 +1363,7 @@ public class DatabusAgentTools {
     /**
      * 审批拦截时预填确认卡：事实来自规则扫描，不让模型自由发挥影响清单。
      * <p>
-     * 选项必须带 description——前端把 label 渲染成按钮、description 渲染成按钮下的说明，
+     * 选项必须带 description——前端把 label 当按钮文案、description 当按钮的悬浮说明，
      * 用户不点开也能看清「点了会发生什么」。
      *
      * @param context     调用上下文
@@ -1287,9 +1397,8 @@ public class DatabusAgentTools {
                 "不执行，回到对话继续调整链路", "default"));
         String runId = context.runId() == null ? "run" : context.runId();
         String cardId = runId + ":card-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        return new AgentCard(cardId, KIND_CONFIRM, "试跑「" + chain.getChainName() + "」", body.toString(),
-            buildRunDetail(chain, payloadJson, outputPaths, expect),
-            options, Boolean.FALSE, PRESENTATION_INLINE, null);
+        return AgentCard.confirm(cardId, "试跑「" + chain.getChainName() + "」", body.toString(),
+            buildRunDetail(chain, payloadJson, outputPaths, expect), options);
     }
 
     /**
@@ -1905,6 +2014,16 @@ public class DatabusAgentTools {
             return text;
         }
         return text.substring(0, max) + "…";
+    }
+
+    /**
+     * {@code databus_ask_user} 的选项入参。
+     *
+     * @param key         回传的动作键，缺省按 A/B/C 生成
+     * @param label       按钮文案
+     * @param description 选项自述，缺省用 label 兜底
+     */
+    public record AskOption(String key, String label, String description) {
     }
 
 }

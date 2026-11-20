@@ -20,14 +20,18 @@ import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.agent.AgentChainSnapshot;
 import org.dromara.databus.agent.AgentApprovalService;
+import org.dromara.databus.agent.AgentCard;
 import org.dromara.databus.agent.AgentCardChannel;
 import org.dromara.databus.agent.AgentStepRecorder;
+import org.dromara.databus.agent.AgentSystemEventCatalog;
 import org.dromara.databus.config.properties.DatabusAgentProperties;
 import org.dromara.databus.domain.DatabusAgentConversationMeta;
 import org.dromara.databus.domain.DatabusAgentMessage;
 import org.dromara.databus.domain.DatabusAgentRun;
 import org.dromara.databus.domain.DatabusAgentStep;
+import org.dromara.databus.domain.bo.AgentCardReplyBo;
 import org.dromara.databus.domain.bo.AgentChatBo;
+import org.dromara.databus.domain.bo.AgentSystemEventBo;
 import org.dromara.databus.domain.bo.DatabusChainBo;
 import org.dromara.databus.domain.vo.AgentChatStartVo;
 import org.dromara.databus.domain.vo.AgentApprovalModeVo;
@@ -61,6 +65,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -69,11 +74,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
+import static org.dromara.databus.constant.AgentConstants.ACTION_CANCEL;
 import static org.dromara.databus.constant.AgentConstants.CONVERSATION_HISTORY_LIMIT;
 import static org.dromara.databus.constant.AgentConstants.DEFAULT_CONVERSATION_LIMIT;
 import static org.dromara.databus.constant.AgentConstants.EVENT_CARD;
 import static org.dromara.databus.constant.AgentConstants.EVENT_CARD_REPLY;
 import static org.dromara.databus.constant.AgentConstants.EVENT_RUN_LIFECYCLE_ENDED;
+import static org.dromara.databus.constant.AgentConstants.EVENT_SYSTEM_EVENT;
+import static org.dromara.databus.constant.AgentConstants.MAX_CARD_FREE_TEXT;
 import static org.dromara.databus.constant.AgentConstants.MAX_CONVERSATION_LIMIT;
 import static org.dromara.databus.constant.AgentConstants.OPERATION_CREATE;
 import static org.dromara.databus.constant.AgentConstants.PREVIOUS_SUMMARY_LIMIT;
@@ -150,8 +158,9 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         if (properties.getAgentId() == null) {
             throw new ServiceException("AI 助手未配置 databus.agent.agent-id");
         }
-        // 只带附件（选中一段日志直接问）也是合法消息，所以两个字段都空才拦
-        if (!StringUtils.hasText(bo.getContent()) && CollUtil.isEmpty(bo.getAttachments())) {
+        // 只带附件（选中一段日志直接问）或只带系统事件也是合法消息，三者全空才拦
+        if (!StringUtils.hasText(bo.getContent()) && CollUtil.isEmpty(bo.getAttachments())
+            && bo.getSystemEvent() == null) {
             throw new ServiceException("内容不能为空");
         }
         String conversationId = resolveConversationId(bo.getConversationId());
@@ -159,13 +168,22 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
 
         String attachments = CollUtil.isEmpty(bo.getAttachments())
             ? null : JsonUtils.toJsonString(bo.getAttachments());
-        DatabusAgentRun run = createRun(userId, loginUser, conversationId, buildIntent(bo), attachments);
+        // 回执先过白名单与幂等校验，再进 intent：重复回执直接忽略，非法 action 直接拒绝
+        ResolvedCardReply cardReply = bo.getCardReply() == null
+            ? null : resolveCardReply(userId, conversationId, bo.getCardReply());
+        DatabusAgentRun run = createRun(userId, loginUser, conversationId, buildIntent(bo, cardReply), attachments);
         // 卡片回执落库：工具层据此判定 userConfirmed，模型自报的 true 不单独作数（运行时 §16）
-        if (bo.getCardReply() != null) {
+        if (cardReply != null) {
             appendMessage(run.getRunId(), EVENT_CARD_REPLY, null,
-                JsonUtils.toJsonString(bo.getCardReply()));
+                JsonUtils.toJsonString(cardReply.reply()));
         }
-        return new AgentChatStartVo(run.getRunId(), conversationId);
+        // 系统事件只进模型上下文：用户气泡用的是 buildIntent 产出的展示文案，不含任何指令
+        if (bo.getSystemEvent() != null) {
+            appendMessage(run.getRunId(), EVENT_SYSTEM_EVENT, null,
+                JsonUtils.toJsonString(bo.getSystemEvent()));
+        }
+        return new AgentChatStartVo(run.getRunId(), conversationId, run.getIntent(),
+            cardReply == null ? null : cardReply.display());
     }
 
     /**
@@ -199,19 +217,187 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     }
 
     /**
-     * 组装本轮意图：卡片回执追加为结构化提示，让模型知道用户点了哪一项。
+     * 组装本轮意图：系统事件取目录里的展示文案，卡片回执换成给模型的结构化说明。
+     * <p>
+     * 回执轮次这里只放 hint（带 cardId，说明用户点了什么），不拼用户可见文案；
+     * 气泡展示读 {@link ResolvedCardReply#display()}，两者不能混用。
      *
-     * @param bo 对话入参
-     * @return 意图文本
+     * @param bo        对话入参
+     * @param cardReply 已校验的卡片回执，重复回执为 null
+     * @return 意图文本，原样进模型上下文
      */
-    private String buildIntent(AgentChatBo bo) {
+    private String buildIntent(AgentChatBo bo, ResolvedCardReply cardReply) {
+        // 系统事件优先：前端只报事实，文案由后端目录生成，历史回放同样是干净的一句
+        if (bo.getSystemEvent() != null) {
+            return AgentSystemEventCatalog
+                .resolve(bo.getSystemEvent().getCode(), bo.getSystemEvent().getPayload())
+                .display();
+        }
         // 只带附件时没有原话，intent 落空串而不是 null，避免后续拼接出现 "null"
         String content = bo.getContent() == null ? "" : bo.getContent();
-        if (bo.getCardReply() == null) {
+        if (cardReply == null) {
             return content;
         }
-        return content + "\n【卡片回执】用户已在卡片上选择 " + bo.getCardReply().getAction()
-            + "（cardId=" + bo.getCardReply().getCardId() + "）。";
+        // 回执轮次的正文就是选中项的文案，再拼一遍只会让模型看到重复的两句话
+        return cardReply.hint();
+    }
+
+    /**
+     * 校验卡片回执：白名单 + 单选/多选规则 + 自由输入规则 + 同卡幂等。
+     * <p>
+     * 回执落在「点选后新建的 run」上，所以按会话内的卡片消息反查原始卡片；
+     * 同一张卡已有回执时直接返回 null（幂等忽略，不报错、不重复落库）。
+     *
+     * @param userId         发起人
+     * @param conversationId 会话 id
+     * @param raw            前端回传的原始回执
+     * @return 规范化回执；null = 重复回执，直接忽略
+     */
+    private ResolvedCardReply resolveCardReply(Long userId, String conversationId, AgentCardReplyBo raw) {
+        String cardId = raw.getCardId() == null ? "" : raw.getCardId().trim();
+        if (cardId.isEmpty()) {
+            throw new ServiceException("cardId 不能为空");
+        }
+        List<DatabusAgentRun> runs = runMapper.selectList(Wrappers.<DatabusAgentRun>lambdaQuery()
+            .eq(DatabusAgentRun::getUserId, userId)
+            .eq(DatabusAgentRun::getConversationId, conversationId)
+            .select(DatabusAgentRun::getRunId));
+        if (runs.isEmpty()) {
+            throw new ServiceException("卡片不存在或已失效：" + cardId);
+        }
+        List<String> runIds = runs.stream().map(DatabusAgentRun::getRunId).toList();
+        List<DatabusAgentMessage> messages = messageMapper.selectList(Wrappers.<DatabusAgentMessage>lambdaQuery()
+            .in(DatabusAgentMessage::getRunId, runIds)
+            .in(DatabusAgentMessage::getEventCode, EVENT_CARD, EVENT_CARD_REPLY)
+            .orderByDesc(DatabusAgentMessage::getSeq));
+
+        AgentCard card = null;
+        for (DatabusAgentMessage message : messages) {
+            if (EVENT_CARD_REPLY.equals(message.getEventCode())) {
+                AgentCardReplyBo old = JsonUtils.parseObject(message.getContent(), AgentCardReplyBo.class);
+                if (old != null && cardId.equals(old.getCardId())) {
+                    // 同一张卡已有回执：幂等忽略，避免重复点选把同一轮再跑一遍
+                    return null;
+                }
+                continue;
+            }
+            if (card == null) {
+                AgentCard parsed = JsonUtils.parseObject(message.getContent(), AgentCard.class);
+                if (parsed != null && cardId.equals(parsed.cardId())) {
+                    card = parsed;
+                }
+            }
+        }
+        if (card == null) {
+            throw new ServiceException("卡片不存在或已失效：" + cardId);
+        }
+
+        // 白名单与开关只在 payload 里取：确认卡没有自由输入，资源卡没有选项
+        List<AgentCard.Option> cardOptions;
+        boolean multiSelect = false;
+        boolean allowFreeText = false;
+        if (card.payload() instanceof AgentCard.ConfirmPayload confirm) {
+            cardOptions = confirm.options();
+        } else if (card.payload() instanceof AgentCard.ChoicePayload choice) {
+            cardOptions = choice.options();
+            multiSelect = Boolean.TRUE.equals(choice.multiSelect());
+            allowFreeText = Boolean.TRUE.equals(choice.allowFreeText());
+        } else {
+            cardOptions = List.of();
+        }
+        Map<String, String> keyToLabel = new LinkedHashMap<>();
+        if (cardOptions != null) {
+            for (AgentCard.Option option : cardOptions) {
+                if (option != null && StringUtils.hasText(option.key())) {
+                    keyToLabel.putIfAbsent(option.key(), option.label());
+                }
+            }
+        }
+        LinkedHashSet<String> actions = new LinkedHashSet<>();
+        if (raw.getActions() != null) {
+            for (String action : raw.getActions()) {
+                if (StringUtils.hasText(action)) {
+                    actions.add(action.trim());
+                }
+            }
+        }
+        // 兼容旧回执：只有 action 没有 actions 时按单选项处理
+        if (StringUtils.hasText(raw.getAction())) {
+            actions.add(raw.getAction().trim());
+        }
+        // 取消是协议保留动作：不对应任何选项，跳过白名单与「至少选一项」校验
+        boolean cancelled = actions.size() == 1 && actions.contains(ACTION_CANCEL);
+        String text = cancelled ? null : (StringUtils.hasText(raw.getText()) ? raw.getText().trim() : null);
+        if (!cancelled) {
+            for (String action : actions) {
+                if (!keyToLabel.containsKey(action)) {
+                    throw new ServiceException("卡片选项不存在：" + action);
+                }
+            }
+            if (!multiSelect && actions.size() > 1) {
+                throw new ServiceException("该卡片为单选，最多只能选 1 项");
+            }
+            if (text != null && !allowFreeText) {
+                throw new ServiceException("该卡片不支持自由输入");
+            }
+            if (text != null && text.length() > MAX_CARD_FREE_TEXT) {
+                throw new ServiceException("自由输入内容不能超过 " + MAX_CARD_FREE_TEXT + " 个字符");
+            }
+            if (actions.isEmpty() && text == null) {
+                throw new ServiceException("请至少选择一个选项或填写内容");
+            }
+        }
+
+        StringBuilder hint = new StringBuilder("【卡片回执】");
+        StringBuilder display = new StringBuilder();
+        if (cancelled) {
+            // 对外文案与说明页一样短，不带 cardId
+            display.append("取消这次选择");
+            hint.append("用户取消了这张卡片，没有选定任何一项（cardId=").append(cardId)
+                .append("）。不要替用户做决定，等用户下一步指示。");
+        } else if (actions.isEmpty()) {
+            display.append(text == null ? "" : text);
+            hint.append("用户未选择选项");
+        } else {
+            List<String> labels = actions.stream()
+                .map(key -> keyToLabel.getOrDefault(key, key))
+                .toList();
+            // 单选就是那一个选项文案，多选按「已选「A、B」」，自由输入用分号接在后面
+            if (labels.size() == 1) {
+                display.append(labels.get(0));
+            } else {
+                display.append("已选「").append(String.join("、", labels)).append("」");
+            }
+            if (text != null) {
+                display.append("；").append(text);
+            }
+            hint.append("用户已在卡片上选择 ").append(String.join("、", labels));
+        }
+        if (!cancelled) {
+            hint.append("（cardId=").append(cardId).append("）");
+            if (text != null) {
+                hint.append("；补充说明：").append(text);
+            }
+            hint.append("。");
+        }
+
+        AgentCardReplyBo normalized = new AgentCardReplyBo();
+        normalized.setCardId(cardId);
+        normalized.setActions(new ArrayList<>(actions));
+        normalized.setText(text);
+        // 展示文案随回执一起落库：刷新回放直接读这句，前端不用再按选项反推
+        normalized.setDisplay(display.toString());
+        return new ResolvedCardReply(normalized, hint.toString(), display.toString());
+    }
+
+    /**
+     * 规范化后的卡片回执。
+     *
+     * @param reply   落库回执（含用户可见的 display）
+     * @param hint    给模型看的说明，含 cardId，不能上屏
+     * @param display 给用户看的文案，进数据库与气泡
+     */
+    private record ResolvedCardReply(AgentCardReplyBo reply, String hint, String display) {
     }
 
     @Override
@@ -617,11 +803,20 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             }
         }
         // 旧轮次逻辑删除，新轮次沿用原意图与同一批附件重新发起：前端只替换这一条回复，不新增用户气泡
+        // 系统事件不在 intent 里（指令只走模型上下文）、卡片回执是 userConfirmed 的唯一凭据，
+        // 两者都必须显式搬到新 run，否则重试会丢掉事件事实或审批凭据
+        List<DatabusAgentMessage> carried = messageMapper.selectList(Wrappers.<DatabusAgentMessage>lambdaQuery()
+            .eq(DatabusAgentMessage::getRunId, runId)
+            .in(DatabusAgentMessage::getEventCode, EVENT_SYSTEM_EVENT, EVENT_CARD_REPLY)
+            .orderByAsc(DatabusAgentMessage::getSeq));
         runMapper.deleteById(old.getId());
         supersedeActiveRuns(old.getUserId(), old.getConversationId());
         DatabusAgentRun run = createRun(old.getUserId(), loginUser, old.getConversationId(), old.getIntent(),
             old.getAttachments());
-        return new AgentChatStartVo(run.getRunId(), run.getConversationId());
+        for (DatabusAgentMessage event : carried) {
+            appendMessage(run.getRunId(), event.getEventCode(), null, event.getContent());
+        }
+        return new AgentChatStartVo(run.getRunId(), run.getConversationId(), run.getIntent());
     }
 
     @Override
@@ -759,6 +954,14 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         if (StringUtils.hasText(attachments)) {
             content.append(attachments);
         }
+        // 系统事件（事实 + 行为要求）只在这里出现，绝不写进 intent，用户界面上看不到
+        String events = buildSystemEvents(run);
+        if (StringUtils.hasText(events)) {
+            if (content.length() > 0) {
+                content.append("\n\n");
+            }
+            content.append(events);
+        }
         if (StringUtils.hasText(intent)) {
             if (content.length() > 0) {
                 content.append("\n\n");
@@ -773,6 +976,34 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             content.append(summary);
         }
         return content.toString();
+    }
+
+    /**
+     * 本轮上报过的系统事件：按 seq 升序取 model 侧事实句，供模型理解「界面之外发生了什么」。
+     *
+     * @param run 当前 run
+     * @return 事实句拼接，没有事件时返回 null
+     */
+    private String buildSystemEvents(DatabusAgentRun run) {
+        List<DatabusAgentMessage> messages = messageMapper.selectList(Wrappers.<DatabusAgentMessage>lambdaQuery()
+            .eq(DatabusAgentMessage::getRunId, run.getRunId())
+            .eq(DatabusAgentMessage::getEventCode, EVENT_SYSTEM_EVENT)
+            .orderByAsc(DatabusAgentMessage::getSeq));
+        if (messages.isEmpty()) {
+            return null;
+        }
+        StringBuilder text = new StringBuilder();
+        for (DatabusAgentMessage message : messages) {
+            AgentSystemEventBo event = JsonUtils.parseObject(message.getContent(), AgentSystemEventBo.class);
+            if (event == null || !StringUtils.hasText(event.getCode())) {
+                continue;
+            }
+            if (text.length() > 0) {
+                text.append('\n');
+            }
+            text.append(AgentSystemEventCatalog.resolve(event.getCode(), event.getPayload()).fact());
+        }
+        return text.length() == 0 ? null : text.toString();
     }
 
     private String buildPreviousRoundSummary(DatabusAgentRun run) {

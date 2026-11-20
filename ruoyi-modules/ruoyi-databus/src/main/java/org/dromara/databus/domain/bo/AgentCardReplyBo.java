@@ -1,11 +1,13 @@
 package org.dromara.databus.domain.bo;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * 卡片回执业务对象（运行时 §16）。
@@ -16,6 +18,7 @@ import java.io.Serializable;
  * @author databus
  */
 @Data
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class AgentCardReplyBo implements Serializable {
 
     @Serial
@@ -29,10 +32,30 @@ public class AgentCardReplyBo implements Serializable {
     private String cardId;
 
     /**
-     * 选中的动作键，确认卡为 confirm / cancel
+     * 选中的动作键（旧字段，仅兼容历史回执读取；新写入只写 actions）
      */
-    @NotBlank(message = "action 不能为空")
     @Size(max = 32, message = "action 长度不能超过{max}个字符")
     private String action;
+
+    /**
+     * 选中的动作键集合：单选一项，多选多项
+     */
+    @Size(max = 6, message = "actions 最多 {max} 项")
+    private List<String> actions;
+
+    /**
+     * 自由输入内容，仅 allowFreeText=true 的卡片允许
+     */
+    @Size(max = 500, message = "text 长度不能超过{max}个字符")
+    private String text;
+
+    /**
+     * 用户可见的回执文案（如「已选「A、B」；补充说明……」「取消这次选择」）。
+     * <p>
+     * 只由服务端在落库时写入：回执的展示含义以数据库为准，前端和历史回放直接读它，
+     * 不再自己按选项拼接。客户端传来的同名字段一律被覆盖。
+     */
+    @Size(max = 600, message = "display 长度不能超过{max}个字符")
+    private String display;
 
 }

@@ -32,7 +32,7 @@ public class AgentRunVo implements Serializable {
     private String conversationId;
 
     /**
-     * 用户原话
+     * 用户原话；卡片回执轮次是给模型的结构化说明，用户可见文案在回执 JSON 的 display 里
      */
     private String intent;
 

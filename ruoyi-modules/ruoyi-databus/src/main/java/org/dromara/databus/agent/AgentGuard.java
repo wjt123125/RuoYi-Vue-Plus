@@ -63,6 +63,10 @@ public class AgentGuard {
             try {
                 AgentCardReplyBo cardReply = JsonUtils.parseObject(reply.getContent(), AgentCardReplyBo.class);
                 if (cardReply != null) {
+                    // 新回执只写 actions；旧数据只有 action，两种都认
+                    if (cardReply.getActions() != null && cardReply.getActions().contains(ACTION_CONFIRM)) {
+                        return true;
+                    }
                     return ACTION_CONFIRM.equals(cardReply.getAction());
                 }
             } catch (Exception e) {

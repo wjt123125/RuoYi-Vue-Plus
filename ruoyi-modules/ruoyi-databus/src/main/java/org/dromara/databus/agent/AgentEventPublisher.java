@@ -55,11 +55,12 @@ public class AgentEventPublisher {
      * @param elExpression 后端生成的 EL
      * @param revealNodeId 需要高亮的节点 id（可空）
      * @param created      本次是否新建链路：新建时前端即使画布未打开也自动开 tab
+     * @param updateTime   落库后的链路更新时间：前端存为画布基线，用于发现漏掉的后续推送
      */
     @Transactional(rollbackFor = Exception.class)
     public void publishChainCanvas(AgentRunContext context, Long chainId, String chainName,
                                    CmpProperty cmpProperty, String elExpression, String revealNodeId,
-                                   boolean created) {
+                                   boolean created, String updateTime) {
         int seq = nextSeq(context.runId());
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("eventCode", EVENT_CHAIN_CANVAS_UPDATED);
@@ -71,6 +72,7 @@ public class AgentEventPublisher {
         data.put("operation", created ? "CREATE" : "UPDATE");
         data.put("cmpProperty", cmpProperty);
         data.put("elExpression", elExpression);
+        data.put("updateTime", updateTime);
         if (revealNodeId != null) {
             data.put("revealNodeId", revealNodeId);
         }

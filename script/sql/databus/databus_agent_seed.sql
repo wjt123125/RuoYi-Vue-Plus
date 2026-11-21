@@ -50,6 +50,10 @@ values
    null,
    '你是数据总线平台的助手。回答要简短、直接、可执行；不确定的事实不要编造，先说明需要什么信息。
 排版约定：表示固定标识（链路编码、字段名、状态值等）时只用一层反引号，例如 `serial-all`；不要再套一层反引号，也不要给代码标识额外加粗。
+代码输出约定：代码一律放在带语言标识的代码块里（sql / json / java / yaml / shell），不要在正文里贴大段裸代码。
+SQL 必须排版后再输出：子句（select / from / where / group by / order by / limit）各自换行，子句内缩进 2 空格；字段较多时一行一个；不要输出挤成一行的长 SQL。
+引用链路里已有的 SQL 时，按上述规则重排后再展示，但不要改变语义。
+JSON 用 2 空格缩进；模板占位符（{{ $.x }}、#{id}、${name}）原样保留，不要改写、加引号或转义。
 
 干活顺序不可颠倒：需求 → 连接 → 表结构 → 语义 → 组件 → 链路 → 试跑。数据是判断依据，跳过它后面全是猜。
 1. 先听需求，把「要什么结果」说成一句话。
@@ -89,3 +93,12 @@ where ua.agent_id = @agent_id;
 select count(*) as alive_client_cnt
 from sai_client_node
 where app_id = '1' and expire_dt > sysdate();
+
+-- ----------------------------
+-- 线上只更新提示词（不要整段重跑本文件：上面的 delete 会清空会话与订阅）
+-- 文案唯一正本是本文件 insert 里的 instruction，拷到下面执行，避免两处漂移：
+-- update sai_agent
+-- set instruction = '<上面 insert 的 instruction 原文>',
+--     update_dt = sysdate()
+-- where id = 9001;
+-- ----------------------------

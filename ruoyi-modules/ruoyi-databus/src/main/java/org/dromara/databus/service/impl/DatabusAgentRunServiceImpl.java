@@ -164,6 +164,10 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             throw new ServiceException("内容不能为空");
         }
         String conversationId = resolveConversationId(bo.getConversationId());
+        // 会话已软删就拒绝继续写 run：否则新 run 会被列表的 del_flag 过滤掉，用户看到 AI 回了却查不到会话
+        if (StringUtils.hasText(bo.getConversationId()) && isConversationDeleted(conversationId)) {
+            throw new ServiceException("会话已删除，请新建会话");
+        }
         supersedeActiveRuns(userId, conversationId);
 
         String attachments = CollUtil.isEmpty(bo.getAttachments())
@@ -532,6 +536,10 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         if (!StringUtils.hasText(conversationId)) {
             return null;
         }
+        // 已删会话不再对外暴露运行态，避免刷新后被恢复成一条会话
+        if (isConversationDeleted(conversationId)) {
+            return null;
+        }
         Long userId = LoginHelper.getUserId();
         DatabusAgentRun run = runMapper.selectOne(Wrappers.<DatabusAgentRun>lambdaQuery()
             .eq(DatabusAgentRun::getUserId, userId)
@@ -561,6 +569,10 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     @Override
     public List<AgentRunVo> listConversationRuns(String conversationId) {
         if (!StringUtils.hasText(conversationId)) {
+            return List.of();
+        }
+        // 历史回放也认软删：否则刷新时前端会按历史重建本地桶，已删会话又冒出来
+        if (isConversationDeleted(conversationId)) {
             return List.of();
         }
         Long userId = LoginHelper.getUserId();
@@ -703,6 +715,22 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         } else {
             metaMapper.updateById(meta);
         }
+    }
+
+    /**
+     * 会话是否已被软删：meta 行不存在视为未删（从未改过标题/置顶/删除的会话没有 meta 行）。
+     *
+     * @param conversationId 会话 id
+     * @return true 表示已软删，所有读接口都不该再返回它
+     */
+    private boolean isConversationDeleted(String conversationId) {
+        if (!StringUtils.hasText(conversationId)) {
+            return false;
+        }
+        Long count = metaMapper.selectCount(Wrappers.<DatabusAgentConversationMeta>lambdaQuery()
+            .eq(DatabusAgentConversationMeta::getConversationId, conversationId)
+            .eq(DatabusAgentConversationMeta::getDelFlag, "1"));
+        return count != null && count > 0;
     }
 
     /**

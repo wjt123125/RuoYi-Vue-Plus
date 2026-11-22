@@ -55,6 +55,21 @@ public final class AgentConstants {
     public static final String EVENT_SYSTEM_EVENT = "system_event";
 
     /**
+     * 工具阶段开始（运行中）：data 是 AgentStepEvent，前端据此把当前阶段行置为运行中
+     */
+    public static final String EVENT_STEP_START = "step_start";
+
+    /**
+     * 工具阶段结束（完成 / 失败）：data 是同一 stepId 的 AgentStepEvent 终态，前端累加计数
+     */
+    public static final String EVENT_STEP_END = "step_end";
+
+    /**
+     * 用户可见错误信封落库（message.event_code）：只存脱敏后的 AgentError，不存原始异常
+     */
+    public static final String EVENT_ERROR = "error";
+
+    /**
      * 卡片动作：确认
      */
     public static final String ACTION_CONFIRM = "confirm";

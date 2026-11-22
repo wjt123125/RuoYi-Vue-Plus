@@ -147,6 +147,7 @@ public class DatabusAgentTools {
     private final ExpressGenerator expressGenerator;
     private final AgentApprovalService approvalService;
     private final AgentCardChannel cardChannel;
+    private final AgentToolStepRegistry toolStepRegistry;
     private final DatabusAgentProperties properties;
 
     /**
@@ -157,6 +158,7 @@ public class DatabusAgentTools {
      * @param cursor   上一页游标
      * @return JSON 结果
      */
+    @AgentToolStep(title = "检索链路", target = "keyword", fallback = "最近更新")
     @Tool(name = TOOL_CHAIN_SEARCH, description = "检索当前用户自己的链路（只读），用于找现成链路做参考。"
         + "返回 id、编码、名称、状态、版本、更新时间等摘要，不含画布与 EL。"
         + "身份由服务端会话绑定，不要传 userId 之类的身份参数。")
@@ -181,6 +183,7 @@ public class DatabusAgentTools {
      * @param cursor   上一页游标
      * @return JSON 结果
      */
+    @AgentToolStep(title = "检索物料", target = "keyword")
     @Tool(name = TOOL_COMPONENT_SEARCH, description = "检索物料面板里可用的原子物料（只读），用于先找现成物料再决定要不要新做。"
         + "必须先给 keyword / tags / nodeType 至少一个过滤条件，禁止无过滤全量拉取。"
         + "返回 code、名称、分组、来源、节点类型、标签等摘要，不含完整 schema；"
@@ -211,6 +214,7 @@ public class DatabusAgentTools {
      * @param cursor          上一页游标
      * @return JSON 结果
      */
+    @AgentToolStep(title = "检索数据连接", target = "keyword")
     @Tool(name = TOOL_CONNECTION_SEARCH, description = "检索可用的数据连接（只读），配任何 CONNECTION_SELECT 连接字段前必须先调它拿 connectionId，不许猜。"
         + "只列已启用连接，返回 connectionId、connectionName、connectorType、connectorFamily 四个安全字段，不含配置与凭证。"
         + "keyword 与 connectorFamily 都可留空，留空即列出全部可用连接；connectorFamily 按连接器族精确过滤（如 jdbc）。"
@@ -236,6 +240,7 @@ public class DatabusAgentTools {
      * @param keyword 匹配 type / label / family 的关键词
      * @return JSON 结果
      */
+    @AgentToolStep(title = "检索连接器类型", target = "keyword")
     @Tool(name = TOOL_CONNECTOR_SEARCH, description = "检索平台已装载的连接器类型（只读），回答「该建什么连接」：给 type、label、能力族 family、"
         + "是否支持 SQL（sqlCapable）、操作清单与配置字段（字段名/标签/类型/必填/是否敏感）。"
         + "只回字段定义，不回任何真实配置值；required=true 且 sensitive=true 的字段需要人准备凭据，必须由人在连接页填写。"
@@ -257,6 +262,7 @@ public class DatabusAgentTools {
      * @param cursor       上一页游标
      * @return JSON 结果
      */
+    @AgentToolStep(title = "查看库表结构", target = "keyword")
     @Tool(name = TOOL_DB_SCHEMA_SEARCH, description = "查看某个数据连接背后的库表与字段（只读）：返回表名、表注释、字段名、字段类型、是否可空、是否主键、字段注释。"
         + "connectionId 必须来自 databus_connection_search，不许猜；写 SQL、造数据类组件之前必须先调它看真实结构，不许臆造表名与字段。"
         + "keyword 可匹配表名、表注释或字段名（字段名命中时反查所属表）；留空按表名顺序列前 N 张表。"
@@ -282,6 +288,7 @@ public class DatabusAgentTools {
      * @param chainId 链路 id
      * @return JSON 结果
      */
+    @AgentToolStep(title = "读取链路")
     @Tool(name = TOOL_CHAIN_GET, description = "拿一条链路的整条记录（只读）：画布结构树 cmpProperty、入参 inputParams、logLevel、编码/名称/状态/版本/归属。"
         + "改现有链路前必须先调它看现状，结构树直接复用，不要凭记忆拼。只能读自己创建的链路或模板链路。"
         + "身份由服务端会话绑定，不要传 userId 之类的身份参数。")
@@ -299,6 +306,7 @@ public class DatabusAgentTools {
      * @param fields        裁剪返回段
      * @return JSON 结果
      */
+    @AgentToolStep(title = "读取组件", target = "componentCode")
     @Tool(name = TOOL_COMPONENT_GET, description = "拿单个组件的整条记录（只读）：元信息、nodeType、paramSchema 配置项定义、脚本源码、版本与状态。"
         + "拼树前必须先调它确认入参定义，不许凭猜填参数。componentCode 与 componentId 二选一。"
         + "fields 可裁剪返回：meta（元信息与状态）/ schema（配置项定义）/ script（脚本源码），逗号分隔，默认全给。"
@@ -335,6 +343,7 @@ public class DatabusAgentTools {
      * @param force             用户已确认覆盖他人改动
      * @return JSON 结果
      */
+    @AgentToolStep(title = "保存链路草稿", target = {"chainName", "chainCode"})
     @Tool(name = TOOL_CHAIN_DRAFT_SAVE, description = "把拼好的链路结构存成草稿（status=DRAFT），新建与修改都走这里。"
         + "同一会话可以多次新建或修改：新建不传 draftId，修改传 draftId。"
         + "cmpProperty 是画布结构树 JSON，是保存的唯一依据；EL 由服务端生成并校验，不要自己拼 EL。"
@@ -382,6 +391,7 @@ public class DatabusAgentTools {
      * @param payloadJson 试跑入参 JSON，作为上下文根 $
      * @return JSON 结果
      */
+    @AgentToolStep(title = "试跑链路")
     @Tool(name = TOOL_CHAIN_RUN, description = "对草稿链路发起一次试跑：按已存结构生成 EL 并真实执行，"
         + "返回 success、costMs、节点级错误 nodeErrors（含 nodeName 与错误原因）、输出片段 output 与断言结果 checks。"
         + "payloadJson 是试跑入参 JSON，作为上下文根 $；不传按空入参跑。"
@@ -421,6 +431,7 @@ public class DatabusAgentTools {
      * @param allowFreeText 是否允许自由输入
      * @return JSON 结果
      */
+    @AgentToolStep(title = "向你提问")
     @Tool(name = TOOL_ASK_USER, description = "向用户提一个需要拍板的问题：单选、多选、自由输入三合一。"
         + "适合「请选一个方案 / 勾选要处理的项 / 还需要用户补充说明」这类必须由人决定的分叉。"
         + "options 给 1-6 个，每项必须带 key（英文短标识）、label（按钮文案）、description（说明点了会发生什么）；"
@@ -458,6 +469,7 @@ public class DatabusAgentTools {
      * @param componentId   已有草稿 id（更新时传）
      * @return JSON 结果
      */
+    @AgentToolStep(title = "落组件草稿", target = {"componentName", "componentCode"})
     @Tool(name = TOOL_COMPONENT_DRAFT_SAVE, description = "把一段 Java 脚本源码落成组件草稿（DRAFT）。"
         + "服务端先编译，编译通过才建草稿行；草稿不注册 FlowBus、不进物料面板，只有发起人能看到和修改，"
         + "必须由人在组件审阅页点「采纳」才生效——落完草稿不要声称组件已可用，要提示用户去审阅页确认。"
@@ -493,14 +505,18 @@ public class DatabusAgentTools {
     }
 
     /**
-     * 统一执行壳：守卫 → 业务 → 审计。守卫拒绝与执行失败都转成 JSON 错误串。
+     * 统一执行壳：守卫 → 推送阶段 → 业务 → 审计 → 阶段收尾。守卫拒绝与执行失败都转成 JSON 错误串。
+     * <p>
+     * 阶段事件（step_start / step_end）在守卫通过后才推：没有身份定位不到 run，也还没真正开始执行。
+     * 推送失败只影响观感，不改变工具返回（通道内部已吞异常）。
      *
      * @param tool 工具名
-     * @param args 入参快照（审计用）
+     * @param args 入参快照（审计 + 标题摘要）
      * @param body 业务体
      * @return JSON 结果
      */
-    private String execute(String tool, Map<String, Object> args, Function<AgentRunContext, Map<String, Object>> body) {
+    private String execute(String tool, Map<String, Object> args,
+                           Function<AgentRunContext, Map<String, Object>> body) {
         return execute(tool, args, PERMISSION_READ, body);
     }
 
@@ -509,35 +525,63 @@ public class DatabusAgentTools {
         long began = System.currentTimeMillis();
         String argsJson = JsonUtils.toJsonString(args);
         AgentRunContext context = null;
+        AgentStepEvent step = null;
         try {
             context = agentGuard.check(permission);
+            // 标题来自工具定义上的 @AgentToolStep（启动时已由注册表收集），这里只做拼装
+            step = AgentStepEvent.running(UUID.randomUUID().toString(), tool,
+                toolStepRegistry.titleOf(tool, args));
+            cardChannel.sendStep(context.runId(), step);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("ok", true);
             payload.putAll(body.apply(context));
             String result = JsonUtils.toJsonString(payload);
             stepRecorder.recordSuccess(context, tool, argsJson, result, System.currentTimeMillis() - began);
+            finishStep(context, step, false);
             return result;
         } catch (AgentGuardRejectedException e) {
             boolean permissionDenied = e.getReason() == AgentGuardRejectedException.GuardReason.MISSING_PERMISSION_POINT;
             String result = errorJson(e.getMessage(), permissionDenied ? ERROR_PERMISSION : ERROR_CONFIG, false);
             stepRecorder.recordReject(e.getRunId(), tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
+            finishStep(context, step, true);
             return result;
         } catch (ServiceException e) {
             // 业务校验（如轮数上限）直接给出原因，不套「工具执行失败」前缀
             String result = errorJson(e.getMessage(), ERROR_VALIDATION, true);
             stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
+            finishStep(context, step, true);
             return result;
         } catch (IllegalArgumentException e) {
             // 参数、游标、页大小非法：模型改参数可重试
             String result = errorJson(e.getMessage(), ERROR_VALIDATION, true);
             stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
+            finishStep(context, step, true);
             return result;
         } catch (Exception e) {
             log.warn("[databus-agent] 工具 {} 执行失败", tool, e);
             String result = errorJson("工具执行失败：" + e.getMessage(), ERROR_RUNTIME, true);
             stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
+            finishStep(context, step, true);
             return result;
         }
+    }
+
+    /**
+     * 阶段收尾：成功 / 失败都推 step_end，让前端把「运行中」的扫光停掉。
+     * <p>
+     * 失败原因不随事件下发：原始异常只进日志与返回给模型的 JSON，用户侧只看到状态。
+     *
+     * @param context 身份快照，守卫拒绝时为空
+     * @param step    开始事件，守卫拒绝时为空
+     * @param failed  是否失败
+     */
+    private void finishStep(AgentRunContext context, AgentStepEvent step, boolean failed) {
+        if (context == null || step == null) {
+            return;
+        }
+        cardChannel.sendStep(context.runId(), failed
+            ? AgentStepEvent.failed(step)
+            : AgentStepEvent.done(step));
     }
 
     private Map<String, Object> doChainSave(AgentRunContext context, Long draftId, String chainCode,
@@ -649,7 +693,10 @@ public class DatabusAgentTools {
             chainId = draftId;
         }
 
-        eventPublisher.publishChainCanvas(context, chainId, name, tree, elExpression, null, created);
+        // 回读落库后的更新时间，前端存为画布基线，用于发现漏掉的后续推送
+        DatabusChainVo saved = chainService.queryById(chainId);
+        String updateTime = saved == null ? null : formatTime(saved.getUpdateTime());
+        eventPublisher.publishChainCanvas(context, chainId, name, tree, elExpression, null, created, updateTime);
         eventPublisher.publishChainDraft(context, chainId, name);
 
         Map<String, Object> payload = new LinkedHashMap<>();

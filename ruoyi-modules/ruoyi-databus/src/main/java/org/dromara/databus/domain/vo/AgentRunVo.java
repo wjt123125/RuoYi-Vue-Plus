@@ -62,6 +62,11 @@ public class AgentRunVo implements Serializable {
     private List<String> cardReplies;
 
     /**
+     * 本轮用户可见错误（脱敏后的 AgentError JSON，按 seq 升序）；刷新后据此还原错误提示
+     */
+    private List<String> errors;
+
+    /**
      * 已用纠错轮数
      */
     private Integer round;

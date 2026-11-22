@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.databus.domain.DatabusAgentMessage;
+import org.dromara.databus.enums.AgentStepStatusEnum;
 import org.dromara.databus.mapper.DatabusAgentMessageMapper;
 import org.dromara.databus.mapper.DatabusAgentRunMapper;
 import org.springframework.http.MediaType;
@@ -17,15 +18,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.dromara.databus.constant.AgentConstants.EVENT_CARD;
+import static org.dromara.databus.constant.AgentConstants.EVENT_STEP_END;
+import static org.dromara.databus.constant.AgentConstants.EVENT_STEP_START;
 
 /**
- * 对话 SSE 的卡片回写通道（运行时 §16）。
+ * 对话 SSE 的卡片 / 工具阶段回写通道（运行时 §16）。
  * <p>
  * 卡片必须与模型文字同序，所以不走全局推送，而是回写到本次 run 的 SSE 连接。
  * 工具执行线程拿不到 emitter，靠 runId 注册表反查；只新增通道，不改 run.next_seq 号源。
  * <p>
  * 卡片同时落一行 {@code databus_agent_message}（{@code event_code=card}）：
  * 连接恰好未建立 / 用户刷新页面时，靠它把卡片还原回历史，不能只活在内存里。
+ * 工具阶段只推 SSE、不落库：它是会话里的瞬时状态，历史明细由 databus_agent_step 审计表承担。
  *
  * @author databus
  */
@@ -91,6 +95,34 @@ public class AgentCardChannel {
         } catch (IOException | IllegalStateException e) {
             log.debug("AI 卡片回写失败 runId={}", runId, e);
             return false;
+        }
+    }
+
+    /**
+     * 把工具阶段推给前端。
+     * <p>
+     * 阶段是会话里的瞬时状态，不落库、不回放；历史明细由 databus_agent_step 审计表承担。
+     * 连接不存在时直接忽略，不影响工具本身。
+     *
+     * @param runId run 句柄
+     * @param step  阶段快照
+     */
+    public void sendStep(String runId, AgentStepEvent step) {
+        if (runId == null || step == null) {
+            return;
+        }
+        SseEmitter emitter = emitters.get(runId);
+        if (emitter == null) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("runId", runId);
+        payload.put("type", AgentStepStatusEnum.RUNNING.getCode().equals(step.status()) ? EVENT_STEP_START : EVENT_STEP_END);
+        payload.put("data", step);
+        try {
+            emitter.send(SseEmitter.event().name("message").data(payload, MediaType.APPLICATION_JSON));
+        } catch (IOException | IllegalStateException e) {
+            log.debug("AI 阶段回写失败 runId={}", runId, e);
         }
     }
 

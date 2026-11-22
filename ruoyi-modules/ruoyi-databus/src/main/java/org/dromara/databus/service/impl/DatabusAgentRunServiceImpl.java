@@ -22,6 +22,8 @@ import org.dromara.databus.agent.AgentChainSnapshot;
 import org.dromara.databus.agent.AgentApprovalService;
 import org.dromara.databus.agent.AgentCard;
 import org.dromara.databus.agent.AgentCardChannel;
+import org.dromara.databus.agent.AgentError;
+import org.dromara.databus.agent.AgentErrorResolver;
 import org.dromara.databus.agent.AgentStepRecorder;
 import org.dromara.databus.agent.AgentSystemEventCatalog;
 import org.dromara.databus.config.properties.DatabusAgentProperties;
@@ -80,6 +82,7 @@ import static org.dromara.databus.constant.AgentConstants.DEFAULT_CONVERSATION_L
 import static org.dromara.databus.constant.AgentConstants.EVENT_CARD;
 import static org.dromara.databus.constant.AgentConstants.EVENT_CARD_REPLY;
 import static org.dromara.databus.constant.AgentConstants.EVENT_RUN_LIFECYCLE_ENDED;
+import static org.dromara.databus.constant.AgentConstants.EVENT_ERROR;
 import static org.dromara.databus.constant.AgentConstants.EVENT_SYSTEM_EVENT;
 import static org.dromara.databus.constant.AgentConstants.MAX_CARD_FREE_TEXT;
 import static org.dromara.databus.constant.AgentConstants.MAX_CONVERSATION_LIMIT;
@@ -140,6 +143,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     private final DatabusAgentProperties properties;
     private final AgentApprovalService approvalService;
     private final AgentCardChannel cardChannel;
+    private final AgentErrorResolver agentErrorResolver;
     private final TransactionTemplate transactionTemplate;
 
     /**
@@ -449,9 +453,12 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
                 .set(DatabusAgentRun::getResolvedPrompt, content));
         } catch (Exception e) {
             log.warn("准备 AI 对话失败 runId={}", runId, e);
-            settle(settled, run, AgentRunStatusEnum.FAILED, null);
-            sendQuietly(emitter, runId, OpenApiChatStreamEvent.TYPE_ERROR,
-                JsonUtils.toJsonString(Map.of("message", "AI 服务不可用，请稍后重试")));
+            AgentError agentError = agentErrorResolver.fromException(runId, e);
+            if (settle(settled, run, AgentRunStatusEnum.FAILED, null)) {
+                persistRunError(runId, agentError);
+                sendQuietly(emitter, runId, OpenApiChatStreamEvent.TYPE_ERROR,
+                    JsonUtils.toJsonString(agentError));
+            }
             emitter.complete();
             return emitter;
         }
@@ -467,23 +474,34 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
                     if (OpenApiChatStreamEvent.TYPE_TEXT.equals(type) || OpenApiChatStreamEvent.TYPE_THINKING.equals(type)) {
                         data = extractContent(data);
                     }
+                    // 上游错误：原始内容只进日志，用户侧只下发统一错误信封
+                    if (OpenApiChatStreamEvent.TYPE_ERROR.equals(type)) {
+                        AgentError agentError = agentErrorResolver.fromUpstream(runId, data);
+                        if (settle(settled, run, AgentRunStatusEnum.FAILED, null)) {
+                            persistRunError(runId, agentError);
+                            sendQuietly(emitter, runId, type, JsonUtils.toJsonString(agentError));
+                        }
+                        emitter.complete();
+                        return;
+                    }
                     send(emitter, runId, type, data);
                     if (OpenApiChatStreamEvent.TYPE_DONE.equals(type)) {
                         settle(settled, run, AgentRunStatusEnum.FINISHED, extractDoneText(data));
-                        emitter.complete();
-                    } else if (OpenApiChatStreamEvent.TYPE_ERROR.equals(type)) {
-                        settle(settled, run, AgentRunStatusEnum.FAILED, null);
                         emitter.complete();
                     }
                 },
                 error -> {
                     // 只有 emitter 自己报错才是浏览器断开；上游把流掐断也常以 IOException 出现，不能一并当作客户端消失
                     boolean byClient = clientGone.get();
-                    settle(settled, run, byClient ? AgentRunStatusEnum.STOPPED : AgentRunStatusEnum.FAILED, null);
-                    if (!byClient) {
-                        log.warn("AI 对话流异常 runId={}", runId, error);
-                        sendQuietly(emitter, runId, OpenApiChatStreamEvent.TYPE_ERROR,
-                            JsonUtils.toJsonString(Map.of("message", "AI 服务异常，请稍后重试")));
+                    if (byClient) {
+                        settle(settled, run, AgentRunStatusEnum.STOPPED, null);
+                    } else {
+                        AgentError agentError = agentErrorResolver.fromException(runId, error);
+                        if (settle(settled, run, AgentRunStatusEnum.FAILED, null)) {
+                            persistRunError(runId, agentError);
+                            sendQuietly(emitter, runId, OpenApiChatStreamEvent.TYPE_ERROR,
+                                JsonUtils.toJsonString(agentError));
+                        }
                     }
                     emitter.complete();
                 },
@@ -493,17 +511,23 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
                     }
                     // 上游没发 done 就直接结束（如拒绝对话），不能静默收尾，否则浏览器只能看到「连接已断开」
                     log.warn("AI 对话流未收到 done 即结束 runId={}", runId);
-                    settle(settled, run, AgentRunStatusEnum.FAILED, null);
-                    sendQuietly(emitter, runId, OpenApiChatStreamEvent.TYPE_ERROR,
-                        JsonUtils.toJsonString(Map.of("message", "AI 服务异常，请稍后重试")));
+                    AgentError agentError = agentErrorResolver.unknown(runId, "upstream completed without done");
+                    if (settle(settled, run, AgentRunStatusEnum.FAILED, null)) {
+                        persistRunError(runId, agentError);
+                        sendQuietly(emitter, runId, OpenApiChatStreamEvent.TYPE_ERROR,
+                            JsonUtils.toJsonString(agentError));
+                    }
                     emitter.complete();
                 }
             );
         } catch (Exception e) {
             log.warn("发起 AI 对话失败 runId={}", runId, e);
-            settle(settled, run, AgentRunStatusEnum.FAILED, null);
-            sendQuietly(emitter, runId, OpenApiChatStreamEvent.TYPE_ERROR,
-                JsonUtils.toJsonString(Map.of("message", "AI 服务不可用，请稍后重试")));
+            AgentError agentError = agentErrorResolver.fromException(runId, e);
+            if (settle(settled, run, AgentRunStatusEnum.FAILED, null)) {
+                persistRunError(runId, agentError);
+                sendQuietly(emitter, runId, OpenApiChatStreamEvent.TYPE_ERROR,
+                    JsonUtils.toJsonString(agentError));
+            }
             emitter.complete();
         }
         return emitter;
@@ -588,24 +612,32 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         }
         Collections.reverse(runs);
         List<AgentRunVo> vos = runs.stream().map(this::toRunVo).toList();
-        fillCards(vos);
+        fillRunExtras(vos);
         return vos;
     }
 
     /**
-     * 一次批量补齐各 run 的卡片与回执：刷新后前端据此还原（只还原，不改卡片本身）。
+     * 一次批量补齐各 run 的卡片、回执与脱敏错误：刷新后前端据此还原。
+     * <p>
+     * 工具阶段是瞬时状态，不落库、不回放；审计明细在 databus_agent_step。
      *
      * @param runs 会话内 run 列表
      */
-    private void fillCards(List<AgentRunVo> runs) {
+    private void fillRunExtras(List<AgentRunVo> runs) {
         List<String> runIds = runs.stream().map(AgentRunVo::getRunId).toList();
         List<DatabusAgentMessage> messages = messageMapper.selectList(Wrappers.<DatabusAgentMessage>lambdaQuery()
             .in(DatabusAgentMessage::getRunId, runIds)
-            .in(DatabusAgentMessage::getEventCode, EVENT_CARD, EVENT_CARD_REPLY)
+            .in(DatabusAgentMessage::getEventCode, EVENT_CARD, EVENT_CARD_REPLY, EVENT_ERROR)
             .orderByAsc(DatabusAgentMessage::getSeq));
         Map<String, List<String>> cardsByRun = new LinkedHashMap<>();
         Map<String, List<String>> repliesByRun = new LinkedHashMap<>();
+        Map<String, List<String>> errorsByRun = new LinkedHashMap<>();
         for (DatabusAgentMessage message : messages) {
+            if (EVENT_ERROR.equals(message.getEventCode())) {
+                errorsByRun.computeIfAbsent(message.getRunId(), key -> new ArrayList<>())
+                    .add(message.getContent());
+                continue;
+            }
             boolean isCard = EVENT_CARD.equals(message.getEventCode());
             Map<String, List<String>> target = isCard ? cardsByRun : repliesByRun;
             target.computeIfAbsent(message.getRunId(), key -> new ArrayList<>()).add(message.getContent());
@@ -613,6 +645,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
         for (AgentRunVo vo : runs) {
             vo.setCards(cardsByRun.getOrDefault(vo.getRunId(), List.of()));
             vo.setCardReplies(repliesByRun.getOrDefault(vo.getRunId(), List.of()));
+            vo.setErrors(errorsByRun.getOrDefault(vo.getRunId(), List.of()));
         }
     }
 
@@ -1089,9 +1122,9 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
      * @param status  目标状态
      * @param report  最终文字，可为空
      */
-    private void settle(AtomicBoolean settled, DatabusAgentRun run, AgentRunStatusEnum status, String report) {
+    private boolean settle(AtomicBoolean settled, DatabusAgentRun run, AgentRunStatusEnum status, String report) {
         if (!settled.compareAndSet(false, true)) {
-            return;
+            return false;
         }
         transactionTemplate.executeWithoutResult(tx -> {
             LambdaUpdateWrapper<DatabusAgentRun> wrapper = Wrappers.<DatabusAgentRun>lambdaUpdate()
@@ -1109,6 +1142,22 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
                 appendMessage(run.getRunId(), EVENT_RUN_LIFECYCLE_ENDED, lastChainId, report);
             }
         });
+        return true;
+    }
+
+    /**
+     * 落一条脱敏错误事件（供刷新回放），原始异常不落库。
+     *
+     * @param runId run 句柄
+     * @param error 错误信封
+     */
+    private void persistRunError(String runId, AgentError error) {
+        try {
+            transactionTemplate.executeWithoutResult(tx ->
+                appendMessage(runId, EVENT_ERROR, null, JsonUtils.toJsonString(error)));
+        } catch (Exception e) {
+            log.warn("[databus-agent] 错误事件落库失败 runId={}", runId, e);
+        }
     }
 
     /**

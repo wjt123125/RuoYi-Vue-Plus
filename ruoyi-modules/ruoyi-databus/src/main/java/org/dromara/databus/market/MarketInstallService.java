@@ -1,60 +1,29 @@
 package org.dromara.databus.market;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.exception.ServiceException;
-import org.dromara.common.core.utils.StringUtils;
 import org.dromara.databus.domain.DatabusChain;
-import org.dromara.databus.domain.DatabusComponent;
 import org.dromara.databus.domain.DatabusConnectorDef;
-import org.dromara.databus.domain.DatabusExecution;
 import org.dromara.databus.domain.DatabusInstall;
 import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.domain.bo.MarketInstallMoveBo;
 import org.dromara.databus.domain.vo.DatabusMarketInstallVo;
-import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.parser.generator.ExpressGenerator;
-import org.dromara.databus.enums.ChainStatusEnum;
-import org.dromara.databus.enums.ComponentStatusEnum;
 import org.dromara.databus.enums.ConnectorDefStatusEnum;
-import org.dromara.databus.enums.OwnerTypeEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
-import org.dromara.databus.mapper.DatabusExecutionMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
-import org.dromara.databus.market.support.ChainForkRedirector;
 import org.dromara.databus.market.support.MarketClosure;
-import org.dromara.databus.market.support.MarketClosureLoader;
-import org.dromara.databus.market.support.MarketText;
 import org.dromara.databus.service.IDatabusChainService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.DigestUtils;
 
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
-import static org.dromara.databus.constant.ChainConstants.CHAIN_CODE_MAX_LEN;
-import static org.dromara.databus.constant.CommonConstants.TEMPLATE_FLAG_NO;
-import static org.dromara.databus.constant.CommonConstants.TEMPLATE_FLAG_YES;
-import static org.dromara.databus.constant.MarketConstants.CASCADE_NEW;
-import static org.dromara.databus.constant.MarketConstants.CASCADE_REUSED;
-import static org.dromara.databus.constant.MarketConstants.CODE_SEPARATOR;
-import static org.dromara.databus.constant.MarketConstants.CODE_SEQ_MAX;
-import static org.dromara.databus.constant.MarketConstants.DISPLAY_SEPARATOR;
-import static org.dromara.databus.constant.MarketConstants.DRAFT_VERSION;
-import static org.dromara.databus.constant.MarketConstants.HASH_SEP;
 import static org.dromara.databus.constant.MarketConstants.MODE_FORK;
 import static org.dromara.databus.constant.MarketConstants.MODE_SHARED;
 import static org.dromara.databus.constant.MarketConstants.STATUS_ONLINE;
@@ -80,7 +49,11 @@ import static org.dromara.databus.constant.MarketConstants.TYPE_CONNECTOR;
  * 编码规则：链路副本的编码统一加 {@code u{ownerId}__} 前缀（双下划线是系统保留的分隔符，
  * 源编码里不会有 {@code __}，所以不同人的副本编码不会撞）。
  * install/ref/forkPublish 这三个计数列是缓存值，安装和卸载之后同步刷新（§九：不放在实时查询里算）——
- * 全项目只有本类会改这三列，所以刷新逻辑也写在这里。
+ * 刷新逻辑在 {@link MarketInstallQuerySupport}。
+ * <p>
+ * 本类只保留入口与事务边界；链路复制、卸载清理、列表查询分别委托给同包的
+ * {@link MarketChainCopySupport}、{@link MarketUninstallSupport}、{@link MarketInstallQuerySupport}，
+ * 编码与哈希等纯工具在 {@link MarketInstallCodeSupport}。
  *
  * @author databus
  * @since 2026-10-26
@@ -100,26 +73,17 @@ public class MarketInstallService {
     private final DatabusConnectorDefMapper connectorDefMapper;
 
     /**
-     * 执行记录：已装管理列表取链路最近一次执行状态（运行健康圆点）
-     */
-    private final DatabusExecutionMapper executionMapper;
-
-    /**
      * 链路服务：查依赖清单，以及删链的唯一入口（里面会做引用检查、清 Rule-DB 的 lf_chain、清安装记录）
      */
     private final IDatabusChainService chainService;
 
-    /**
-     * EL 生成器：副本的 elExpression 一律拿重定向之后的组件树重新生成一遍
-     * （decisions §十四-3，跟 copy() 的做法一样——项目里没有手写 EL 这种模式，
-     * 生成器产出的 EL 和原来的意思是一样的）
-     */
-    private final ExpressGenerator expressGenerator;
+    private final MarketInstallCodeSupport codeSupport;
 
-    /**
-     * 查依赖清单：安装前用它检查这些依赖在市场里的状态
-     */
-    private final MarketClosureLoader closureLoader;
+    private final MarketChainCopySupport chainCopySupport;
+
+    private final MarketUninstallSupport uninstallSupport;
+
+    private final MarketInstallQuerySupport querySupport;
 
     /**
      * 安装物料：链路复制一份副本 / 组件和连接器写一条安装记录（本体共享）。
@@ -142,34 +106,16 @@ public class MarketInstallService {
 
         InstallOutcome outcome;
         if (TYPE_CHAIN.equals(item.getResourceType())) {
-            outcome = forkChainClosure(item, directoryId, userId);
+            outcome = chainCopySupport.forkChainClosure(item, directoryId, userId);
         } else if (TYPE_COMPONENT.equals(item.getResourceType())) {
-            outcome = shareComponent(item, directoryId);
+            outcome = chainCopySupport.shareComponent(item, directoryId);
         } else {
             throw new ServiceException("不支持的物料类型：" + item.getResourceType());
         }
 
         DatabusInstall record = saveInstallRecord(itemId, userId, outcome);
-        refreshCounts(itemId);
-        return toInstallVo(record, item, userId, outcome);
-    }
-
-    /**
-     * install 各分支的产物：链路复制副本和组件共用同一个源，两条路要写库的字段一次性都放在这里，
-     * {@link #saveInstallRecord} 和 {@link #toInstallVo} 共用（连接器不写安装记录，不走这里）
-     *
-     * @param localResourceId   本地资源 id——链路＝主链副本的行 id，组件＝源组件 id
-     * @param localResourceType 本地资源类型（多态引用判别列，与 localResourceId 一起标识本地资源）
-     * @param mode             FORK / SHARED
-     * @param contentHash      安装时按源内容算出的一个标识值，卸载和改版时用它比对内容有没有变
-     * @param directoryId      安装记录行放在哪个目录，只有组件安装填（链路的目录记在副本行上）
-     * @param componentCode    组件编码，只有装组件时填
-     * @param componentEnabled 源组件现在是不是启用状态，只有装组件时填
-     * @param cascade          链路跟着复制出来的清单，只有装链路时填
-     */
-    private record InstallOutcome(Long localResourceId, String localResourceType, String mode, String contentHash,
-                                  Long directoryId, String componentCode, Boolean componentEnabled,
-                                  List<DatabusMarketInstallVo.CascadeItemVo> cascade) {
+        querySupport.refreshCounts(itemId);
+        return querySupport.toInstallVo(record, item, userId, outcome);
     }
 
     /**
@@ -195,7 +141,7 @@ public class MarketInstallService {
         record.setCreateTime(LocalDateTime.now());
         installMapper.insert(record);
         // install_count 是安装记录条数，连接器和组件一样按记录累计
-        refreshCounts(item.getId());
+        querySupport.refreshCounts(item.getId());
         DatabusMarketInstallVo vo = new DatabusMarketInstallVo();
         vo.setId(record.getId());
         vo.setOwnerId(userId);
@@ -226,120 +172,6 @@ public class MarketInstallService {
     }
 
     /**
-     * 装链路＝复制一份副本（decisions §十四-1）：主链和它引用的全部子链（包括子链再引用的）
-     * 一条条复制出来，每条都是独立的行，都放在「我的」目录最外层，
-     * 编码加 u{ownerId}__ 前缀避免和别人的撞（目录和前缀只有装链路时才用）
-     */
-    private InstallOutcome forkChainClosure(DatabusMarketItem item, Long directoryId, Long userId) {
-        Long targetDirectoryId = normalizeDirectoryId(directoryId);
-        String prefix = namespacePrefix(userId);
-        DatabusChain source = chainMapper.selectById(item.getSourceId());
-        if (source == null) {
-            throw new ServiceException("源链路不存在或已删除");
-        }
-        // 复制前先做两件事：查依赖清单（顺序是从被引用的到引用它的）＋检查市场状态
-        // （§十四-4：清单里所有链都必须是 ONLINE。作者改版重新提交审核这段时间就不给装，
-        // 这样安装者拿到的永远是整条链都过了审的那一份）
-        MarketClosure closure = closureLoader.load(source.getChainCode());
-        validateClosureOnMarket(closure);
-        // 按「先复制被引用的、再复制引用它的」这个顺序一条条复制：这样改链引用的时候，
-        // 子链的新编码已经知道了。靠「原编码→新编码」这张对应表改三个地方
-        // （cmpProperty 里的链节点、canvasData 里的 data.cmpId、EL 重新生成）
-        Map<String, String> codeMapping = new HashMap<>();
-        List<DatabusMarketInstallVo.CascadeItemVo> cascade = new ArrayList<>(closure.chains().size());
-        Long mainCopyId = null;
-        for (DatabusChain sourceChain : closure.chains().values()) {
-            boolean main = Objects.equals(sourceChain.getId(), source.getId());
-            DatabusChain existing = findReusableSameSourceCopy(userId, sourceChain);
-            String newCode;
-            String cascadeStatus;
-            if (existing != null) {
-                // 能复用就不重复复制（decisions §十四-2、§十五-6）：我名下已经有一条
-                // 从同一条源链复制来的、装完之后一直没动过的副本（重复点安装、
-                // 或者这个副本在装别的物料时已经复制过了）→ 直接用那一行，不再复制
-                newCode = existing.getChainCode();
-                cascadeStatus = CASCADE_REUSED;
-                if (main) {
-                    mainCopyId = existing.getId();
-                }
-            } else {
-                // 没有能复用的：第一次装，或者已有的副本被改过、被标成了精选模板，
-                // 或者老数据的 source_chain_id 是 NULL 认不出是不是同一条源链
-                // → 从市场原版复制一份，编码加后缀避开已有的副本
-                newCode = buildUniqueCode(prefix, sourceChain.getChainCode(), CHAIN_CODE_MAX_LEN, this::existsChainCode);
-                cascadeStatus = CASCADE_NEW;
-                DatabusChain copy = copyChain(sourceChain, newCode, targetDirectoryId, codeMapping);
-                chainMapper.insert(copy);
-                if (main) {
-                    mainCopyId = copy.getId();
-                }
-            }
-            codeMapping.put(sourceChain.getChainCode(), newCode);
-            cascade.add(cascadeItem(sourceChain, newCode, cascadeStatus));
-        }
-        // 主链一定在清单的最后一个（collectChainClosure 就是这么排的），所以 mainCopyId 一定有值
-        return new InstallOutcome(mainCopyId, TYPE_CHAIN, MODE_FORK, chainHash(source), null, null, null, cascade);
-    }
-
-    /**
-     * 复制一条链（decisions §十四-3）：把它引用的链编码改成副本的新编码，
-     * 副本不会指回原来的链。三个字段一起写——cmpProperty 改成指向副本的树、
-     * canvasData 里链节点的 data.cmpId 同步改、EL 一律交给生成器重新产出
-     * （和 copy() 一样，组件树为空就不产 EL）——项目里没有手写 EL 这种模式，
-     * 生成出来的 EL 和原来意思一样
-     */
-    private DatabusChain copyChain(DatabusChain sourceChain, String newCode, Long targetDirectoryId,
-                                   Map<String, String> codeMapping) {
-        CmpProperty redirectedTree = ChainForkRedirector.redirectChainRefs(sourceChain.getCmpProperty(), codeMapping);
-        DatabusChain copy = new DatabusChain();
-        copy.setChainCode(newCode);
-        copy.setChainName(sourceChain.getChainName());
-        copy.setVersion(DRAFT_VERSION);
-        copy.setStatus(ChainStatusEnum.DRAFT.getCode());
-        copy.setLogLevel(sourceChain.getLogLevel());
-        copy.setInputParams(sourceChain.getInputParams());
-        copy.setDirectoryId(targetDirectoryId);
-        copy.setIsTemplate(TEMPLATE_FLAG_NO);
-        copy.setOwnerType(OwnerTypeEnum.USER.getCode());
-        copy.setRemark(sourceChain.getRemark());
-        // 记下是从哪条源链复制来的（decisions §十四-2/5）：主链副本和跟着复制的子链副本
-        // 都填 source_chain_id（靠编码认不出来的老数据就靠这个字段认）
-        copy.setSourceChainId(sourceChain.getId());
-        copy.setCmpProperty(redirectedTree);
-        copy.setCanvasData(ChainForkRedirector.redirectCanvasData(sourceChain.getCanvasData(), codeMapping));
-        copy.setElExpression(redirectedTree == null ? null : expressGenerator.generateEL(redirectedTree).getElStr());
-        return copy;
-    }
-
-    /**
-     * 复制清单里的一项：源编码→新编码，以及这一条是 NEW（新复制的）还是 REUSED（复用了已有副本）
-     */
-    private DatabusMarketInstallVo.CascadeItemVo cascadeItem(DatabusChain sourceChain, String newCode, String status) {
-        DatabusMarketInstallVo.CascadeItemVo cascadeItem = new DatabusMarketInstallVo.CascadeItemVo();
-        cascadeItem.setSourceCode(sourceChain.getChainCode());
-        cascadeItem.setNewCode(newCode);
-        cascadeItem.setSourceName(sourceChain.getChainName());
-        cascadeItem.setStatus(status);
-        return cascadeItem;
-    }
-
-    /**
-     * 装组件＝大家一起用同一个（§十二-5）：不复制副本，localResourceId 直接指向源组件——
-     * 这样运行时占的内存只跟组件总数有关，跟多少人装过没关系；作者更新、停用、下架都马上生效，
-     * 卸载只删安装记录，组件本体不动。
-     * 目录归属（§十二-7）：装在哪个目录记在安装记录行上，和源组件行自己的 directory_id 互不影响
-     */
-    private InstallOutcome shareComponent(DatabusMarketItem item, Long directoryId) {
-        DatabusComponent source = componentMapper.selectById(item.getSourceId());
-        if (source == null) {
-            throw new ServiceException("源组件不存在或已删除");
-        }
-        return new InstallOutcome(source.getId(), TYPE_COMPONENT, MODE_SHARED, componentHash(source),
-            normalizeDirectoryId(directoryId), source.getComponentCode(),
-            ComponentStatusEnum.ENABLED.getCode().equals(source.getStatus()), null);
-    }
-
-    /**
      * 写安装记录：一行＝一个人对一个物料装了一次（链路只记主链副本，
      * 跟着复制的子链副本不单独记行，§十四-5）
      */
@@ -357,34 +189,6 @@ public class MarketInstallService {
         record.setCreateTime(LocalDateTime.now());
         installMapper.insert(record);
         return record;
-    }
-
-    /**
-     * 安装结果的返回内容：安装记录 ＋ 物料的展示字段 ＋ 各分支自己的产物
-     */
-    private DatabusMarketInstallVo toInstallVo(DatabusInstall record, DatabusMarketItem item, Long userId,
-                                               InstallOutcome outcome) {
-        DatabusMarketInstallVo vo = new DatabusMarketInstallVo();
-        vo.setId(record.getId());
-        vo.setOwnerId(userId);
-        vo.setMarketItemId(record.getMarketItemId());
-        vo.setLocalResourceId(outcome.localResourceId());
-        vo.setMode(outcome.mode());
-        vo.setDirectoryId(outcome.directoryId());
-        vo.setComponentCode(outcome.componentCode());
-        vo.setContentHash(outcome.contentHash());
-        vo.setCreateTime(record.getCreateTime());
-        // 复制清单只有装链路才返回（组件不复制，没有这个东西）
-        vo.setCascade(outcome.cascade());
-        vo.setResourceType(item.getResourceType());
-        vo.setName(item.getName());
-        vo.setSummary(item.getSummary());
-        vo.setIcon(item.getIcon());
-        vo.setColor(item.getColor());
-        vo.setCodeDisplay(item.getCodeDisplay());
-        // 组件直接看本体现在是启用还是停用；链路复制出来是草稿（没发布），没有开关
-        vo.setEnabled(TYPE_COMPONENT.equals(item.getResourceType()) && Boolean.TRUE.equals(outcome.componentEnabled()));
-        return vo;
     }
 
     /**
@@ -428,7 +232,7 @@ public class MarketInstallService {
                 chainService.deleteByIds(List.of(resourceId));
                 // 顺带清子链副本（2026-10-24 改的，原来只删最外层那一条）：主链副本删掉之后，
                 // 把清单里「没有被还在用的链引用、装完之后一直没动过」的子链副本一起删
-                cascadeCleanClosureCopies(item, userId);
+                uninstallSupport.cascadeCleanClosureCopies(item, userId);
                 // 安装记录一般已经被 chainService.cleanupInstallRecords 删掉了，下面再删一次只是保险
                 // （副本行已经不在时 deleteByIds 不会动记录，这一步保证卸载后不留下指向已删资源的记录）
             } else if (TYPE_COMPONENT.equals(resourceType)) {
@@ -438,217 +242,16 @@ public class MarketInstallService {
         }
         installMapper.deleteById(record.getId());
         if (record.getMarketItemId() != null) {
-            refreshCounts(record.getMarketItemId());
+            querySupport.refreshCounts(record.getMarketItemId());
         }
         return true;
-    }
-
-    /**
-     * 卸载主链时顺带清掉跟着复制出来的子链副本（2026-10-24 改的，原来只删最外层那一条）。
-     * 先挑出候选：我名下、source_chain_id 在这条源链的依赖清单里、装完之后一直没动过
-     * （update_time 还等于 create_time）的副本；
-     * 再从里面去掉两类——「被还在用的链引用的」（主链副本已经先删了，这一批候选之间互相引用的算例外）
-     * 和「被安装记录指向的」（说明用户单独装过它），剩下的才逻辑删除。
-     * 改过的副本（进编辑器存过 / 发布或下线过 / 换过目录 / 标过模板）和被用户自建的链引用的副本都留下——
-     * 那些是用户自己的东西，这里只清「装完没碰过」的。
-     * 源链已被删、或者查依赖清单报错，都不影响卸载本身：清副本只是顺手多做的一步，出错就不做、也不报错。
-     */
-    private void cascadeCleanClosureCopies(DatabusMarketItem item, Long userId) {
-        if (item == null || item.getSourceId() == null) {
-            return;
-        }
-        DatabusChain source = chainMapper.selectById(item.getSourceId());
-        if (source == null || StringUtils.isBlank(source.getChainCode())) {
-            return;
-        }
-        List<Long> closureSourceIds;
-        try {
-            closureSourceIds = chainService.collectChainClosure(source.getChainCode()).values().stream()
-                .map(DatabusChain::getId).filter(Objects::nonNull).toList();
-        } catch (ServiceException e) {
-            return;
-        }
-        if (closureSourceIds.isEmpty()) {
-            return;
-        }
-        List<DatabusChain> copies = chainMapper.selectList(Wrappers.<DatabusChain>lambdaQuery()
-            .eq(DatabusChain::getCreateBy, userId)
-            .in(DatabusChain::getSourceChainId, closureSourceIds)
-            // 怎么算「装完没碰过」（decisions §十五-5）：MyBatis-Plus 的 insertFill 会让
-            // create_time 和 update_time 相等，之后任何带实体的更新都会刷新 update_time，
-            // 所以两者不等就是被改过。以前用 canvas_data IS NULL 判断，那个已经不成立了——
-            // 安装时就会把重定向后的画布写进副本，正常上架的链永远不为 NULL，等于一个都清不掉
-            .apply("update_time = create_time"));
-        if (copies.isEmpty()) {
-            return;
-        }
-        Set<String> batchCodes = copies.stream().map(DatabusChain::getChainCode).collect(Collectors.toSet());
-        // 被安装记录指向的副本不清（decisions §十五-4①）：子链副本有可能被用户单独装过
-        // （编码一样又都是从同一条源链复制的，就会复用那一份，见 §十四-2，
-        // 那条安装记录的 local_resource_id 正好指向这个副本），
-        // 删了就会留下「记录还在、资源没了」——那是用户明确装过的东西，得留着
-        List<Long> copyIds = copies.stream().map(DatabusChain::getId).filter(Objects::nonNull).toList();
-        Set<Long> installedCopyIds = copyIds.isEmpty() ? Set.of()
-            : installMapper.selectList(Wrappers.<DatabusInstall>lambdaQuery()
-                    .eq(DatabusInstall::getLocalResourceType, TYPE_CHAIN)
-                    .in(DatabusInstall::getLocalResourceId, copyIds)).stream()
-                .map(DatabusInstall::getLocalResourceId).collect(Collectors.toSet());
-        List<Long> deletable = new ArrayList<>();
-        for (DatabusChain copy : copies) {
-            if (StringUtils.isBlank(copy.getChainCode())) {
-                continue;
-            }
-            if (installedCopyIds.contains(copy.getId())) {
-                continue;
-            }
-            if (!isChainReferencedExternally(copy.getChainCode(), batchCodes)) {
-                deletable.add(copy.getId());
-            }
-        }
-        if (!deletable.isEmpty()) {
-            chainMapper.deleteByIds(deletable);
-        }
-    }
-
-    /**
-     * 这条链有没有被别的还在用的链引用（和 DatabusChainServiceImpl.validateNotChainReferenced
-     * 判断标准一样：先用 LIKE 带引号粗筛一遍 → 再用 collectChainRefs 逐个确认；
-     * 逻辑删除的行 MyBatis-Plus 会自动排掉，excludeCodes 是这一批里互相引用的例外）
-     */
-    private boolean isChainReferencedExternally(String code, Set<String> excludeCodes) {
-        List<DatabusChain> candidates = chainMapper.selectList(Wrappers.<DatabusChain>lambdaQuery()
-            .like(DatabusChain::getCmpProperty, "\"" + MarketText.escapeLike(code) + "\""));
-        for (DatabusChain candidate : candidates) {
-            if (excludeCodes.contains(candidate.getChainCode())) {
-                continue;
-            }
-            if (chainService.collectChainRefs(candidate.getCmpProperty()).contains(code)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
      * 我装过的东西：把安装记录和物料行、本地资源关联起来，补上名称、图标、启用状态这些展示字段。
      */
     public List<DatabusMarketInstallVo> queryInstalled(Long userId) {
-        List<DatabusInstall> records = installMapper.selectList(Wrappers.<DatabusInstall>lambdaQuery()
-            .eq(DatabusInstall::getOwnerId, userId)
-            .orderByDesc(DatabusInstall::getCreateTime)
-            .orderByDesc(DatabusInstall::getId));
-        if (records.isEmpty()) {
-            return new ArrayList<>();
-        }
-
-        List<Long> itemIds = records.stream()
-            .map(DatabusInstall::getMarketItemId).filter(Objects::nonNull).distinct().toList();
-        Map<Long, DatabusMarketItem> itemMap = itemIds.isEmpty() ? Map.of()
-            : marketItemMapper.selectByIds(itemIds).stream()
-                .collect(Collectors.toMap(DatabusMarketItem::getId, item -> item, (a, b) -> a));
-
-        Set<Long> localIds = records.stream()
-            .map(DatabusInstall::getLocalResourceId).filter(Objects::nonNull).collect(Collectors.toSet());
-        Map<Long, DatabusChain> chainMap = localIds.isEmpty() ? Map.of()
-            : chainMapper.selectByIds(localIds).stream()
-                .collect(Collectors.toMap(DatabusChain::getId, chain -> chain, (a, b) -> a));
-        Map<Long, DatabusComponent> componentMap = localIds.isEmpty() ? Map.of()
-            : componentMapper.selectByIds(localIds).stream()
-                .collect(Collectors.toMap(DatabusComponent::getId, component -> component, (a, b) -> a));
-        Map<Long, DatabusConnectorDef> defMap = localIds.isEmpty() ? Map.of()
-            : connectorDefMapper.selectByIds(localIds).stream()
-                .collect(Collectors.toMap(DatabusConnectorDef::getId, def -> def, (a, b) -> a));
-        // 链路运行健康：一次批量取每条链的最近一次执行状态（无记录不放进 map，前端按「未跑过」处理）
-        Map<Long, String> chainHealthMap = new HashMap<>();
-        if (!chainMap.isEmpty()) {
-            for (DatabusExecution execution : executionMapper.selectLatestByChainIds(chainMap.keySet())) {
-                chainHealthMap.put(execution.getChainId(), execution.getStatus());
-            }
-        }
-
-        List<DatabusMarketInstallVo> result = new ArrayList<>(records.size());
-        for (DatabusInstall record : records) {
-            // 类型读记录上的判别列；下面三张表只是为了取展示字段，不再参与类型判定
-            String resourceType = record.getLocalResourceType();
-            DatabusMarketItem item = itemMap.get(record.getMarketItemId());
-            DatabusChain chain = chainMap.get(record.getLocalResourceId());
-            DatabusComponent component = componentMap.get(record.getLocalResourceId());
-
-            DatabusMarketInstallVo vo = new DatabusMarketInstallVo();
-            vo.setId(record.getId());
-            vo.setOwnerId(record.getOwnerId());
-            vo.setMarketItemId(record.getMarketItemId());
-            vo.setLocalResourceId(record.getLocalResourceId());
-            vo.setMode(record.getMode());
-            vo.setDirectoryId(record.getDirectoryId());
-            vo.setContentHash(record.getContentHash());
-            vo.setCreateTime(record.getCreateTime());
-            vo.setResourceType(resourceType);
-
-            String name = null;
-            String icon = null;
-            String color = null;
-            String summary = null;
-            Boolean enabled = null;
-            // 连接器编码：物料行被作者删掉时用它兜底显示，避免已装列表出现一行空白
-            String connectorType = null;
-            if (TYPE_CHAIN.equals(resourceType)) {
-                if (chain != null) {
-                    name = chain.getChainName();
-                    summary = chain.getRemark();
-                    enabled = ChainStatusEnum.ENABLED.getCode().equals(chain.getStatus());
-                    vo.setStatus(chain.getStatus());
-                    vo.setHealth(chainHealthMap.get(chain.getId()));
-                }
-            } else if (TYPE_COMPONENT.equals(resourceType)) {
-                if (component != null) {
-                    name = component.getComponentName();
-                    icon = component.getIcon();
-                    color = component.getColor();
-                    summary = component.getDescription();
-                    enabled = ComponentStatusEnum.ENABLED.getCode().equals(component.getStatus());
-                    vo.setStatus(component.getStatus());
-                    // 组件（SHARED）在链里被引用时：前端拿编码反查安装记录行，好显示打开按钮
-                    vo.setComponentCode(component.getComponentCode());
-                }
-            } else if (TYPE_CONNECTOR.equals(resourceType)) {
-                // 连接器本体全局共享，启用状态看 def 行；名称/图标/简介统一在下面从物料行补
-                DatabusConnectorDef def = defMap.get(record.getLocalResourceId());
-                if (def != null) {
-                    enabled = ConnectorDefStatusEnum.ENABLED.getCode().equals(def.getStatus());
-                    vo.setStatus(def.getStatus());
-                    connectorType = def.getType();
-                }
-            }
-            if (item != null) {
-                if (StringUtils.isBlank(name)) {
-                    name = item.getName();
-                }
-                if (StringUtils.isBlank(icon)) {
-                    icon = item.getIcon();
-                }
-                if (StringUtils.isBlank(color)) {
-                    color = item.getColor();
-                }
-                if (StringUtils.isBlank(summary)) {
-                    summary = item.getSummary();
-                }
-                // 上架者登录名：管理页行上渲染 @作者（宁缺勿滥，物料行没了就不显示）
-                vo.setOwnerCode(item.getOwnerCode());
-                // 展示码：安装记录表没有这一列，行副标题的「谁的哪一个」从物料行回填
-                vo.setCodeDisplay(item.getCodeDisplay());
-            }
-            if (StringUtils.isBlank(name) && connectorType != null) {
-                name = connectorType;
-            }
-            vo.setName(name);
-            vo.setIcon(icon);
-            vo.setColor(color);
-            vo.setSummary(summary);
-            vo.setEnabled(enabled);
-            result.add(vo);
-        }
-        return result;
+        return querySupport.queryInstalled(userId);
     }
 
     /**
@@ -666,211 +269,16 @@ public class MarketInstallService {
         // （这里显式 set null 是为了支持把组件拖回「未归组」）
         return installMapper.update(null, Wrappers.<DatabusInstall>lambdaUpdate()
             .eq(DatabusInstall::getId, record.getId())
-            .set(DatabusInstall::getDirectoryId, normalizeDirectoryId(bo.getDirectoryId()))) > 0;
+            .set(DatabusInstall::getDirectoryId, codeSupport.normalizeDirectoryId(bo.getDirectoryId()))) > 0;
     }
-
-    // ---------------------------- 计数刷新 ----------------------------
-
-    /**
-     * 重算一个物料的三个缓存计数（install / ref / forkPublish）。
-     */
-    private void refreshCounts(Long itemId) {
-        if (itemId == null) {
-            return;
-        }
-        DatabusMarketItem item = marketItemMapper.selectById(itemId);
-        if (item == null) {
-            return;
-        }
-        Long installCount = installMapper.selectCount(Wrappers.<DatabusInstall>lambdaQuery()
-            .eq(DatabusInstall::getMarketItemId, itemId));
-
-        int refCount = 0;
-        String sourceCode = substringAfterLast(item.getCodeDisplay(), DISPLAY_SEPARATOR);
-        if (StringUtils.isNotBlank(sourceCode)) {
-            Long count = chainMapper.selectCount(new QueryWrapper<DatabusChain>()
-                .apply("cmp_property like {0}", "%" + MarketText.escapeLike(sourceCode) + "%"));
-            refCount = count == null ? 0 : count.intValue();
-        }
-
-        int forkPublishCount = countForkPublished(itemId, item.getResourceType());
-
-        DatabusMarketItem update = new DatabusMarketItem();
-        update.setId(itemId);
-        update.setInstallCount(installCount == null ? 0 : installCount.intValue());
-        update.setRefCount(refCount);
-        update.setForkPublishCount(forkPublishCount);
-        marketItemMapper.updateById(update);
-    }
-
-    /**
-     * 装完之后又发布过的副本有多少个：这个物料被装出去的所有副本里，
-     * 链路已发布的、组件改过又发布了的，一共多少条。
-     */
-    private int countForkPublished(Long itemId, String resourceType) {
-        List<Long> localIds = installMapper.selectList(Wrappers.<DatabusInstall>lambdaQuery()
-                .select(DatabusInstall::getLocalResourceId)
-                .eq(DatabusInstall::getMarketItemId, itemId)).stream()
-            .map(DatabusInstall::getLocalResourceId)
-            .filter(Objects::nonNull)
-            .toList();
-        if (localIds.isEmpty()) {
-            return 0;
-        }
-        Long count;
-        if (TYPE_CHAIN.equals(resourceType)) {
-            count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
-                .in(DatabusChain::getId, localIds)
-                .eq(DatabusChain::getStatus, ChainStatusEnum.ENABLED.getCode()));
-        } else if (TYPE_COMPONENT.equals(resourceType)) {
-            count = componentMapper.selectCount(Wrappers.<DatabusComponent>lambdaQuery()
-                .in(DatabusComponent::getId, localIds)
-                .gt(DatabusComponent::getVersion, DRAFT_VERSION));
-        } else {
-            return 0;
-        }
-        return count == null ? 0 : count.intValue();
-    }
-
-    // ---------------------------- 私有工具 ----------------------------
 
     /**
      * 安装前的市场检查（decisions §十四-4）：依赖清单里每条链（包括主链）都必须在市场里存在、
-     * 而且状态是 ONLINE。
-     * <p>
-     * 装链路能不能装，就看市场状态——作者改版重新发布时，ONLINE 的物料会被改回 PENDING
-     * （decisions §十四-8），这段时间就不给装，所以安装者拿到的永远是过了审的那一份。
-     * 不管是查不到还是状态不是 ONLINE（PENDING / REJECTED / OFFLINE），报错都直接说出是哪条链，
-     * 安装者不用自己去翻清单里都有什么。
-     * <p>
-     * 只查链、不查组件：组件是大家共用同一个，运行时直接指向源组件，
-     * 源组件被停用了由运行时处理，不在安装这一步拦。
+     * 而且状态是 ONLINE。实现在 {@link MarketChainCopySupport#validateClosureOnMarket}。
      *
      * @param closure 已经查好的依赖清单（包括主链，链的遍历顺序就是复制顺序）
      */
     public void validateClosureOnMarket(MarketClosure closure) {
-        for (DatabusChain chain : closure.chains().values()) {
-            DatabusMarketItem item = closure.chainItems().get(chain.getId());
-            if (item == null || !STATUS_ONLINE.equals(item.getStatus())) {
-                String state = item == null ? "未上架" : item.getStatus();
-                throw new ServiceException("依赖链路'" + chain.getChainName() + "'市场状态为" + state + "，暂不可安装");
-            }
-        }
-    }
-
-    /**
-     * 目录统一处理：null 或者不是正数，都当「未归组」（null）。
-     */
-    private Long normalizeDirectoryId(Long directoryId) {
-        return (directoryId == null || directoryId <= 0) ? null : directoryId;
-    }
-
-    /**
-     * 某个人的副本编码前缀：{@code u{ownerId}__}（双下划线是系统保留的分隔符）。
-     */
-    private String namespacePrefix(Long userId) {
-        return "u" + userId + CODE_SEPARATOR;
-    }
-
-    /**
-     * 生成副本编码：{@code prefix + sourceCode}，超过 maxLen 就截断；
-     * 如果和已有编码撞了就在后面加 _2/_3…（加完还是不能超过长度）
-     */
-    private String buildUniqueCode(String prefix, String sourceCode, int maxLen, Predicate<String> exists) {
-        String code = sourceCode == null ? "" : sourceCode;
-        String base = truncate(prefix + code, maxLen);
-        if (!exists.test(base)) {
-            return base;
-        }
-        for (int seq = 2; seq <= CODE_SEQ_MAX; seq++) {
-            String suffix = "_" + seq;
-            String head = truncate(prefix + code, maxLen - suffix.length());
-            String candidate = head + suffix;
-            if (!exists.test(candidate)) {
-                return candidate;
-            }
-        }
-        throw new ServiceException("无法为安装副本生成唯一编码，请缩短源编码长度");
-    }
-
-    /**
-     * 截断到最大长度。
-     */
-    private String truncate(String value, int maxLen) {
-        if (value == null) {
-            return null;
-        }
-        int limit = Math.max(0, maxLen);
-        return value.length() <= limit ? value : value.substring(0, limit);
-    }
-
-    private boolean existsChainCode(String code) {
-        Long count = chainMapper.selectCount(Wrappers.<DatabusChain>lambdaQuery()
-            .eq(DatabusChain::getChainCode, code));
-        return count != null && count > 0;
-    }
-
-    /**
-     * 找一条能直接复用的副本（decisions §十四-2、§十五-6）：在我名下找一条
-     * 从同一条市场源链复制来的、装完之后一直没动过的副本，找到就直接用它，不再复制。
-     * <p>
-     * 不能靠编码来找：编码只认最基础的那个，带 {@code _2}/{@code _3} 后缀的干净副本会被漏掉，
-     * 结果就是每装一次就多复制一条。
-     * <p>
-     * 有两种副本就算是从同一条源链复制来的也不能复用（返回 null，改走 {@link #buildUniqueCode}
-     * 从市场原版重新复制一份）：
-     * <ul>
-     *   <li>被改过的（{@code update_time <> create_time}，判断方式同 §十五-5）——复用它的话，
-     *       新装的链会不声不响地跑用户自己改过的逻辑，而不是市场上过了审的那份，全程没有任何提示；</li>
-     *   <li>被标成精选模板的（{@code is_template = '1'}）——发布时会被 validateChainReferences 拒掉，
-     *       而报错里看不出来是安装这一步造成的，查起来很费劲。</li>
-     * </ul>
-     * 查询必须限定创建人是我：source_chain_id 指向的是市场源链，别人装的副本也满足这个条件。
-     * 老数据的副本 source_chain_id 是 NULL，认不出是不是同一条源链，就返回 null 另外复制一条
-     * （这样做只会多一条副本，不会用错，所以不做数据迁移）。
-     */
-    private DatabusChain findReusableSameSourceCopy(Long userId, DatabusChain sourceChain) {
-        List<DatabusChain> candidates = chainMapper.selectList(Wrappers.<DatabusChain>lambdaQuery()
-            .eq(DatabusChain::getCreateBy, userId)
-            .eq(DatabusChain::getSourceChainId, sourceChain.getId())
-            .apply("update_time = create_time")
-            .and(w -> w.isNull(DatabusChain::getIsTemplate)
-                .or().ne(DatabusChain::getIsTemplate, TEMPLATE_FLAG_YES))
-            .orderByAsc(DatabusChain::getId));
-        return candidates.isEmpty() ? null : candidates.get(0);
-    }
-
-    /**
-     * 按链路内容（画布 + EL）算一个标识值，内容一样算出来就一样。
-     */
-    private String chainHash(DatabusChain chain) {
-        String raw = nullToEmpty(chain.getCanvasData()) + HASH_SEP + nullToEmpty(chain.getElExpression());
-        return DigestUtils.md5DigestAsHex(raw.getBytes(StandardCharsets.UTF_8));
-    }
-
-    /**
-     * 按组件内容（脚本正文 + 参数 schema + 节点类型 + 配置形态）算一个标识值。
-     */
-    private String componentHash(DatabusComponent component) {
-        String raw = nullToEmpty(component.getScriptBody()) + HASH_SEP
-            + nullToEmpty(component.getParamSchema()) + HASH_SEP
-            + nullToEmpty(component.getNodeType()) + HASH_SEP
-            + nullToEmpty(component.getEditor());
-        return DigestUtils.md5DigestAsHex(raw.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private String nullToEmpty(String value) {
-        return value == null ? "" : value;
-    }
-
-    /**
-     * 取字符串最后一个分隔符之后的部分（无分隔符则原样返回）。
-     */
-    private String substringAfterLast(String value, String separator) {
-        if (value == null) {
-            return null;
-        }
-        int idx = value.lastIndexOf(separator);
-        return idx >= 0 ? value.substring(idx + separator.length()) : value;
+        chainCopySupport.validateClosureOnMarket(closure);
     }
 }

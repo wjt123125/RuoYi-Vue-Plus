@@ -29,7 +29,7 @@ import static org.dromara.databus.constant.MarketConstants.DEF_TYPE_FIELD;
  * 本工具负责改两个地方的引用：
  * <ul>
  *   <li><b>cmpProperty 组件树</b>（{@link #redirectChainRefs}）：把源树完整复制一份，
- *       再改掉里面 CHAIN 节点的引用。怎么算 CHAIN 节点，和 DatabusChainServiceImpl#collectChainRefs
+ *       再改掉里面 CHAIN 节点的引用。怎么算 CHAIN 节点，和 ChainGraphSupport#collectRefs
  *       的规则一样（type=CHAIN 不分大小写；引用的编码取顶层 id，老数据没有就取 properties.id）。
  *       只改 CHAIN 节点。普通节点的 id 和链编码是两套东西、可能重名，一律不动，避免改错。</li>
  *   <li><b>canvasData 画布 JSON</b>（{@link #redirectCanvasData}）：VueFlow 里
@@ -39,7 +39,7 @@ import static org.dromara.databus.constant.MarketConstants.DEF_TYPE_FIELD;
  * <p>
  * 这里还提供收集组件树里业务组件编码的方法（{@link #collectComponentCodes}）：
  * 上架引导（decisions §十四-6）和通过审核前查依赖（decisions §十四-7）都用它。
- * 放在本工具里是为了和 DatabusChainServiceImpl#collectChainRefs 挨着，
+ * 放在本工具里是为了和 ChainGraphSupport#collectRefs 用同一套「什么算 CHAIN 节点」的判定，
  * 让「收集链引用」和「收集组件引用」两处的走法保持一致。
  * 副本的 elExpression 不在这里处理：由调用方统一用
  * {@code expressGenerator.generateEL(改过引用的树)} 重新生成（和 copy() 的做法一样）。

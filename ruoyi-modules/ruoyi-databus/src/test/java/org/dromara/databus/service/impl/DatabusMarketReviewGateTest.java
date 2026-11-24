@@ -16,11 +16,17 @@ import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
+import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
+import org.dromara.databus.market.MarketItemLifecycleSupport;
 import org.dromara.databus.market.MarketPublishService;
+import org.dromara.databus.market.MarketPublishSubmitSupport;
+import org.dromara.databus.market.MarketReviewDetailSupport;
+import org.dromara.databus.market.MarketReviewSupport;
 import org.dromara.databus.market.support.MarketClosureLoader;
 import org.dromara.databus.market.support.MarketVoAssembler;
 import org.dromara.databus.service.IDatabusChainService;
+import org.dromara.databus.service.IDatabusConnectorService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -77,10 +83,16 @@ class DatabusMarketReviewGateTest {
     private DatabusConnectorDefMapper connectorDefMapper;
 
     @Mock
+    private DatabusInstallMapper installMapper;
+
+    @Mock
     private ObjectMapper objectMapper;
 
     @Mock
     private IDatabusChainService chainService;
+
+    @Mock
+    private IDatabusConnectorService connectorService;
 
     private MarketPublishService marketService;
 
@@ -93,12 +105,20 @@ class DatabusMarketReviewGateTest {
 
     @BeforeEach
     void setUp() {
-        marketService = new MarketPublishService(marketItemMapper, chainMapper, componentMapper,
-            connectorDefMapper, objectMapper, chainService,
-            // 依赖清单装配用真实实现：它调的 collectChainClosure / 两个 selectList 由各场景自行打桩
-            new MarketClosureLoader(chainService, marketItemMapper, componentMapper),
-            // 视图装配也用真实实现：reviewDetail 断言 vo.getItem() 的字段值
-            new MarketVoAssembler(componentMapper));
+        // 依赖清单装配用真实实现：它调的 collectChainClosure / 两个 selectList 由各场景自行打桩
+        MarketClosureLoader closureLoader = new MarketClosureLoader(chainService, marketItemMapper, componentMapper);
+        // 视图装配也用真实实现：reviewDetail 断言 vo.getItem() 的字段值
+        MarketVoAssembler assembler = new MarketVoAssembler(componentMapper);
+        MarketPublishSubmitSupport submitSupport = new MarketPublishSubmitSupport(marketItemMapper, chainMapper,
+            componentMapper, connectorDefMapper, closureLoader, objectMapper);
+        MarketItemLifecycleSupport lifecycleSupport = new MarketItemLifecycleSupport(marketItemMapper,
+            connectorDefMapper, installMapper, connectorService);
+        MarketReviewSupport reviewSupport = new MarketReviewSupport(marketItemMapper, chainMapper,
+            connectorDefMapper, connectorService, closureLoader, lifecycleSupport);
+        MarketReviewDetailSupport reviewDetailSupport = new MarketReviewDetailSupport(marketItemMapper, chainMapper,
+            componentMapper, connectorDefMapper, chainService, closureLoader, assembler);
+        marketService = new MarketPublishService(submitSupport, reviewSupport, reviewDetailSupport,
+            lifecycleSupport, connectorService);
     }
 
     /**
@@ -357,6 +377,9 @@ class DatabusMarketReviewGateTest {
         when(chainMapper.selectById(1L)).thenReturn(chain(1L, "chainA", "链A", null));
         // 第二项源链查无行
         when(chainMapper.selectById(2L)).thenReturn(null);
+        when(marketItemMapper.insert(any(DatabusMarketItem.class))).thenReturn(1);
+        // 上架成功后补依赖审核单：无依赖的闭包，避免 mock 返回 null
+        when(chainService.collectChainClosure("chainA")).thenReturn(new LinkedHashMap<>());
 
         ServiceException ex = assertThrows(ServiceException.class,
             () -> marketService.publishBatch(bo, 7L, "user7"));
@@ -375,6 +398,8 @@ class DatabusMarketReviewGateTest {
         bo.setItems(List.of(publishBo("CHAIN", 1L), publishBo("COMPONENT", 10L)));
         when(chainMapper.selectById(1L)).thenReturn(chain(1L, "chainA", "链A", null));
         when(componentMapper.selectById(10L)).thenReturn(component(10L, "compA", "组件A"));
+        when(marketItemMapper.insert(any(DatabusMarketItem.class))).thenReturn(1);
+        when(chainService.collectChainClosure("chainA")).thenReturn(new LinkedHashMap<>());
 
         Boolean result = marketService.publishBatch(bo, 7L, "user7");
 

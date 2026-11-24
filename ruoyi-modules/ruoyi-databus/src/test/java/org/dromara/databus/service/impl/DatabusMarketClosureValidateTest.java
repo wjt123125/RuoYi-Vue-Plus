@@ -9,9 +9,14 @@ import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
+import org.dromara.databus.mapper.DatabusExecutionMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
+import org.dromara.databus.market.MarketChainCopySupport;
+import org.dromara.databus.market.MarketInstallCodeSupport;
+import org.dromara.databus.market.MarketInstallQuerySupport;
 import org.dromara.databus.market.MarketInstallService;
+import org.dromara.databus.market.MarketUninstallSupport;
 import org.dromara.databus.market.support.MarketClosureLoader;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.service.IDatabusChainService;
@@ -66,16 +71,23 @@ class DatabusMarketClosureValidateTest {
     void setUp() {
         marketItemMapper = mock(DatabusMarketItemMapper.class);
         chainService = mock(IDatabusChainService.class);
-        closureLoader = new MarketClosureLoader(chainService, marketItemMapper, mock(DatabusComponentMapper.class));
+        DatabusChainMapper chainMapper = mock(DatabusChainMapper.class);
+        DatabusComponentMapper componentMapper = mock(DatabusComponentMapper.class);
+        MarketInstallCodeSupport codeSupport = new MarketInstallCodeSupport(chainMapper);
+        closureLoader = new MarketClosureLoader(chainService, marketItemMapper, componentMapper);
         service = new MarketInstallService(
             marketItemMapper,
             mock(DatabusInstallMapper.class),
-            mock(DatabusChainMapper.class),
-            mock(DatabusComponentMapper.class),
+            chainMapper,
+            componentMapper,
             mock(DatabusConnectorDefMapper.class),
             chainService,
-            new ExpressGenerator(),
-            closureLoader);
+            codeSupport,
+            new MarketChainCopySupport(chainMapper, componentMapper, new ExpressGenerator(), closureLoader, codeSupport),
+            new MarketUninstallSupport(chainMapper, mock(DatabusInstallMapper.class), chainService),
+            new MarketInstallQuerySupport(marketItemMapper, mock(DatabusInstallMapper.class), chainMapper,
+                componentMapper, mock(DatabusConnectorDefMapper.class), mock(DatabusExecutionMapper.class),
+                codeSupport));
     }
 
     /**

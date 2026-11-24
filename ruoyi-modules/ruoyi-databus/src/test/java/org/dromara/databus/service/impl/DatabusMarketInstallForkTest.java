@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.domain.DatabusChain;
+import org.dromara.databus.domain.DatabusComponent;
 import org.dromara.databus.domain.DatabusInstall;
 import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.domain.vo.DatabusMarketInstallVo;
@@ -16,9 +17,14 @@ import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.mapper.DatabusChainMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
+import org.dromara.databus.mapper.DatabusExecutionMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
+import org.dromara.databus.market.MarketChainCopySupport;
+import org.dromara.databus.market.MarketInstallCodeSupport;
+import org.dromara.databus.market.MarketInstallQuerySupport;
 import org.dromara.databus.market.MarketInstallService;
+import org.dromara.databus.market.MarketUninstallSupport;
 import org.dromara.databus.market.support.MarketClosureLoader;
 import org.dromara.databus.service.IDatabusChainService;
 import org.junit.jupiter.api.BeforeAll;
@@ -102,6 +108,8 @@ class DatabusMarketInstallForkTest {
         TableInfoHelper.initTableInfo(assistant, DatabusChain.class);
         TableInfoHelper.initTableInfo(assistant, DatabusInstall.class);
         TableInfoHelper.initTableInfo(assistant, DatabusMarketItem.class);
+        // 安装后重算计数会按组件行统计引用数，wrapper 的 lambda 列解析需要组件元数据
+        TableInfoHelper.initTableInfo(assistant, DatabusComponent.class);
         new ExpressParserFactory().register(new ThenConditionParser());
     }
 
@@ -112,6 +120,7 @@ class DatabusMarketInstallForkTest {
         chainMapper = mock(DatabusChainMapper.class);
         chainService = mock(IDatabusChainService.class);
         DatabusComponentMapper componentMapper = mock(DatabusComponentMapper.class);
+        MarketInstallCodeSupport codeSupport = new MarketInstallCodeSupport(chainMapper);
         service = new MarketInstallService(
             marketItemMapper,
             installMapper,
@@ -119,9 +128,13 @@ class DatabusMarketInstallForkTest {
             componentMapper,
             mock(DatabusConnectorDefMapper.class),
             chainService,
-            new ExpressGenerator(),
-            // 依赖清单装配用真实实现：它调的 collectChainClosure / selectList 已在下面打桩
-            new MarketClosureLoader(chainService, marketItemMapper, componentMapper));
+            codeSupport,
+            new MarketChainCopySupport(chainMapper, componentMapper, new ExpressGenerator(),
+                // 依赖清单装配用真实实现：它调的 collectChainClosure / selectList 已在下面打桩
+                new MarketClosureLoader(chainService, marketItemMapper, componentMapper), codeSupport),
+            new MarketUninstallSupport(chainMapper, installMapper, chainService),
+            new MarketInstallQuerySupport(marketItemMapper, installMapper, chainMapper, componentMapper,
+                mock(DatabusConnectorDefMapper.class), mock(DatabusExecutionMapper.class), codeSupport));
 
         chainA = chain(1L, "chainA", "链A",
             then(node("a"), chainRef("chainB")), canvas("a", "chainB"));

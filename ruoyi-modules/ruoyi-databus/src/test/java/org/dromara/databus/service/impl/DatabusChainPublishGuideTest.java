@@ -84,8 +84,13 @@ class DatabusChainPublishGuideTest {
 
     @BeforeEach
     void setUp() {
-        chainService = new DatabusChainServiceImpl(chainMapper, expressGenerator, rulePublishService,
-            marketItemMapper, componentMapper, installMapper);
+        ChainGraphSupport graphSupport = new ChainGraphSupport(chainMapper);
+        ChainWriteSupport writeSupport = new ChainWriteSupport(chainMapper, expressGenerator, rulePublishService,
+            installMapper, marketItemMapper, graphSupport);
+        chainService = new DatabusChainServiceImpl(new ChainQuerySupport(chainMapper), writeSupport,
+            graphSupport, new ChainPublishSupport(chainMapper, expressGenerator, rulePublishService,
+                marketItemMapper, componentMapper, graphSupport),
+            new ChainCopySupport(chainMapper, writeSupport));
     }
 
     /**

@@ -73,9 +73,15 @@ class DatabusChainClosureTest {
             Object code = wrapper.getParamNameValuePairs().values().iterator().next();
             return chainsByCode.get(code);
         });
-        service = new DatabusChainServiceImpl(chainMapper, mock(ExpressGenerator.class),
-            mock(RulePublishService.class), mock(DatabusMarketItemMapper.class), mock(DatabusComponentMapper.class),
-            mock(DatabusInstallMapper.class));
+        ChainGraphSupport graphSupport = new ChainGraphSupport(chainMapper);
+        ChainWriteSupport writeSupport = new ChainWriteSupport(chainMapper, mock(ExpressGenerator.class),
+            mock(RulePublishService.class), mock(DatabusInstallMapper.class), mock(DatabusMarketItemMapper.class),
+            graphSupport);
+        service = new DatabusChainServiceImpl(new ChainQuerySupport(chainMapper), writeSupport,
+            graphSupport, new ChainPublishSupport(chainMapper, mock(ExpressGenerator.class),
+                mock(RulePublishService.class), mock(DatabusMarketItemMapper.class),
+                mock(DatabusComponentMapper.class), graphSupport),
+            new ChainCopySupport(chainMapper, writeSupport));
     }
 
     /**

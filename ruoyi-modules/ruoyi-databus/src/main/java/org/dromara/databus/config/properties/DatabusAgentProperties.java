@@ -23,6 +23,24 @@ public class DatabusAgentProperties {
     private Long agentId;
 
     /**
+     * 内部工具智能体 id（9002）：run 结束后生成会话标题与追问建议。
+     * <p>
+     * 它不带工具、不带记忆、只吃最近一轮问答，成本远低于复用主智能体；
+     * 未配置时标题保持首问截断、追问建议不展示，主对话完全不受影响。
+     */
+    private Long utilityAgentId;
+
+    /**
+     * 是否生成追问建议。关闭后不影响自动标题（标题由 utility-agent-id 控制）。
+     */
+    private boolean followUpsEnabled = true;
+
+    /**
+     * 标题与建议生成的超时毫秒：超时即放弃，不回写、不报错。
+     */
+    private long utilityTimeoutMs = 5000;
+
+    /**
      * run 的存活分钟数，超时守卫惰性置 EXPIRED。
      */
     private int runTtlMinutes = 30;

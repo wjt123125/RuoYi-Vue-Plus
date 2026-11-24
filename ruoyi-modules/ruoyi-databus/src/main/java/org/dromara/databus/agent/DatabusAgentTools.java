@@ -1,53 +1,18 @@
 package org.dromara.databus.agent;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import com.jayway.jsonpath.JsonPath;
+import static org.dromara.databus.agent.AgentToolText.trimToNull;
 import org.dromara.common.core.domain.PageResult;
-import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
-import org.dromara.databus.component.schema.enums.NodeTypeKind;
-import org.dromara.databus.config.properties.DatabusAgentProperties;
-import org.dromara.databus.connector.Connector;
-import org.dromara.databus.connector.ConnectorDescriptor;
-import org.dromara.databus.connector.ConnectorRegistry;
-import org.dromara.databus.connector.Connection;
-import org.dromara.databus.connector.sql.QueryOptions;
-import org.dromara.databus.connector.sql.SqlConnector;
-import org.dromara.databus.enums.AgentApprovalModeEnum;
-import org.dromara.databus.domain.bo.DatabusChainBo;
 import org.dromara.databus.domain.bo.DatabusComponentBo;
-import org.dromara.databus.domain.bo.PreviewRunBo;
-import org.dromara.databus.domain.bo.ScriptDraftBo;
-import org.dromara.databus.domain.vo.ComponentOptionVo;
-import org.dromara.databus.domain.vo.ConnectionOptionVo;
-import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.domain.vo.DatabusComponentVo;
-import org.dromara.databus.domain.vo.PreviewRunVo;
-import org.dromara.databus.domain.vo.ScriptDraftResultVo;
-import org.dromara.databus.el.bean.ChainInputParam;
-import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.bean.ELInfo;
-import org.dromara.databus.el.parser.generator.ExpressGenerator;
-import org.dromara.databus.executor.DatabusExecutionResult;
-import org.dromara.databus.executor.DatabusExecutor;
-import org.dromara.databus.service.IDatabusAgentSnapshotService;
-import org.dromara.databus.service.IDatabusChainService;
 import org.dromara.databus.service.IDatabusComponentService;
-import org.dromara.databus.service.IDatabusPreviewRunService;
-import org.dromara.databus.service.ISysDatabusConnectionService;
-import org.dromara.databus.script.host.ScriptCompileException;
-import org.dromara.databus.script.host.ScriptDiagnostic;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -56,29 +21,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
 
-import static org.dromara.databus.constant.AgentConstants.ACTION_CONFIRM;
-import static org.dromara.databus.constant.AgentConstants.DEFAULT_PAGE_SIZE;
-import static org.dromara.databus.constant.AgentConstants.ERROR_CONFIG;
-import static org.dromara.databus.constant.AgentConstants.ERROR_ENVIRONMENT;
-import static org.dromara.databus.constant.AgentConstants.ERROR_EXTERNAL;
-import static org.dromara.databus.constant.AgentConstants.ERROR_PERMISSION;
-import static org.dromara.databus.constant.AgentConstants.ERROR_REQUIRE_APPROVAL;
-import static org.dromara.databus.constant.AgentConstants.ERROR_RUNTIME;
-import static org.dromara.databus.constant.AgentConstants.ERROR_TIMEOUT;
-import static org.dromara.databus.constant.AgentConstants.ERROR_VALIDATION;
 import static org.dromara.databus.constant.AgentConstants.MAX_CARD_OPTIONS;
-import static org.dromara.databus.constant.AgentConstants.MAX_CHECK_VALUE_BYTES;
-import static org.dromara.databus.constant.AgentConstants.MAX_ERROR_TEXT;
-import static org.dromara.databus.constant.AgentConstants.MAX_NODE_ERRORS;
-import static org.dromara.databus.constant.AgentConstants.MAX_OUTPUT_VALUE_BYTES;
 import static org.dromara.databus.constant.AgentConstants.MAX_PAGE_SIZE;
 import static org.dromara.databus.constant.AgentConstants.PERMISSION_ADD;
-import static org.dromara.databus.constant.AgentConstants.PERMISSION_READ;
 import static org.dromara.databus.constant.AgentConstants.PERMISSION_RUN;
 import static org.dromara.databus.constant.AgentConstants.PERMISSION_WRITE;
-import static org.dromara.databus.constant.AgentConstants.RESOURCE_TYPE_COMPONENT;
 import static org.dromara.databus.constant.AgentConstants.TOOL_ASK_USER;
 import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_DRAFT_SAVE;
 import static org.dromara.databus.constant.AgentConstants.TOOL_CHAIN_GET;
@@ -90,10 +38,7 @@ import static org.dromara.databus.constant.AgentConstants.TOOL_COMPONENT_SEARCH;
 import static org.dromara.databus.constant.AgentConstants.TOOL_CONNECTION_SEARCH;
 import static org.dromara.databus.constant.AgentConstants.TOOL_CONNECTOR_SEARCH;
 import static org.dromara.databus.constant.AgentConstants.TOOL_DB_SCHEMA_SEARCH;
-import static org.dromara.databus.constant.ChainConstants.LOG_LEVEL_FULL;
-import static org.dromara.databus.constant.CommonConstants.OWNER_SYSTEM;
 import static org.dromara.databus.constant.CommonConstants.STATUS_DRAFT;
-import static org.dromara.databus.constant.CommonConstants.TEMPLATE_FLAG_YES;
 import static org.dromara.databus.constant.ComponentConstants.FIELD_META;
 import static org.dromara.databus.constant.ComponentConstants.FIELD_SCHEMA;
 import static org.dromara.databus.constant.ComponentConstants.FIELD_SCRIPT;
@@ -105,7 +50,7 @@ import static org.dromara.databus.constant.ComponentConstants.FIELD_SCRIPT;
  * 写工具也不拼 EL、不写 canvasData：树交给 {@code IDatabusChainService} 生成 EL，画布交给前端按
  * cmpProperty 全量重画；每次动手前由 {@code IDatabusAgentSnapshotService} 落快照，回滚只认服务端快照。
  * <p>
- * 试跑工具直接复用 {@link IDatabusPreviewRunService}（与预览页同一套六步），只回摘要与节点级错误，
+ * 试跑工具直接复用 {@link org.dromara.databus.service.IDatabusPreviewRunService}（与预览页同一套六步），只回摘要与节点级错误，
  * 不写 databus_execution、不落快照、不占纠错轮数。
  * <p>
  * 工具由 SnailAI Server 经 gRPC 派回本进程执行，身份一律由 {@link AgentGuard}
@@ -117,38 +62,17 @@ import static org.dromara.databus.constant.ComponentConstants.FIELD_SCRIPT;
  *
  * @author databus
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class DatabusAgentTools {
 
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    /**
-     * 表结构查询单次最多取回的行数（表清单 / 字段清单共用）
-     */
-    private static final int MAX_SCHEMA_ROWS = 2000;
-
-    /**
-     * 单张表最多回传的字段数，避免宽表撑爆上下文
-     */
-    private static final int MAX_SCHEMA_COLUMNS_PER_TABLE = 100;
-
-    private final AgentGuard agentGuard;
-    private final AgentStepRecorder stepRecorder;
-    private final IDatabusChainService chainService;
     private final IDatabusComponentService componentService;
-    private final ISysDatabusConnectionService connectionService;
-    private final ConnectorRegistry connectorRegistry;
-    private final IDatabusPreviewRunService previewRunService;
-    private final IDatabusAgentSnapshotService snapshotService;
-    private final AgentEventPublisher eventPublisher;
-    private final DatabusExecutor databusExecutor;
-    private final ExpressGenerator expressGenerator;
-    private final AgentApprovalService approvalService;
     private final AgentCardChannel cardChannel;
-    private final AgentToolStepRegistry toolStepRegistry;
-    private final DatabusAgentProperties properties;
+    private final AgentToolExecutionSupport toolExecution;
+    private final AgentToolSearchSupport searchSupport;
+    private final AgentChainDraftSupport chainDraftSupport;
+    private final AgentChainRunSupport chainRunSupport;
+    private final AgentComponentDraftSupport componentDraftSupport;
 
     /**
      * 按关键词检索当前用户自己的链路（只读）。
@@ -170,7 +94,8 @@ public class DatabusAgentTools {
         args.put("keyword", keyword);
         args.put("pageSize", pageSize);
         args.put("cursor", cursor);
-        return execute(TOOL_CHAIN_SEARCH, args, ctx -> doChainSearch(ctx, keyword, pageSize, cursor));
+        return toolExecution.execute(TOOL_CHAIN_SEARCH, args,
+            ctx -> searchSupport.doChainSearch(ctx, keyword, pageSize, cursor));
     }
 
     /**
@@ -201,8 +126,8 @@ public class DatabusAgentTools {
         args.put("nodeType", nodeType);
         args.put("pageSize", pageSize);
         args.put("cursor", cursor);
-        return execute(TOOL_COMPONENT_SEARCH, args,
-            ctx -> doComponentSearch(keyword, tags, nodeType, pageSize, cursor));
+        return toolExecution.execute(TOOL_COMPONENT_SEARCH, args,
+            ctx -> searchSupport.doComponentSearch(keyword, tags, nodeType, pageSize, cursor));
     }
 
     /**
@@ -230,8 +155,8 @@ public class DatabusAgentTools {
         args.put("connectorFamily", connectorFamily);
         args.put("pageSize", pageSize);
         args.put("cursor", cursor);
-        return execute(TOOL_CONNECTION_SEARCH, args,
-            ctx -> doConnectionSearch(keyword, connectorFamily, pageSize, cursor));
+        return toolExecution.execute(TOOL_CONNECTION_SEARCH, args,
+            ctx -> searchSupport.doConnectionSearch(keyword, connectorFamily, pageSize, cursor));
     }
 
     /**
@@ -250,7 +175,7 @@ public class DatabusAgentTools {
         @ToolParam(description = "匹配连接器 type / label / family 的关键词片段，留空列出全部", required = false) String keyword) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("keyword", keyword);
-        return execute(TOOL_CONNECTOR_SEARCH, args, ctx -> doConnectorSearch(keyword));
+        return toolExecution.execute(TOOL_CONNECTOR_SEARCH, args, ctx -> searchSupport.doConnectorSearch(keyword));
     }
 
     /**
@@ -278,8 +203,8 @@ public class DatabusAgentTools {
         args.put("keyword", keyword);
         args.put("pageSize", pageSize);
         args.put("cursor", cursor);
-        return execute(TOOL_DB_SCHEMA_SEARCH, args,
-            ctx -> doDbSchemaSearch(connectionId, keyword, pageSize, cursor));
+        return toolExecution.execute(TOOL_DB_SCHEMA_SEARCH, args,
+            ctx -> searchSupport.doDbSchemaSearch(connectionId, keyword, pageSize, cursor));
     }
 
     /**
@@ -295,7 +220,7 @@ public class DatabusAgentTools {
     public String chainGet(@ToolParam(description = "链路 id") Long chainId) {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("chainId", chainId);
-        return execute(TOOL_CHAIN_GET, args, ctx -> doChainGet(ctx, chainId));
+        return toolExecution.execute(TOOL_CHAIN_GET, args, ctx -> searchSupport.doChainGet(ctx, chainId));
     }
 
     /**
@@ -320,14 +245,14 @@ public class DatabusAgentTools {
         args.put("componentCode", componentCode);
         args.put("componentId", componentId);
         args.put("fields", fields);
-        return execute(TOOL_COMPONENT_GET, args,
+        return toolExecution.execute(TOOL_COMPONENT_GET, args,
             ctx -> doComponentGet(ctx, componentCode, componentId, fields));
     }
 
     /**
      * 把 AI 拼好的链路结构存成草稿（status=DRAFT）。
      * <p>
-     * EL 一律由 {@link ExpressGenerator} 生成并校验，工具层不自己拼；内联脚本节点一律拒绝
+     * EL 一律由 {@link org.dromara.databus.el.parser.generator.ExpressGenerator} 生成并校验，工具层不自己拼；内联脚本节点一律拒绝
      * （必须先落脚本草稿、再把节点换成组件引用）。每次动手前把改之前的整条链路存
      * {@code databus_agent_snapshot}，供「回到这次对话前」按 run 整体回滚。
      *
@@ -375,15 +300,15 @@ public class DatabusAgentTools {
         args.put("expectedUpdateTime", expectedUpdateTime);
         args.put("force", force);
         String permission = draftId == null ? PERMISSION_ADD : PERMISSION_WRITE;
-        return execute(TOOL_CHAIN_DRAFT_SAVE, args, permission,
-            ctx -> doChainSave(ctx, draftId, chainCode, chainName, cmpProperty, inputParams, logLevel, note,
+        return toolExecution.execute(TOOL_CHAIN_DRAFT_SAVE, args, permission,
+            ctx -> chainDraftSupport.doChainSave(ctx, draftId, chainCode, chainName, cmpProperty, inputParams, logLevel, note,
                 expectedUpdateTime, force));
     }
 
     /**
      * 对当前用户的草稿链路发起一次试跑，只回摘要与节点级错误。
      * <p>
-     * 与预览页「试运行」共用 {@link IDatabusPreviewRunService#run}：生成 EL → 校验 → 真执行 → 汇总。
+     * 与预览页「试运行」共用 {@link org.dromara.databus.service.IDatabusPreviewRunService#run}：生成 EL → 校验 → 真执行 → 汇总。
      * 试运行不挂牌，不写 {@code databus_execution}、不落快照、不占纠错轮数；整包日志与上下文快照
      * 一律不回传，模型只拿 success / costMs / nodeErrors 做自纠。
      *
@@ -415,8 +340,8 @@ public class DatabusAgentTools {
         args.put("userConfirmed", userConfirmed);
         args.put("outputPaths", outputPaths);
         args.put("expect", expect);
-        return execute(TOOL_CHAIN_RUN, args, PERMISSION_RUN,
-            ctx -> doChainRun(ctx, chainId, payloadJson, userConfirmed, outputPaths, expect));
+        return toolExecution.execute(TOOL_CHAIN_RUN, args, PERMISSION_RUN,
+            ctx -> chainRunSupport.doChainRun(ctx, chainId, payloadJson, userConfirmed, outputPaths, expect));
     }
 
     /**
@@ -449,7 +374,7 @@ public class DatabusAgentTools {
         args.put("options", options);
         args.put("multiSelect", multiSelect);
         args.put("allowFreeText", allowFreeText);
-        return execute(TOOL_ASK_USER, args,
+        return toolExecution.execute(TOOL_ASK_USER, args,
             ctx -> doAskUser(ctx, question, options, multiSelect, allowFreeText));
     }
 
@@ -499,812 +424,9 @@ public class DatabusAgentTools {
         args.put("description", description);
         args.put("inputParams", inputParams);
         args.put("componentId", componentId);
-        return execute(TOOL_COMPONENT_DRAFT_SAVE, args, PERMISSION_WRITE,
-            ctx -> doScriptDraftSave(ctx, componentId, componentCode, componentName, scriptBody,
+        return toolExecution.execute(TOOL_COMPONENT_DRAFT_SAVE, args, PERMISSION_WRITE,
+            ctx -> componentDraftSupport.doScriptDraftSave(ctx, componentId, componentCode, componentName, scriptBody,
                 category, groupName, description, inputParams));
-    }
-
-    /**
-     * 统一执行壳：守卫 → 推送阶段 → 业务 → 审计 → 阶段收尾。守卫拒绝与执行失败都转成 JSON 错误串。
-     * <p>
-     * 阶段事件（step_start / step_end）在守卫通过后才推：没有身份定位不到 run，也还没真正开始执行。
-     * 推送失败只影响观感，不改变工具返回（通道内部已吞异常）。
-     *
-     * @param tool 工具名
-     * @param args 入参快照（审计 + 标题摘要）
-     * @param body 业务体
-     * @return JSON 结果
-     */
-    private String execute(String tool, Map<String, Object> args,
-                           Function<AgentRunContext, Map<String, Object>> body) {
-        return execute(tool, args, PERMISSION_READ, body);
-    }
-
-    private String execute(String tool, Map<String, Object> args, String permission,
-                           Function<AgentRunContext, Map<String, Object>> body) {
-        long began = System.currentTimeMillis();
-        String argsJson = JsonUtils.toJsonString(args);
-        AgentRunContext context = null;
-        AgentStepEvent step = null;
-        try {
-            context = agentGuard.check(permission);
-            // 标题来自工具定义上的 @AgentToolStep（启动时已由注册表收集），这里只做拼装
-            step = AgentStepEvent.running(UUID.randomUUID().toString(), tool,
-                toolStepRegistry.titleOf(tool, args));
-            cardChannel.sendStep(context.runId(), step);
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("ok", true);
-            payload.putAll(body.apply(context));
-            String result = JsonUtils.toJsonString(payload);
-            stepRecorder.recordSuccess(context, tool, argsJson, result, System.currentTimeMillis() - began);
-            finishStep(context, step, false);
-            return result;
-        } catch (AgentGuardRejectedException e) {
-            boolean permissionDenied = e.getReason() == AgentGuardRejectedException.GuardReason.MISSING_PERMISSION_POINT;
-            String result = errorJson(e.getMessage(), permissionDenied ? ERROR_PERMISSION : ERROR_CONFIG, false);
-            stepRecorder.recordReject(e.getRunId(), tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
-            finishStep(context, step, true);
-            return result;
-        } catch (ServiceException e) {
-            // 业务校验（如轮数上限）直接给出原因，不套「工具执行失败」前缀
-            String result = errorJson(e.getMessage(), ERROR_VALIDATION, true);
-            stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
-            finishStep(context, step, true);
-            return result;
-        } catch (IllegalArgumentException e) {
-            // 参数、游标、页大小非法：模型改参数可重试
-            String result = errorJson(e.getMessage(), ERROR_VALIDATION, true);
-            stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
-            finishStep(context, step, true);
-            return result;
-        } catch (Exception e) {
-            log.warn("[databus-agent] 工具 {} 执行失败", tool, e);
-            String result = errorJson("工具执行失败：" + e.getMessage(), ERROR_RUNTIME, true);
-            stepRecorder.recordFailure(context, tool, argsJson, result, e.getMessage(), System.currentTimeMillis() - began);
-            finishStep(context, step, true);
-            return result;
-        }
-    }
-
-    /**
-     * 阶段收尾：成功 / 失败都推 step_end，让前端把「运行中」的扫光停掉。
-     * <p>
-     * 失败原因不随事件下发：原始异常只进日志与返回给模型的 JSON，用户侧只看到状态。
-     *
-     * @param context 身份快照，守卫拒绝时为空
-     * @param step    开始事件，守卫拒绝时为空
-     * @param failed  是否失败
-     */
-    private void finishStep(AgentRunContext context, AgentStepEvent step, boolean failed) {
-        if (context == null || step == null) {
-            return;
-        }
-        cardChannel.sendStep(context.runId(), failed
-            ? AgentStepEvent.failed(step)
-            : AgentStepEvent.done(step));
-    }
-
-    private Map<String, Object> doChainSave(AgentRunContext context, Long draftId, String chainCode,
-                                            String chainName, String cmpPropertyJson, String inputParamsJson,
-                                            String logLevel, String note, String expectedUpdateTime, Boolean force) {
-        CmpProperty tree = parseTree(cmpPropertyJson);
-        // 内联脚本拦截：脚本只允许走 databus_component_draft_save，链路树里出现脚本叶子一律不写库
-        List<DatabusExecutor.ScriptNodeSpec> scripts = databusExecutor.collectScriptNodes(tree);
-        if (!scripts.isEmpty()) {
-            throw new IllegalArgumentException("本链路含 " + scripts.size()
-                + " 个内联脚本节点，必须先调 databus_component_draft_save 落草稿、再把节点换成组件引用");
-        }
-        int nodeCount = countNodes(tree);
-        String level = normalizeLogLevel(logLevel);
-
-        ELInfo elInfo;
-        String verifyMessage;
-        try {
-            elInfo = expressGenerator.generateEL(tree);
-            verifyMessage = expressGenerator.validateEL(tree);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("结构树无法生成 EL（链路未写入）：" + e.getMessage());
-        }
-        if (verifyMessage != null) {
-            throw new IllegalArgumentException("EL 校验不通过（链路未写入）：" + verifyMessage);
-        }
-        String elExpression = elInfo == null ? null : elInfo.getElStr();
-
-        Long chainId;
-        String name;
-        boolean overwritten = false;
-        boolean created = draftId == null;
-        if (draftId == null) {
-            String code = trimToNull(chainCode);
-            name = trimToNull(chainName);
-            if (code == null) {
-                throw new IllegalArgumentException("新建链路必须给 chainCode");
-            }
-            if (name == null) {
-                throw new IllegalArgumentException("新建链路必须给 chainName");
-            }
-            // 新建也占一轮：回滚时按 operation=CREATE 删除整条链路
-            int round = agentGuard.nextRound(context.runId());
-            DatabusChainBo bo = new DatabusChainBo();
-            bo.setChainCode(code);
-            bo.setChainName(name);
-            bo.setCmpProperty(tree);
-            bo.setInputParams(parseInputParams(inputParamsJson));
-            bo.setLogLevel(level);
-            bo.setRemark(trimToNull(note));
-            // 无登录态时 InjectionMetaObjectHandler 会把 create_by 填成 -1，这里显式落发起人
-            bo.setCreateBy(context.userId());
-            if (!Boolean.TRUE.equals(chainService.insertByBo(bo))) {
-                throw new IllegalStateException("新建链路失败");
-            }
-            chainId = bo.getId();
-            // 记一次新建快照（operation=CREATE），回滚该轮即删除这条链
-            snapshotService.recordCreate(context.runId(), round, chainId, code, name);
-        } else {
-            DatabusChainVo before = chainService.queryById(draftId);
-            if (before == null) {
-                throw new IllegalArgumentException("链路 " + draftId + " 不存在或已删除");
-            }
-            if (OWNER_SYSTEM.equals(before.getOwnerType())) {
-                throw new IllegalArgumentException("系统链路只能由治理角色在链路管理页修改");
-            }
-            if (!STATUS_DRAFT.equals(before.getStatus())) {
-                throw new IllegalArgumentException("链路当前状态为 " + before.getStatus()
-                    + "，AI 只能修改草稿态链路");
-            }
-            if (!Objects.equals(before.getCreateBy(), context.userId())) {
-                throw new IllegalArgumentException("只能修改自己创建的链路");
-            }
-            // 同链并发：读取之后被别人改过且用户尚未确认覆盖 → 不写库，把问题抛回给模型问用户
-            String currentUpdateTime = formatTime(before.getUpdateTime());
-            String expected = trimToNull(expectedUpdateTime);
-            if (expected != null && currentUpdateTime != null && !expected.equals(currentUpdateTime)) {
-                if (!Boolean.TRUE.equals(force)) {
-                    Map<String, Object> conflict = new LinkedHashMap<>();
-                    conflict.put("conflict", true);
-                    conflict.put("message", "这条链路在你读取之后被修改过，要继续覆盖吗？");
-                    conflict.put("expectedUpdateTime", expected);
-                    conflict.put("currentUpdateTime", currentUpdateTime);
-                    return conflict;
-                }
-                overwritten = true;
-            }
-            // 动手前先落快照，失败也能回到这一轮之前
-            int round = agentGuard.nextRound(context.runId());
-            snapshotService.record(context.runId(), round, before);
-
-            name = trimToNull(chainName) == null ? before.getChainName() : chainName.trim();
-            List<ChainInputParam> params = parseInputParams(inputParamsJson);
-            DatabusChainBo bo = new DatabusChainBo();
-            bo.setId(draftId);
-            bo.setChainCode(trimToNull(chainCode) == null ? before.getChainCode() : chainCode.trim());
-            bo.setChainName(name);
-            bo.setCmpProperty(tree);
-            // inputParams 省略时沿用原值；显式传 [] 才是清空
-            bo.setInputParams(params == null ? before.getInputParams() : params);
-            bo.setLogLevel(level);
-            if (trimToNull(note) != null) {
-                bo.setRemark(note.trim());
-            }
-            bo.setUpdateBy(context.userId());
-            if (!Boolean.TRUE.equals(chainService.updateByBo(bo, context.userId()))) {
-                throw new IllegalStateException("保存链路失败");
-            }
-            chainId = draftId;
-        }
-
-        // 回读落库后的更新时间，前端存为画布基线，用于发现漏掉的后续推送
-        DatabusChainVo saved = chainService.queryById(chainId);
-        String updateTime = saved == null ? null : formatTime(saved.getUpdateTime());
-        eventPublisher.publishChainCanvas(context, chainId, name, tree, elExpression, null, created, updateTime);
-        eventPublisher.publishChainDraft(context, chainId, name);
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("draftId", chainId);
-        payload.put("chainName", name);
-        payload.put("elExpression", elExpression);
-        payload.put("valid", true);
-        payload.put("verifyMessage", null);
-        payload.put("nodeCount", nodeCount);
-        payload.put("scriptNodeCount", 0);
-        if (overwritten) {
-            payload.put("warning", "已覆盖他人改动");
-        }
-        return payload;
-    }
-
-    private Map<String, Object> doChainSearch(AgentRunContext context, String keyword, Integer pageSize, String cursor) {
-        int size = normalizePageSize(pageSize);
-        int offset = parseCursor(cursor);
-        String kw = trimToNull(keyword);
-
-        DatabusChainBo bo = new DatabusChainBo();
-        bo.setOnlyMine(true);
-        bo.setChainName(kw);
-        PageResult<DatabusChainVo> page = chainService.queryPageList(bo, pageQuery(offset, size), context.userId());
-        if (page.getTotal() == 0 && kw != null) {
-            // 名称没命中时再按编码找一次（BO 两字段同时设会 AND 变窄）
-            bo.setChainName(null);
-            bo.setChainCode(kw);
-            page = chainService.queryPageList(bo, pageQuery(offset, size), context.userId());
-        }
-
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (DatabusChainVo vo : page.getRows()) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("id", vo.getId());
-            item.put("code", vo.getChainCode());
-            item.put("name", vo.getChainName());
-            item.put("status", vo.getStatus());
-            item.put("version", vo.getVersion());
-            item.put("isTemplate", vo.getIsTemplate());
-            item.put("remark", vo.getRemark());
-            item.put("updateTime", formatTime(vo.getUpdateTime()));
-            items.add(item);
-        }
-        return pagePayload(page.getTotal(), items, offset, size);
-    }
-
-    private Map<String, Object> doComponentSearch(String keyword, String tags, String nodeType,
-                                                  Integer pageSize, String cursor) {
-        String kw = trimToNull(keyword);
-        List<String> tagList = splitTags(tags);
-        NodeTypeKind type = parseNodeType(nodeType);
-        if (kw == null && tagList.isEmpty() && type == null) {
-            throw new IllegalArgumentException("至少提供 keyword / tags / nodeType 之一，禁止无过滤全量拉取");
-        }
-        int size = normalizePageSize(pageSize);
-        int offset = parseCursor(cursor);
-
-        List<ComponentOptionVo> matched = new ArrayList<>();
-        for (ComponentOptionVo cmp : componentService.queryOptions().components()) {
-            if (matchesComponent(cmp, kw, tagList, type)) {
-                matched.add(cmp);
-            }
-        }
-        if (kw != null) {
-            matched.sort(Comparator.comparingInt((ComponentOptionVo cmp) -> relevance(cmp, kw))
-                .thenComparing(cmp -> cmp.code() == null ? "" : cmp.code()));
-        }
-
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (int i = offset; i < matched.size() && items.size() < size; i++) {
-            ComponentOptionVo cmp = matched.get(i);
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("code", cmp.code());
-            item.put("name", cmp.name());
-            item.put("shortName", cmp.shortName());
-            item.put("group", cmp.group());
-            item.put("domain", cmp.domain());
-            item.put("description", cmp.description());
-            item.put("nodeType", cmp.nodeType() == null ? null : cmp.nodeType().name());
-            item.put("editor", cmp.editor() == null ? null : cmp.editor().jsonValue());
-            item.put("source", cmp.source() == null ? null : cmp.source().name());
-            item.put("tags", cmp.tags());
-            item.put("deprecated", cmp.deprecated());
-            item.put("deprecateNote", cmp.deprecateNote());
-            item.put("needsConnector", cmp.needsConnector());
-            item.put("connectorFamily", cmp.connectorFamily());
-            items.add(item);
-        }
-        return pagePayload(matched.size(), items, offset, size);
-    }
-
-    private Map<String, Object> doConnectionSearch(String keyword, String connectorFamily,
-                                                   Integer pageSize, String cursor) {
-        String kw = trimToNull(keyword);
-        String family = trimToNull(connectorFamily);
-        int size = normalizePageSize(pageSize);
-        int offset = parseCursor(cursor);
-
-        List<ConnectionOptionVo> matched = new ArrayList<>();
-        for (ConnectionOptionVo conn : connectionService.queryOptions()) {
-            // 族为空代表连接器未装载，此时不做族过滤（与前端「宁可多列不可用项」同口径）
-            if (family != null && !family.equalsIgnoreCase(conn.connectorFamily())) {
-                continue;
-            }
-            if (kw != null && !matchesConnection(conn, kw)) {
-                continue;
-            }
-            matched.add(conn);
-        }
-        if (kw != null) {
-            matched.sort(Comparator.comparingInt((ConnectionOptionVo conn) -> connectionRelevance(conn, kw))
-                .thenComparing(conn -> conn.connectionId() == null ? "" : conn.connectionId()));
-        }
-
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (int i = offset; i < matched.size() && items.size() < size; i++) {
-            ConnectionOptionVo conn = matched.get(i);
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("connectionId", conn.connectionId());
-            item.put("connectionName", conn.connectionName());
-            item.put("connectorType", conn.connectorType());
-            item.put("connectorFamily", conn.connectorFamily());
-            items.add(item);
-        }
-        Map<String, Object> payload = pagePayload(matched.size(), items, offset, size);
-        if (matched.isEmpty()) {
-            payload.put("message", "没有匹配的已启用连接，不要编造 connectionId，"
-                + "请让用户确认连接已创建并启用（连接器未装载时 connectorFamily 为空）。");
-        }
-        return payload;
-    }
-
-    private static boolean matchesConnection(ConnectionOptionVo conn, String keyword) {
-        String k = keyword.toLowerCase(Locale.ROOT);
-        return lower(conn.connectionId()).contains(k) || lower(conn.connectionName()).contains(k);
-    }
-
-    private static int connectionRelevance(ConnectionOptionVo conn, String keyword) {
-        String k = keyword.toLowerCase(Locale.ROOT);
-        String id = lower(conn.connectionId());
-        if (id.equals(k)) {
-            return 0;
-        }
-        if (id.startsWith(k)) {
-            return 1;
-        }
-        return lower(conn.connectionName()).contains(k) ? 2 : 3;
-    }
-
-    private static String lower(String text) {
-        return text == null ? "" : text.toLowerCase(Locale.ROOT);
-    }
-
-    private Map<String, Object> doConnectorSearch(String keyword) {
-        String kw = trimToNull(keyword);
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (Map.Entry<String, Connector> entry : connectorRegistry.all().entrySet()) {
-            ConnectorDescriptor descriptor;
-            try {
-                descriptor = entry.getValue().describe();
-            } catch (RuntimeException e) {
-                // 单个连接器 describe 失败不影响整张能力清单
-                log.warn("[databus-agent] 连接器 {} describe 失败，已跳过: {}", entry.getKey(), e.getMessage());
-                continue;
-            }
-            if (descriptor == null) {
-                continue;
-            }
-            String type = descriptor.getType() == null ? entry.getKey() : descriptor.getType();
-            String label = descriptor.getLabel();
-            String family = descriptor.getFamily();
-            if (kw != null && !containsIgnoreCase(type, kw)
-                && !containsIgnoreCase(label, kw) && !containsIgnoreCase(family, kw)) {
-                continue;
-            }
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("type", type);
-            item.put("version", versionOfKey(entry.getKey()));
-            item.put("label", label);
-            item.put("family", family);
-            item.put("sqlCapable", entry.getValue() instanceof SqlConnector);
-            List<Map<String, Object>> operations = new ArrayList<>();
-            for (ConnectorDescriptor.OperationDef op : descriptor.getOperations()) {
-                Map<String, Object> operation = new LinkedHashMap<>();
-                operation.put("name", op.getName());
-                operation.put("label", op.getLabel());
-                operation.put("componentId", op.getComponentId());
-                operations.add(operation);
-            }
-            item.put("operations", operations);
-            item.put("configFields", configFieldSummary(descriptor));
-            items.add(item);
-        }
-        items.sort(Comparator.comparing(item -> String.valueOf(item.get("type"))));
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("totalCount", items.size());
-        payload.put("items", items);
-        if (items.isEmpty()) {
-            payload.put("message", "没有匹配的连接器：平台未安装该类型连接器，请让用户到物料市场安装并启用后再建连接。");
-        }
-        return payload;
-    }
-
-    /**
-     * 配置字段摘要：只给「要填什么」，不给任何真实配置值。
-     */
-    private static List<Map<String, Object>> configFieldSummary(ConnectorDescriptor descriptor) {
-        List<Map<String, Object>> fields = new ArrayList<>();
-        for (Map.Entry<String, ConnectorDescriptor.ConfigField> entry : descriptor.getConfigSchema().entrySet()) {
-            ConnectorDescriptor.ConfigField field = entry.getValue();
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("name", entry.getKey());
-            item.put("label", field.getLabel());
-            item.put("type", field.getType());
-            item.put("required", field.isRequired());
-            item.put("sensitive", field.isSensitive());
-            item.put("description", field.getDescription());
-            fields.add(item);
-        }
-        return fields;
-    }
-
-    private static String versionOfKey(String key) {
-        int index = key == null ? -1 : key.indexOf('@');
-        return index < 0 ? null : key.substring(index + 1);
-    }
-
-    /**
-     * 连接查不到时的报错文案：区分「真没有这个连接」与「连接在，但后端装载失败」。
-     * <p>
-     * 后者在 {@code loadEnabledConnections()} 里被静默跳过（单条转换失败不阻断其它连接），
-     * 如果笼统报「不存在或已停用」，会让用户白跑一趟去重建连接。
-     */
-    private String connectionMissingMessage(String connId) {
-        boolean loadFailed = connectionService.queryOptions().stream()
-            .anyMatch(option -> connId.equalsIgnoreCase(option.connectionId()));
-        return loadFailed
-            ? "连接 " + connId + " 存在但后端加载失败（连接器版本或凭据异常），请让用户查看后端日志里的「连接转换失败」"
-            : "连接 " + connId + " 不存在或已停用：先调 databus_connection_search 确认，不要拿老链路的连接顶替";
-    }
-
-    /**
-     * 表结构查询：只读 information_schema / pg_catalog，不碰业务数据行。
-     * <p>
-     * 连接必须来自 {@code connection_search} 且处于启用态；连接器必须是 SqlConnector，
-     * 方言当前只支持 MySQL / PostgreSQL，其余连接器明确报错让用户提供结构，不猜。
-     */
-    private Map<String, Object> doDbSchemaSearch(String connectionId, String keyword,
-                                                 Integer pageSize, String cursor) {
-        String connId = trimToNull(connectionId);
-        if (connId == null) {
-            throw new IllegalArgumentException("connectionId 不能为空：先调 databus_connection_search 拿连接，再查表结构");
-        }
-        Connection conn = connectionService.loadEnabledConnections().stream()
-            .filter(item -> connId.equalsIgnoreCase(item.getId()))
-            .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException(connectionMissingMessage(connId)));
-
-        Connector connector = connectorRegistry.ofType(conn.getConnectorType(), conn.getConnectorVersion());
-        if (!(connector instanceof SqlConnector sqlConnector)) {
-            throw new IllegalArgumentException("连接 " + connId + " 的连接器 " + conn.getConnectorType()
-                + " 不是 SQL 连接器，无法查表结构；请让用户直接提供表与字段");
-        }
-        String connectorType = lower(conn.getConnectorType());
-        boolean mysql;
-        if (connectorType.contains("mysql")) {
-            mysql = true;
-        } else if (connectorType.contains("postgres") || connectorType.contains("pgsql")) {
-            mysql = false;
-        } else {
-            throw new IllegalArgumentException("连接 " + connId + " 的连接器类型 " + conn.getConnectorType()
-                + " 暂不支持表结构查询（当前支持 MySQL / PostgreSQL）：请让用户直接提供表名与字段");
-        }
-
-        String kw = trimToNull(keyword);
-        int size = normalizePageSize(pageSize);
-        int offset = parseCursor(cursor);
-        // 列名统一转小写，避免不同驱动大小写差异让模型对不上字段
-        QueryOptions opts = new QueryOptions(null, MAX_SCHEMA_ROWS, 200, "LOWER");
-
-        List<Map<String, Object>> tableRows = sqlConnector.queryForList(conn,
-            mysql
-                ? "SELECT table_name AS table_name, table_comment AS table_comment FROM information_schema.tables "
-                    + "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' ORDER BY table_name"
-                : "SELECT c.relname AS table_name, obj_description(c.oid, 'pg_class') AS table_comment "
-                    + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                    + "WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
-                    + "ORDER BY c.relname",
-            List.of(), opts);
-
-        Map<String, String> tableComments = new LinkedHashMap<>();
-        for (Map<String, Object> row : tableRows) {
-            String table = stringValue(row.get("table_name"));
-            if (table != null) {
-                tableComments.put(table, stringValue(row.get("table_comment")));
-            }
-        }
-
-        List<String> matched = new ArrayList<>();
-        if (kw == null) {
-            matched.addAll(tableComments.keySet());
-        } else {
-            for (Map.Entry<String, String> entry : tableComments.entrySet()) {
-                if (containsIgnoreCase(entry.getKey(), kw) || containsIgnoreCase(entry.getValue(), kw)) {
-                    matched.add(entry.getKey());
-                }
-            }
-            if (matched.isEmpty()) {
-                // 表名/表注释没命中时按字段名反查所属表
-                List<Map<String, Object>> columnHits = sqlConnector.queryForList(conn,
-                    mysql
-                        ? "SELECT DISTINCT table_name AS table_name FROM information_schema.columns "
-                            + "WHERE table_schema = DATABASE() AND column_name LIKE ? ORDER BY table_name"
-                        : "SELECT DISTINCT c.relname AS table_name FROM pg_class c "
-                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
-                            + "JOIN pg_attribute a ON a.attrelid = c.oid "
-                            + "WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
-                            + "AND a.attnum > 0 AND NOT a.attisdropped AND a.attname LIKE ? ORDER BY c.relname",
-                    List.<Object>of("%" + kw + "%"), opts);
-                for (Map<String, Object> row : columnHits) {
-                    String table = stringValue(row.get("table_name"));
-                    if (table != null && !matched.contains(table)) {
-                        matched.add(table);
-                    }
-                }
-            }
-        }
-
-        List<String> pageTables = new ArrayList<>();
-        for (int i = offset; i < matched.size() && pageTables.size() < size; i++) {
-            pageTables.add(matched.get(i));
-        }
-        Map<String, List<Map<String, Object>>> columnsByTable = queryColumns(sqlConnector, conn, mysql, pageTables, opts);
-
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (String table : pageTables) {
-            List<Map<String, Object>> columns = columnsByTable.getOrDefault(table, List.of());
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("tableName", table);
-            item.put("tableComment", tableComments.get(table));
-            item.put("columns", columns);
-            item.put("columnsTruncated", columns.size() >= MAX_SCHEMA_COLUMNS_PER_TABLE);
-            items.add(item);
-        }
-        Map<String, Object> payload = pagePayload(matched.size(), items, offset, size);
-        payload.put("connectionId", connId);
-        payload.put("connectorType", conn.getConnectorType());
-        payload.put("dialect", mysql ? "mysql" : "postgresql");
-        if (matched.isEmpty()) {
-            payload.put("message", "该连接下没有匹配的表：换个关键词，或直接问用户表名；不要臆造表名与字段。");
-        }
-        return payload;
-    }
-
-    private static Map<String, List<Map<String, Object>>> queryColumns(SqlConnector sqlConnector, Connection conn,
-                                                                       boolean mysql, List<String> tables,
-                                                                       QueryOptions opts) {
-        Map<String, List<Map<String, Object>>> columnsByTable = new LinkedHashMap<>();
-        if (tables.isEmpty()) {
-            return columnsByTable;
-        }
-        String placeholders = String.join(", ", tables.stream().map(table -> "?").toList());
-        String sql = mysql
-            ? "SELECT table_name AS table_name, column_name AS column_name, data_type AS data_type, "
-                + "column_comment AS column_comment, column_key AS column_key, is_nullable AS is_nullable "
-                + "FROM information_schema.columns WHERE table_schema = DATABASE() "
-                + "AND table_name IN (" + placeholders + ") ORDER BY table_name, ordinal_position"
-            : "SELECT c.relname AS table_name, a.attname AS column_name, "
-                + "format_type(a.atttypid, a.atttypmod) AS data_type, "
-                + "col_description(c.oid, a.attnum) AS column_comment, "
-                + "CASE WHEN EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisprimary "
-                + "AND a.attnum = ANY(i.indkey)) THEN 'PRI' ELSE '' END AS column_key, "
-                + "CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable "
-                + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                + "JOIN pg_attribute a ON a.attrelid = c.oid "
-                + "WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
-                + "AND a.attnum > 0 AND NOT a.attisdropped AND c.relname IN (" + placeholders + ") "
-                + "ORDER BY c.relname, a.attnum";
-        List<Object> args = new ArrayList<>(tables.size());
-        args.addAll(tables);
-        for (Map<String, Object> row : sqlConnector.queryForList(conn, sql, args, opts)) {
-            String table = stringValue(row.get("table_name"));
-            if (table == null) {
-                continue;
-            }
-            List<Map<String, Object>> columns = columnsByTable.computeIfAbsent(table, key -> new ArrayList<>());
-            if (columns.size() >= MAX_SCHEMA_COLUMNS_PER_TABLE) {
-                continue;
-            }
-            Map<String, Object> column = new LinkedHashMap<>();
-            column.put("name", stringValue(row.get("column_name")));
-            column.put("type", stringValue(row.get("data_type")));
-            column.put("nullable", "YES".equalsIgnoreCase(stringValue(row.get("is_nullable"))));
-            column.put("primaryKey", "PRI".equalsIgnoreCase(stringValue(row.get("column_key"))));
-            column.put("comment", stringValue(row.get("column_comment")));
-            columns.add(column);
-        }
-        return columnsByTable;
-    }
-
-    private static String stringValue(Object value) {
-        return value == null ? null : String.valueOf(value);
-    }
-
-    private Map<String, Object> doChainGet(AgentRunContext context, Long chainId) {
-        if (chainId == null) {
-            throw new IllegalArgumentException("chainId 不能为空");
-        }
-        DatabusChainVo chain = chainService.queryById(chainId);
-        if (chain == null) {
-            throw new IllegalArgumentException("链路 " + chainId + " 不存在或已删除");
-        }
-        // 非模板链路只认创建人：别人的链路不给看结构树
-        if (!TEMPLATE_FLAG_YES.equals(chain.getIsTemplate())
-            && !Objects.equals(chain.getCreateBy(), context.userId())) {
-            throw new IllegalArgumentException("只能读取自己创建的链路或模板链路");
-        }
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("id", chain.getId());
-        payload.put("code", chain.getChainCode());
-        payload.put("name", chain.getChainName());
-        payload.put("status", chain.getStatus());
-        payload.put("version", chain.getVersion());
-        payload.put("ownerType", chain.getOwnerType());
-        payload.put("isTemplate", chain.getIsTemplate());
-        payload.put("logLevel", chain.getLogLevel());
-        payload.put("remark", chain.getRemark());
-        payload.put("elExpression", chain.getElExpression());
-        payload.put("inputParams", chain.getInputParams());
-        // 结构树是 AI 改链路的唯一依据，必须整棵给全
-        payload.put("cmpProperty", chain.getCmpProperty());
-        payload.put("updateTime", formatTime(chain.getUpdateTime()));
-        return payload;
-    }
-
-    private Map<String, Object> doChainRun(AgentRunContext context, Long chainId, String payloadJson,
-                                           Boolean userConfirmed, String outputPaths, String expect) {
-        if (chainId == null) {
-            throw new IllegalArgumentException("chainId 不能为空");
-        }
-        DatabusChainVo chain = chainService.queryById(chainId);
-        if (chain == null) {
-            throw new IllegalArgumentException("链路 " + chainId + " 不存在或已删除");
-        }
-        if (OWNER_SYSTEM.equals(chain.getOwnerType())) {
-            throw new IllegalArgumentException("系统链路不能试跑，请先复制成自己的草稿链路");
-        }
-        if (!STATUS_DRAFT.equals(chain.getStatus())) {
-            throw new IllegalArgumentException("只能试跑草稿态链路，当前状态为 " + chain.getStatus());
-        }
-        if (!Objects.equals(chain.getCreateBy(), context.userId())) {
-            throw new IllegalArgumentException("只能试跑自己创建的链路");
-        }
-
-        // 会话级审批闸：判定只看规则扫描链路事实；userConfirmed 必须对得上本轮卡片回执
-        AgentApprovalModeEnum mode = approvalService.getMode(context.conversationId(), context.userId());
-        AgentApprovalService.Impact impact = approvalService.scan(chain.getCmpProperty());
-        boolean confirmed = Boolean.TRUE.equals(userConfirmed) && agentGuard.hasCardConfirm(context.runId());
-        AgentApprovalService.Decision decision = approvalService.decide(mode, impact, confirmed);
-        if (!decision.allowed()) {
-            AgentCard card = buildApprovalCard(context, chain, impact, payloadJson, outputPaths, expect);
-            boolean delivered = cardChannel.send(context.runId(), card);
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("ok", false);
-            payload.put("errorType", ERROR_REQUIRE_APPROVAL);
-            payload.put("mode", mode.getCode());
-            payload.put("cardId", card.cardId());
-            payload.put("cardDelivered", delivered);
-            payload.put("impact", impactPayload(impact));
-            payload.put("message", approvalMessage(impact, decision, delivered));
-            return payload;
-        }
-        log.info("[databus-agent] chain_run 放行 conversationId={} chainId={} mode={} autoPass={} reason={}",
-            context.conversationId(), chainId, mode.getCode(), decision.autoPass(), decision.reason());
-
-        PreviewRunBo bo = new PreviewRunBo();
-        bo.setJsonEl(chain.getCmpProperty());
-        bo.setInputParams(chain.getInputParams());
-        bo.setRequestJson(payloadJson);
-        PreviewRunVo result = previewRunService.run(bo);
-
-        List<Map<String, Object>> nodeErrors = new ArrayList<>();
-        boolean truncated = false;
-        if (result.getSteps() != null) {
-            for (DatabusExecutionResult.NodeStep step : result.getSteps()) {
-                if (step.isSuccess()) {
-                    continue;
-                }
-                if (nodeErrors.size() >= MAX_NODE_ERRORS) {
-                    truncated = true;
-                    break;
-                }
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("nodeId", step.getNodeId());
-                item.put("nodeName", step.getNodeName());
-                item.put("title", step.getTitle());
-                item.put("error", truncate(step.getErrorMessage(), MAX_ERROR_TEXT));
-                nodeErrors.add(item);
-            }
-        }
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("chainId", chain.getId());
-        payload.put("chainName", chain.getChainName());
-        payload.put("executionId", result.getExecutionId());
-        payload.put("success", Boolean.TRUE.equals(result.getSuccess()));
-        payload.put("costMs", result.getCostTime());
-        payload.put("valid", result.getValid());
-        payload.put("executed", result.getExecuted());
-        payload.put("approval", approvalAudit(mode, decision));
-        if (!Boolean.TRUE.equals(result.getValid()) || !Boolean.TRUE.equals(result.getExecuted())) {
-            // EL 生成/校验没过：给出校验原因，节点还没跑
-            payload.put("message", result.getMessage());
-            payload.put("errorType", ERROR_VALIDATION);
-            payload.put("errorReason", truncate(result.getMessage(), MAX_ERROR_TEXT));
-            payload.put("retryable", true);
-        } else if (!Boolean.TRUE.equals(result.getSuccess())) {
-            String reason = truncate(result.getErrorMessage(), MAX_ERROR_TEXT);
-            payload.put("message", reason);
-            String errorType = classifyError(reason, nodeErrors);
-            payload.put("errorType", errorType);
-            payload.put("errorReason", reason);
-            payload.put("retryable", isRetryable(errorType));
-        } else {
-            payload.put("output", buildOutput(result.getContextJson(), outputPaths));
-            payload.put("checks", buildChecks(result.getContextJson(), expect));
-        }
-        payload.put("nodeErrors", nodeErrors);
-        payload.put("truncated", truncated);
-        return payload;
-    }
-
-    /**
-     * 落脚本草稿：service 负责编译与落 DRAFT 行，这里只做「回给模型什么」的裁剪。
-     * <p>
-     * 编译失败单独接住转 VALIDATION：模型拿到行列诊断才能自己改源码，甩成 RUNTIME 只会让它乱猜。
-     *
-     * @param context       调用上下文（取发起人写 create_by）
-     * @param componentId   已有草稿 id
-     * @param componentCode 组件编码
-     * @param componentName 组件名称
-     * @param scriptBody    完整 Java 源码
-     * @param category      台账五分类
-     * @param groupName     物料面板分组
-     * @param description   组件描述
-     * @param inputParams   试运行入参登记表 JSON 数组
-     * @return 结果载荷
-     */
-    private Map<String, Object> doScriptDraftSave(AgentRunContext context, Long componentId,
-                                                  String componentCode, String componentName, String scriptBody,
-                                                  String category, String groupName, String description,
-                                                  String inputParams) {
-        ScriptDraftBo bo = new ScriptDraftBo();
-        bo.setId(componentId);
-        bo.setComponentCode(componentCode);
-        bo.setComponentName(componentName);
-        bo.setScriptBody(scriptBody);
-        bo.setCategory(category);
-        bo.setGroupName(groupName);
-        bo.setDescription(description);
-        bo.setInputParams(parseInputParams(inputParams));
-        // create_by 只认会话身份：草稿所有权决定「谁能改」，不能让模型指定
-        bo.setCreateBy(context.userId());
-        try {
-            ScriptDraftResultVo result = componentService.saveScriptDraft(bo);
-            // 业务事件：工作区收到后刷组件树并自动开审阅 tab；
-            // 对话里再补一张资源卡，用户关掉 tab 后仍有可点入口
-            eventPublisher.publishComponentDraft(context, result.getId(),
-                result.getComponentCode(), result.getComponentName());
-            cardChannel.send(context.runId(), buildDraftReviewCard(context, result));
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("draftId", result.getId());
-            payload.put("componentCode", result.getComponentCode());
-            payload.put("componentName", result.getComponentName());
-            payload.put("status", result.getStatus());
-            payload.put("nodeType", result.getNodeType());
-            payload.put("fieldCount", result.getFieldCount());
-            payload.put("paramSchema", truncate(result.getParamSchema(), MAX_OUTPUT_VALUE_BYTES));
-            payload.put("dataExample", truncate(result.getDataExample(), MAX_OUTPUT_VALUE_BYTES));
-            payload.put("inputParams", result.getInputParams());
-            payload.put("risks", result.getRisks());
-            payload.put("message", "草稿已落库，但尚未生效：需要人在组件审阅页点「采纳」后才会注册并投放物料面板。");
-            return payload;
-        } catch (ScriptCompileException e) {
-            return compileErrorPayload(e);
-        }
-    }
-
-    /**
-     * 草稿资源卡：会话里留一个「打开审阅」入口，不参与确认/选择，点击只跳 tab。
-     *
-     * @param context 当前 run 上下文
-     * @param result  落库结果
-     * @return 资源卡
-     */
-    private static AgentCard buildDraftReviewCard(AgentRunContext context, ScriptDraftResultVo result) {
-        String runId = context.runId() == null ? "run" : context.runId();
-        String cardId = runId + ":card-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        return AgentCard.ref(cardId,
-            "草稿待审阅：" + result.getComponentName(),
-            "采纳后才会注册进 FlowBus 并出现在物料面板。",
-            new AgentCard.Resource(RESOURCE_TYPE_COMPONENT,
-                String.valueOf(result.getId()), result.getComponentCode(), result.getComponentName(),
-                Boolean.TRUE));
     }
 
     /**
@@ -1384,395 +506,6 @@ public class DatabusAgentTools {
         return payload;
     }
 
-    /**
-     * 编译失败载荷：errorType 固定 VALIDATION，附行列诊断，标记可重试（改源码就能再调）。
-     *
-     * @param e 编译异常
-     * @return 错误载荷
-     */
-    private static Map<String, Object> compileErrorPayload(ScriptCompileException e) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("ok", false);
-        payload.put("errorType", ERROR_VALIDATION);
-        payload.put("errorReason", "脚本编译失败");
-        payload.put("message", truncate(e.getMessage(), MAX_ERROR_TEXT * 4));
-        List<ScriptDiagnostic> diagnostics = e.getDiagnostics();
-        if (diagnostics != null && !diagnostics.isEmpty()) {
-            payload.put("diagnostics", diagnostics.stream()
-                .limit(MAX_NODE_ERRORS)
-                .map(d -> (d.line() > 0 ? "第" + d.line() + "行第" + d.column() + "列：" : "") + d.message())
-                .toList());
-        }
-        payload.put("retryable", true);
-        return payload;
-    }
-
-    /**
-     * 审批拦截时预填确认卡：事实来自规则扫描，不让模型自由发挥影响清单。
-     * <p>
-     * 选项必须带 description——前端把 label 当按钮文案、description 当按钮的悬浮说明，
-     * 用户不点开也能看清「点了会发生什么」。
-     *
-     * @param context     调用上下文
-     * @param chain       待执行链路
-     * @param impact      规则扫描结果
-     * @param payloadJson 试跑入参
-     * @param outputPaths 输出路径
-     * @param expect      断言
-     * @return 确认卡
-     */
-    private static AgentCard buildApprovalCard(AgentRunContext context, DatabusChainVo chain,
-                                               AgentApprovalService.Impact impact, String payloadJson,
-                                               String outputPaths, String expect) {
-        List<String> riskyNames = new ArrayList<>();
-        for (AgentApprovalService.ImpactNode node : impact.nodes()) {
-            if (isRisky(node.kind())) {
-                riskyNames.add(node.name() + "（" + node.reason() + "）");
-            }
-        }
-        StringBuilder body = new StringBuilder();
-        body.append("会真实执行：写节点 ")
-            .append(impact.writeCount()).append(" 个、外部调用节点 ")
-            .append(impact.externalCount()).append(" 个。");
-        if (!riskyNames.isEmpty()) {
-            body.append("需要确认的节点：").append(String.join("、", riskyNames)).append("。");
-        }
-        List<AgentCard.Option> options = List.of(
-            new AgentCard.Option(ACTION_CONFIRM, "确认执行",
-                "按影响清单真实执行一次", "primary"),
-            new AgentCard.Option("cancel", "取消",
-                "不执行，回到对话继续调整链路", "default"));
-        String runId = context.runId() == null ? "run" : context.runId();
-        String cardId = runId + ":card-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        return AgentCard.confirm(cardId, "试跑「" + chain.getChainName() + "」", body.toString(),
-            buildRunDetail(chain, payloadJson, outputPaths, expect), options);
-    }
-
-    /**
-     * 确认卡的原文块：把真正要执行的那次调用按行摆出来，用户扫一眼就知道要跑什么。
-     * <p>
-     * 只列本次调用实际带的参数，空值不占行；不写解释性文案，解释留给 body。
-     */
-    private static String buildRunDetail(DatabusChainVo chain, String payloadJson, String outputPaths, String expect) {
-        StringBuilder detail = new StringBuilder(TOOL_CHAIN_RUN).append('\n');
-        detail.append("  chainId: ").append(chain.getId()).append('\n');
-        detail.append("  chainName: ").append(chain.getChainName());
-        String payload = trimToNull(payloadJson);
-        if (payload != null) {
-            detail.append('\n').append("  payload: ").append(payload);
-        }
-        String paths = trimToNull(outputPaths);
-        if (paths != null) {
-            detail.append('\n').append("  outputPaths: ").append(paths);
-        }
-        String assertions = trimToNull(expect);
-        if (assertions != null) {
-            detail.append('\n').append("  expect: ").append(assertions);
-        }
-        return detail.toString();
-    }
-
-    /**
-     * 审批阻断时给模型看的影响清单：节点名 + 判定 + 依据，人话描述由模型转述。
-     */
-    private static Map<String, Object> impactPayload(AgentApprovalService.Impact impact) {
-        List<Map<String, Object>> components = new ArrayList<>();
-        for (AgentApprovalService.ImpactNode node : impact.nodes()) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("nodeId", node.nodeId());
-            item.put("code", node.code());
-            item.put("name", node.name());
-            item.put("kind", node.kind());
-            item.put("reason", node.reason());
-            components.add(item);
-        }
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("writeCount", impact.writeCount());
-        payload.put("externalCount", impact.externalCount());
-        payload.put("needConfirm", impact.needConfirm());
-        payload.put("components", components);
-        // 同一份清单的别名：协议里 components / nodes 两种叫法都出现过，避免模型读错字段
-        payload.put("nodes", components);
-        return payload;
-    }
-
-    /**
-     * 审批提示：卡片已负责把影响清单摆给用户，模型只需一句话提示，不再复述清单。
-     */
-    private static String approvalMessage(AgentApprovalService.Impact impact,
-                                          AgentApprovalService.Decision decision, boolean cardDelivered) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("本次拦截原因：").append(impact.writeCount()).append(" 个写节点、")
-            .append(impact.externalCount()).append(" 个外部调用节点；")
-            .append(decision.reason()).append("。");
-        if (cardDelivered) {
-            sb.append("确认卡片已在对话中展示，本轮到此为止：不要复述影响清单、不要用文字再问一遍，")
-                .append("只需提示用户点卡片上的按钮。用户点确认后会收到【卡片回执】，")
-                .append("那时再带 userConfirmed=true 重新调用。");
-        } else {
-            sb.append("确认卡片未能送达前端（连接可能已断开），本轮到此为止：")
-                .append("请提示用户刷新后重试，不要带 userConfirmed=true 直接重调。");
-        }
-        return sb.toString();
-    }
-
-    /**
-     * 影响清单里需要人确认的判定：写类与外部调用。
-     */
-    private static boolean isRisky(String kind) {
-        return "WRITE".equals(kind) || "EXTERNAL".equals(kind);
-    }
-
-    /**
-     * 放行审计：写进 step 结果，自动放行的 reason 必须留痕。
-     */
-    private static Map<String, Object> approvalAudit(AgentApprovalModeEnum mode,
-                                                     AgentApprovalService.Decision decision) {
-        Map<String, Object> audit = new LinkedHashMap<>();
-        audit.put("mode", mode.getCode());
-        audit.put("decision", decision.autoPass() ? "AUTO_PASS" : "USER_CONFIRMED");
-        audit.put("reason", decision.reason());
-        return audit;
-    }
-
-    /**
-     * 输出回传：按 outputPaths 取值；不传则回上下文顶层摘要。总量受 max-output-bytes 约束。
-     */
-    private Map<String, Object> buildOutput(String contextJson, String outputPaths) {
-        int limit = properties.getMaxOutputBytes() > 0 ? properties.getMaxOutputBytes() : 16384;
-        Map<String, Object> output = new LinkedHashMap<>();
-        if (contextJson == null || contextJson.isBlank()) {
-            output.put("summary", List.of());
-            output.put("totalBytes", 0);
-            output.put("oversize", false);
-            return output;
-        }
-        List<String> paths = parseStringArray(outputPaths);
-        if (paths.isEmpty()) {
-            List<Map<String, Object>> summary = summarizeContext(contextJson);
-            output.put("summary", summary);
-            output.put("totalBytes", contextJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
-            output.put("oversize", contextJson.length() > limit);
-            return output;
-        }
-        List<Map<String, Object>> items = new ArrayList<>();
-        int used = 0;
-        boolean oversize = false;
-        for (String path : paths) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("path", path);
-            try {
-                Object value = JsonPath.read(contextJson, path);
-                String text = JsonUtils.toJsonString(value);
-                int bytes = text == null ? 0 : text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-                if (bytes > MAX_OUTPUT_VALUE_BYTES) {
-                    item.put("value", truncate(text, MAX_OUTPUT_VALUE_BYTES));
-                    item.put("truncated", true);
-                } else {
-                    item.put("value", value);
-                }
-                if (used + Math.min(bytes, MAX_OUTPUT_VALUE_BYTES) > limit) {
-                    oversize = true;
-                    item.put("value", truncate(text, MAX_OUTPUT_VALUE_BYTES));
-                    item.put("truncated", true);
-                }
-                used += Math.min(bytes, MAX_OUTPUT_VALUE_BYTES);
-            } catch (Exception e) {
-                item.put("error", "路径不存在或无法读取");
-            }
-            items.add(item);
-        }
-        output.put("items", items);
-        output.put("totalBytes", used);
-        output.put("oversize", oversize);
-        return output;
-    }
-
-    /**
-     * 不指定路径时只回顶层字段形状，避免把整包上下文塞进模型。
-     */
-    private static List<Map<String, Object>> summarizeContext(String contextJson) {
-        List<Map<String, Object>> summary = new ArrayList<>();
-        Map<String, Object> map = JsonUtils.parseMap(contextJson);
-        if (map == null) {
-            return summary;
-        }
-        for (Map.Entry<String, Object> entry : map.entrySet()) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("key", entry.getKey());
-            Object value = entry.getValue();
-            item.put("type", value == null ? "null"
-                : value instanceof List<?> ? "array"
-                : value instanceof Map<?, ?> ? "object"
-                : value instanceof Number ? "number"
-                : value instanceof Boolean ? "boolean" : "string");
-            if (value instanceof List<?> list) {
-                item.put("count", list.size());
-            } else if (value instanceof Map<?, ?> object) {
-                item.put("count", object.size());
-            } else if (value instanceof String text) {
-                item.put("bytes", text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
-            }
-            summary.add(item);
-        }
-        return summary;
-    }
-
-    /**
-     * 期望判定：只计算结果，不落库。
-     */
-    private static List<Map<String, Object>> buildChecks(String contextJson, String expect) {
-        List<Map<String, Object>> checks = new ArrayList<>();
-        List<Map<String, Object>> items = parseObjectArray(expect);
-        if (items.isEmpty() || contextJson == null || contextJson.isBlank()) {
-            return checks;
-        }
-        for (Map<String, Object> item : items) {
-            String path = item.get("path") == null ? null : String.valueOf(item.get("path"));
-            String op = item.get("op") == null ? "eq" : String.valueOf(item.get("op")).toLowerCase(Locale.ROOT);
-            Object expected = item.get("value");
-            Map<String, Object> check = new LinkedHashMap<>();
-            check.put("path", path);
-            check.put("op", op);
-            check.put("expected", expected);
-            if (path == null || path.isBlank()) {
-                check.put("pass", false);
-                check.put("error", "path 不能为空");
-                checks.add(check);
-                continue;
-            }
-            Object actual;
-            try {
-                actual = JsonPath.read(contextJson, path);
-            } catch (Exception e) {
-                check.put("pass", false);
-                check.put("error", "路径不存在");
-                checks.add(check);
-                continue;
-            }
-            check.put("actual", truncate(JsonUtils.toJsonString(actual), MAX_CHECK_VALUE_BYTES));
-            check.put("pass", compare(actual, op, expected));
-            checks.add(check);
-        }
-        return checks;
-    }
-
-    private static boolean compare(Object actual, String op, Object expected) {
-        return switch (op) {
-            case "exists" -> actual != null;
-            case "eq" -> valueEquals(actual, expected);
-            case "ne" -> !valueEquals(actual, expected);
-            case "contains" -> actual != null && String.valueOf(actual).contains(String.valueOf(expected));
-            case "gt", "gte", "lt", "lte" -> {
-                BigDecimal left = toDecimal(actual);
-                BigDecimal right = toDecimal(expected);
-                if (left == null || right == null) {
-                    yield false;
-                }
-                int cmp = left.compareTo(right);
-                yield switch (op) {
-                    case "gt" -> cmp > 0;
-                    case "gte" -> cmp >= 0;
-                    case "lt" -> cmp < 0;
-                    default -> cmp <= 0;
-                };
-            }
-            default -> false;
-        };
-    }
-
-    private static boolean valueEquals(Object actual, Object expected) {
-        BigDecimal left = toDecimal(actual);
-        BigDecimal right = toDecimal(expected);
-        if (left != null && right != null) {
-            return left.compareTo(right) == 0;
-        }
-        return Objects.equals(actual, expected)
-            || (actual != null && expected != null && String.valueOf(actual).equals(String.valueOf(expected)));
-    }
-
-    private static BigDecimal toDecimal(Object value) {
-        if (value instanceof Number number) {
-            return new BigDecimal(number.toString());
-        }
-        if (value instanceof String text) {
-            try {
-                return new BigDecimal(text.trim());
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 错误分类：给模型一个「该改结构还是该重试」的判断依据。
-     */
-    private static String classifyError(String reason, List<Map<String, Object>> nodeErrors) {
-        StringBuilder text = new StringBuilder(reason == null ? "" : reason);
-        for (Map<String, Object> item : nodeErrors) {
-            Object error = item.get("error");
-            if (error != null) {
-                text.append(' ').append(error);
-            }
-        }
-        String lower = text.toString().toLowerCase(Locale.ROOT);
-        if (lower.contains("超时") || lower.contains("timeout") || lower.contains("timed out")) {
-            return ERROR_TIMEOUT;
-        }
-        if (lower.contains("权限") || lower.contains("forbidden") || lower.contains("unauthorized")
-            || lower.contains("403")) {
-            return ERROR_PERMISSION;
-        }
-        if (lower.contains("连接") || lower.contains("connect") || lower.contains("refused")
-            || lower.contains("unknown host") || lower.contains("no route") || lower.contains("dns")) {
-            return ERROR_ENVIRONMENT;
-        }
-        if (lower.contains("http") || lower.contains("外部") || lower.contains("接口")
-            || lower.contains("status=") || lower.contains("响应")) {
-            return ERROR_EXTERNAL;
-        }
-        if (lower.contains("参数") || lower.contains("配置") || lower.contains("必填")
-            || lower.contains("不能为空") || lower.contains("缺少") || lower.contains("未配置")
-            || lower.contains("脚本") || lower.contains("表达式")) {
-            return ERROR_CONFIG;
-        }
-        return ERROR_RUNTIME;
-    }
-
-    private static boolean isRetryable(String errorType) {
-        return ERROR_VALIDATION.equals(errorType) || ERROR_CONFIG.equals(errorType)
-            || ERROR_RUNTIME.equals(errorType) || ERROR_TIMEOUT.equals(errorType)
-            || ERROR_EXTERNAL.equals(errorType);
-    }
-
-    private static List<String> parseStringArray(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            List<String> list = JsonUtils.parseArray(json, String.class);
-            return list == null ? List.of() : list.stream().filter(Objects::nonNull).toList();
-        } catch (Exception e) {
-            return List.of();
-        }
-    }
-
-    private static List<Map<String, Object>> parseObjectArray(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            List<Map<String, Object>> list = new ArrayList<>();
-            for (Map<String, Object> item : JsonUtils.parseArrayMap(json)) {
-                list.add(item);
-            }
-            return list;
-        } catch (Exception e) {
-            return List.of();
-        }
-    }
-
     private Map<String, Object> doComponentGet(AgentRunContext context, String componentCode,
                                                Long componentId, String fields) {
         String code = trimToNull(componentCode);
@@ -1845,115 +578,8 @@ public class DatabusAgentTools {
             .orElse(null);
     }
 
-    private static Map<String, Object> pagePayload(long total, List<Map<String, Object>> items, int offset, int size) {
-        int nextOffset = offset + items.size();
-        boolean hasMore = nextOffset < total;
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("totalCount", total);
-        payload.put("returned", items.size());
-        payload.put("items", items);
-        payload.put("nextCursor", hasMore ? String.valueOf(nextOffset) : null);
-        payload.put("truncated", hasMore);
-        return payload;
-    }
-
-    private static boolean matchesComponent(ComponentOptionVo cmp, String keyword, List<String> tags, NodeTypeKind type) {
-        if (type != null && cmp.nodeType() != type) {
-            return false;
-        }
-        if (!tags.isEmpty()) {
-            boolean tagHit = cmp.tags() != null && cmp.tags().stream()
-                .anyMatch(tag -> tag != null && tags.contains(tag.toLowerCase(Locale.ROOT)));
-            if (!tagHit) {
-                return false;
-            }
-        }
-        if (keyword == null) {
-            return true;
-        }
-        return containsIgnoreCase(cmp.code(), keyword)
-            || containsIgnoreCase(cmp.name(), keyword)
-            || containsIgnoreCase(cmp.shortName(), keyword)
-            || containsIgnoreCase(cmp.description(), keyword)
-            || (cmp.tags() != null && cmp.tags().stream().anyMatch(tag -> containsIgnoreCase(tag, keyword)));
-    }
-
-    private static int relevance(ComponentOptionVo cmp, String keyword) {
-        String k = keyword.toLowerCase(Locale.ROOT);
-        String code = cmp.code() == null ? "" : cmp.code().toLowerCase(Locale.ROOT);
-        if (code.equals(k)) {
-            return 0;
-        }
-        if (code.startsWith(k)) {
-            return 1;
-        }
-        String name = cmp.name() == null ? "" : cmp.name().toLowerCase(Locale.ROOT);
-        return name.contains(k) ? 2 : 3;
-    }
-
-    private static boolean containsIgnoreCase(String text, String keyword) {
-        return text != null && text.toLowerCase(Locale.ROOT).contains(keyword.toLowerCase(Locale.ROOT));
-    }
-
-    private static List<String> splitTags(String tags) {
-        if (tags == null || tags.isBlank()) {
-            return List.of();
-        }
-        List<String> result = new ArrayList<>();
-        for (String tag : tags.split(",")) {
-            String trimmed = tag.trim().toLowerCase(Locale.ROOT);
-            if (!trimmed.isEmpty()) {
-                result.add(trimmed);
-            }
-        }
-        return result;
-    }
-
-    private static NodeTypeKind parseNodeType(String nodeType) {
-        String value = trimToNull(nodeType);
-        if (value == null) {
-            return null;
-        }
-        try {
-            return NodeTypeKind.valueOf(value.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("nodeType 不合法，可选值：NODE / BOOLEAN / FOR / SWITCH");
-        }
-    }
-
     private static PageQuery pageQuery(int offset, int size) {
         return new PageQuery(size, offset / size + 1);
-    }
-
-    private static int normalizePageSize(Integer pageSize) {
-        if (pageSize == null || pageSize <= 0) {
-            return DEFAULT_PAGE_SIZE;
-        }
-        return Math.min(pageSize, MAX_PAGE_SIZE);
-    }
-
-    private static int parseCursor(String cursor) {
-        String value = trimToNull(cursor);
-        if (value == null) {
-            return 0;
-        }
-        try {
-            return Math.max(Integer.parseInt(value), 0);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("cursor 必须是上一页返回的 nextCursor 数字");
-        }
-    }
-
-    private static String trimToNull(String text) {
-        if (text == null) {
-            return null;
-        }
-        String trimmed = text.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static String formatTime(LocalDateTime time) {
-        return time == null ? null : TIME_FORMATTER.format(time);
     }
 
     /**
@@ -1988,79 +614,6 @@ public class DatabusAgentTools {
         } catch (Exception e) {
             return text;
         }
-    }
-
-    private static CmpProperty parseTree(String json) {
-        String text = trimToNull(json);
-        if (text == null) {
-            throw new IllegalArgumentException("cmpProperty 不能为空，请给出画布结构树 JSON");
-        }
-        CmpProperty tree;
-        try {
-            tree = JsonUtils.parseObject(text, CmpProperty.class);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("cmpProperty 不是合法的结构树 JSON：" + e.getMessage());
-        }
-        if (tree == null) {
-            throw new IllegalArgumentException("cmpProperty 解析结果为空");
-        }
-        return tree;
-    }
-
-    private static List<ChainInputParam> parseInputParams(String json) {
-        String text = trimToNull(json);
-        if (text == null) {
-            return null;
-        }
-        try {
-            return JsonUtils.parseArray(text, ChainInputParam.class);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("inputParams 不是合法的 JSON 数组：" + e.getMessage());
-        }
-    }
-
-    private static String normalizeLogLevel(String logLevel) {
-        String value = trimToNull(logLevel);
-        if (value == null) {
-            return LOG_LEVEL_FULL;
-        }
-        String upper = value.toUpperCase(Locale.ROOT);
-        if (!"OFF".equals(upper) && !"BASIC".equals(upper) && !LOG_LEVEL_FULL.equals(upper)) {
-            throw new IllegalArgumentException("logLevel 不合法，可选值：OFF / BASIC / FULL");
-        }
-        return upper;
-    }
-
-    private static int countNodes(CmpProperty node) {
-        if (node == null) {
-            return 0;
-        }
-        int total = trimToNull(node.getId()) == null ? 0 : 1;
-        if (node.getCondition() != null) {
-            total += countNodes(node.getCondition());
-        }
-        if (node.getChildren() != null) {
-            for (CmpProperty child : node.getChildren()) {
-                total += countNodes(child);
-            }
-        }
-        return total;
-    }
-
-    private static String errorJson(String message, String errorType, boolean retryable) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("ok", false);
-        payload.put("errorType", errorType);
-        payload.put("error", message == null || message.isBlank() ? "未知错误" : message);
-        payload.put("retryable", retryable);
-        return JsonUtils.toJsonString(payload);
-    }
-
-    private static String truncate(String text, int max) {
-        if (text == null || text.length() <= max) {
-            return text;
-        }
-        return text.substring(0, max) + "…";
     }
 
     /**

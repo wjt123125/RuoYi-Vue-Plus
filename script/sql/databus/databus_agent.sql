@@ -104,7 +104,7 @@ create table if not exists databus_agent_conversation_meta (
     conversation_id varchar(64)  not null                comment '会话 id（与 databus_agent_run.conversation_id 对应）',
     user_id         bigint(20)   not null                comment '归属用户',
     workspace_id    bigint(20)   default null            comment '工作区 id；空=默认工作区',
-    custom_title    varchar(255) default null            comment '用户自定义标题，空则回落首问摘要',
+    title           varchar(64)  default null            comment '会话标题：自动生成或用户改名；null=未命名，写入后不再覆盖',
     pinned          char(1)      default '0'             comment '置顶（0否 1是）',
     del_flag        char(1)      default '0'             comment '软删标志（0存在 1删除）',
     create_time     datetime     default null            comment '创建时间',

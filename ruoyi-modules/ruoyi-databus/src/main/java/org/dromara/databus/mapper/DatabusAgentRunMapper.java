@@ -59,11 +59,7 @@ public interface DatabusAgentRunMapper extends BaseMapperPlus<DatabusAgentRun, A
      * @return 会话摘要，按置顶 + 最近活跃倒序
      */
     @Select("select g.conversation_id,"
-        + " coalesce(m.custom_title,"
-        + "   (select left(r2.intent, 200) from databus_agent_run r2"
-        + "     where r2.user_id = g.user_id and r2.conversation_id = g.conversation_id"
-        + "       and r2.status <> 'SUPERSEDED' and r2.intent is not null and r2.del_flag = '0'"
-        + "     order by r2.create_time asc limit 1)) as title,"
+        + " m.title,"
         + " g.last_time, g.running, g.run_count,"
         + " (case when m.pinned = '1' then 1 else 0 end) as pinned, m.workspace_id"
         + " from (select user_id, conversation_id, max(create_time) as last_time,"
@@ -90,11 +86,7 @@ public interface DatabusAgentRunMapper extends BaseMapperPlus<DatabusAgentRun, A
      * @return 命中的会话摘要
      */
     @Select("select g.conversation_id,"
-        + " coalesce(m.custom_title,"
-        + "   (select left(r2.intent, 200) from databus_agent_run r2"
-        + "     where r2.user_id = g.user_id and r2.conversation_id = g.conversation_id"
-        + "       and r2.status <> 'SUPERSEDED' and r2.intent is not null and r2.del_flag = '0'"
-        + "     order by r2.create_time asc limit 1)) as title,"
+        + " m.title,"
         + " g.last_time, g.running, g.run_count,"
         + " (case when m.pinned = '1' then 1 else 0 end) as pinned, m.workspace_id"
         + " from (select user_id, conversation_id, max(create_time) as last_time,"
@@ -106,7 +98,7 @@ public interface DatabusAgentRunMapper extends BaseMapperPlus<DatabusAgentRun, A
         + " left join databus_agent_conversation_meta m"
         + "   on m.conversation_id = g.conversation_id and m.user_id = g.user_id"
         + " where (m.id is null or m.del_flag = '0')"
-        + "   and (m.custom_title like concat('%', #{keyword}, '%')"
+        + "   and (m.title like concat('%', #{keyword}, '%')"
         + "     or exists (select 1 from databus_agent_run r3"
         + "       where r3.user_id = g.user_id and r3.conversation_id = g.conversation_id"
         + "         and r3.del_flag = '0' and r3.intent like concat('%', #{keyword}, '%'))"

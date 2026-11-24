@@ -2,6 +2,7 @@ package org.dromara.databus.agent;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
+import static org.dromara.databus.agent.AgentToolText.trimToNull;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.json.utils.JsonUtils;
@@ -442,10 +443,6 @@ public class AgentApprovalService {
             text = text.substring(0, text.length() - 1).trim();
         }
         return text.indexOf(';') >= 0;
-    }
-
-    private static String trimToNull(String text) {
-        return text == null || text.isBlank() ? null : text.trim();
     }
 
     /**

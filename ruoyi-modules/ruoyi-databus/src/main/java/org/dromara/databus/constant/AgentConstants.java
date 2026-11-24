@@ -70,6 +70,18 @@ public final class AgentConstants {
     public static final String EVENT_ERROR = "error";
 
     /**
+     * 追问建议（message.event_code + SSE 事件类型）：content 是 JSON 字符串数组。
+     * 只在非空时落库与推送，空数组即「本轮没有合适的下一步」。
+     */
+    public static final String EVENT_FOLLOW_UPS = "followups";
+
+    /**
+     * 会话标题（仅 SSE 事件类型）：载荷 {@code {"title": "..."}}。
+     * 标题是会话属性、不是 run 产物，由会话列表持久化，这里只负责即时通知侧栏。
+     */
+    public static final String EVENT_TITLE = "title";
+
+    /**
      * 卡片动作：确认
      */
     public static final String ACTION_CONFIRM = "confirm";

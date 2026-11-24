@@ -19,7 +19,7 @@ public class AgentConversationTitleBo implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 新标题（用户可见，长度对齐 databus_agent_conversation_meta.custom_title）
+     * 新标题（用户可见，长度对齐 databus_agent_conversation_meta.title）
      */
     @NotBlank(message = "标题不能为空")
     @Size(max = 255, message = "标题不能超过 255 个字符")

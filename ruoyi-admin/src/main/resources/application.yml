@@ -283,6 +283,12 @@ databus:
   agent:
     # SnailAI「智能体管理」里该应用的智能体 id，OpenAPI 对话必填；未配置时对话接口只报错、不影响其余功能
     agent-id: 1
+    # 内部工具智能体 id：run 结束后生成会话标题与追问建议；不配则标题保持首问截断、建议不展示
+    utility-agent-id: 9002
+    # 是否生成追问建议（自动标题不受此开关影响）
+    follow-ups-enabled: true
+    # 标题与建议生成的超时毫秒，超时即放弃
+    utility-timeout-ms: 5000
     # run 存活分钟数，超时守卫惰性置 EXPIRED（无扫描任务）
     run-ttl-minutes: 30
     # SSE 连接空闲超时毫秒，超时即收尾并把未完成的 run 置 STOPPED

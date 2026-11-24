@@ -49,9 +49,9 @@ public class DatabusAgentConversationMeta implements Serializable {
     private Long workspaceId;
 
     /**
-     * 用户自定义标题，空则回落首问摘要
+     * 会话标题：自动生成或用户改名。null 表示未命名（前端显示占位），非空即定稿，不再覆盖
      */
-    private String customTitle;
+    private String title;
 
     /**
      * 置顶（0否 1是）

@@ -127,6 +127,38 @@ public class AgentCardChannel {
     }
 
     /**
+     * 把收尾产物（会话标题 / 追问建议）推给前端。
+     * <p>
+     * 标题在回答流式过程中生成，建议在 done 之后生成，两者都赶不上主回答的顺风车，
+     * 只能复用本通道按 runId 回写。连接已断开时返回 false，不影响已落库的数据（刷新可见）。
+     *
+     * @param runId run 句柄
+     * @param type  事件类型
+     * @param data  事件载荷
+     * @return true = 已写入连接
+     */
+    public boolean sendEvent(String runId, String type, Object data) {
+        if (runId == null || type == null) {
+            return false;
+        }
+        SseEmitter emitter = emitters.get(runId);
+        if (emitter == null) {
+            return false;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("runId", runId);
+        payload.put("type", type);
+        payload.put("data", data);
+        try {
+            emitter.send(SseEmitter.event().name("message").data(payload, MediaType.APPLICATION_JSON));
+            return true;
+        } catch (IOException | IllegalStateException e) {
+            log.debug("AI 收尾产物回写失败 runId={} type={}", runId, type, e);
+            return false;
+        }
+    }
+
+    /**
      * 卡片落库：与 step / message 共用 run.next_seq 号源，写失败只记日志，不影响卡片推送。
      *
      * @param runId run 句柄

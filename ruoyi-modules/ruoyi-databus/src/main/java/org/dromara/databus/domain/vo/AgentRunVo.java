@@ -67,6 +67,11 @@ public class AgentRunVo implements Serializable {
     private List<String> errors;
 
     /**
+     * 本轮追问建议（run 结束后异步生成，最多 3 条）；空列表表示不展示
+     */
+    private List<String> followUps;
+
+    /**
      * 已用纠错轮数
      */
     private Integer round;

@@ -259,14 +259,15 @@ public class AgentExtrasGenerator {
             if (events == null || events.isEmpty()) {
                 return null;
             }
-            raw = events.stream().map(this::textOf).reduce("", String::concat);
+            raw = collectText(events);
         } catch (Exception e) {
             log.warn("[databus-agent] 内部工具调用失败 runId={} task={}", runId, task, e);
             return null;
         }
         Map<String, Object> payload = parsePayload(raw);
         if (payload == null) {
-            log.debug("[databus-agent] 内部工具输出无法解析 runId={} task={} raw={}", runId, task, raw);
+            // 用户侧保持静默，但日志必须留痕：解析失败曾因 debug 级别而长期不可见
+            log.warn("[databus-agent] 内部工具输出无法解析 runId={} task={} raw={}", runId, task, raw);
         }
         return payload;
     }
@@ -296,23 +297,45 @@ public class AgentExtrasGenerator {
     }
 
     /**
-     * 从流事件里取纯文本：text 分片取 content，done 取 fullText。
+     * 汇总流里的正文：text 分片是增量，done 的 fullText 是全文，二者只能取其一。
+     * <p>
+     * 早期实现把两类事件直接拼在一起，得到 `{"title":"A"}{"title":"A"}` 这种非法 JSON，
+     * 解析必然失败且只在 debug 留痕，表现为「标题与建议静默不出现」。
      *
-     * @param event 流事件
-     * @return 增量文本
+     * @param events 完整事件列表
+     * @return 可直接解析的正文
      */
-    private String textOf(OpenApiChatStreamEvent event) {
-        String data = event.getData() == null ? "" : event.getData();
+    private String collectText(List<OpenApiChatStreamEvent> events) {
+        StringBuilder deltas = new StringBuilder();
+        String doneText = null;
+        for (OpenApiChatStreamEvent event : events) {
+            String data = event.getData() == null ? "" : event.getData();
+            if (OpenApiChatStreamEvent.TYPE_DONE.equals(event.getType())) {
+                String fullText = textField(data, "fullText");
+                if (StringUtils.hasText(fullText)) {
+                    doneText = fullText;
+                }
+                continue;
+            }
+            deltas.append(textField(data, "content"));
+        }
+        return StringUtils.hasText(doneText) ? doneText : deltas.toString();
+    }
+
+    /**
+     * 取分片 JSON 里的文本字段；解析失败按纯文本返回，避免把内容吞掉。
+     *
+     * @param data  分片原文
+     * @param field 字段名（content / fullText）
+     * @return 文本，取不到返回空串
+     */
+    private String textField(String data, String field) {
         try {
             Dict payload = JsonUtils.parseMap(data);
-            if (OpenApiChatStreamEvent.TYPE_DONE.equals(event.getType())) {
-                Object fullText = payload == null ? null : payload.get("fullText");
-                return fullText == null ? data : String.valueOf(fullText);
-            }
-            Object content = payload == null ? null : payload.get("content");
-            return content == null ? "" : String.valueOf(content);
+            Object value = payload == null ? null : payload.get(field);
+            return value == null ? "" : String.valueOf(value);
         } catch (Exception e) {
-            return data;
+            return "fullText".equals(field) ? "" : data;
         }
     }
 

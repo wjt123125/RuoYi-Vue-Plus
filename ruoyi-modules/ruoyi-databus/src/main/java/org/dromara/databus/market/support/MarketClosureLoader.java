@@ -8,6 +8,7 @@ import org.dromara.databus.domain.DatabusMarketItem;
 import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.service.IDatabusChainService;
+import org.dromara.databus.market.model.MarketClosure;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -58,7 +59,7 @@ public class MarketClosureLoader {
             chains.values().stream().map(DatabusChain::getId).toList());
         Map<String, DatabusComponent> components = componentCodes.isEmpty() ? Map.of()
             // 这里用 LinkedHashMap：上架时顺带补审核单那一步会直接遍历 components()，
-            // 所以要保住 selectList 查出来的原顺序，和把这段代码抽出来之前的行为一样
+            // 所以要保住 selectList 查出来的原顺序
             : componentMapper.selectList(Wrappers.<DatabusComponent>lambdaQuery()
                     .in(DatabusComponent::getComponentCode, componentCodes))
                 .stream()
@@ -75,7 +76,7 @@ public class MarketClosureLoader {
     private List<String> collectComponentCodes(Collection<DatabusChain> chains) {
         List<String> codes = new ArrayList<>();
         for (DatabusChain chain : chains) {
-            for (String code : ChainForkRedirector.collectComponentCodes(chain.getCmpProperty())) {
+            for (String code : MarketChainRedirector.collectComponentCodes(chain.getCmpProperty())) {
                 if (!codes.contains(code)) {
                     codes.add(code);
                 }

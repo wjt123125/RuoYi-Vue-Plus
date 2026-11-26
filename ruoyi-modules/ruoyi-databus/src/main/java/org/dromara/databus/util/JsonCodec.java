@@ -1,0 +1,93 @@
+package org.dromara.databus.util;
+
+import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
+
+/**
+ * 数据总线 JSON 编解码工具，基于 Jackson 3（tools.jackson，RuoYi-Vue-Plus 默认 JSON 库）。
+ * <p>
+ * 仅作为内部辅助，避免在 context 层直接耦合 hutool / fastjson。
+ * 自建 JsonMapper 而非取 Spring 容器 bean：冒烟测试上下文仅装配 LiteFlow 自动配置、
+ * 无任何 Jackson bean，此处必须保持零 Spring 依赖（JsonMapper 内置 java.time 支持）。
+ *
+ * @author databus
+ */
+@Slf4j
+public final class JsonCodec {
+
+    private static final JsonMapper MAPPER = JsonMapper.builder().build();
+
+    private JsonCodec() {
+    }
+
+    /**
+     * 把对象序列化为 JSON 字符串。序列化失败时返回 {@code "null"} 并记录日志，不抛异常。
+     */
+    public static String toJson(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        try {
+            return MAPPER.writeValueAsString(value);
+        } catch (JacksonException e) {
+            log.warn("JSON 序列化失败: {}", e.getMessage());
+            return "null";
+        }
+    }
+
+    /**
+     * 把 JSON 字符串解析为对象。解析失败时返回 {@code null}。
+     */
+    public static Object parse(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return MAPPER.readValue(json, Object.class);
+        } catch (JacksonException e) {
+            log.warn("JSON 解析失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 严格解析 JSON 字符串：空白返回 {@code null}；语法错误抛 {@link IllegalArgumentException}。
+     * <p>
+     * 与 {@link #parse(String)} 的区别：手动执行/重跑等用户直接提交入参的入口必须让
+     * 非法 JSON 显性失败，不能静默变成 null 后带着错误入参执行。
+     */
+    public static Object parseStrict(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return MAPPER.readValue(json, Object.class);
+        } catch (JacksonException e) {
+            throw new IllegalArgumentException("JSON 解析失败: " + e.getOriginalMessage(), e);
+        }
+    }
+
+    /**
+     * 把 JSON 字符串解析为指定类型对象。解析失败时返回 {@code null}。
+     */
+    public static <T> T parseObject(String json, Class<T> clazz) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return MAPPER.readValue(json, clazz);
+        } catch (JacksonException e) {
+            log.warn("JSON 解析失败 clazz={} err={}", clazz.getName(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 把任意对象（通常是 Map / POJO）转换为指定类型对象。
+     * <p>通过 ObjectMapper.convertValue 直接转换，失败时抛 {@link RuntimeException}（配置错误不应静默）。
+     */
+    public static <T> T convertValue(Object fromValue, Class<T> toType) {
+        return MAPPER.convertValue(fromValue, toType);
+    }
+}

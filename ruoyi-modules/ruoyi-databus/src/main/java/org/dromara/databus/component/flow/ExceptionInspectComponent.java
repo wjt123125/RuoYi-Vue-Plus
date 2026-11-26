@@ -5,7 +5,7 @@ import com.yomahub.liteflow.slot.Slot;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.component.DatabusNodeComponent;
-import org.dromara.databus.component.cfg.ExceptionInspectCfg;
+import org.dromara.databus.component.config.ExceptionInspectConfig;
 import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.springframework.util.ClassUtils;
 
@@ -39,7 +39,7 @@ import java.util.concurrent.ConcurrentHashMap;
     group = "other",
     sort = 60,
     description = "CATCH 异常处理体内使用：按对照表顺序 instanceof 识别异常类型（支持子类、可追查 cause），输出 $.<tag>.type/className/message，再接 SWITCH 分流",
-    cfg = ExceptionInspectCfg.class,
+    cfg = ExceptionInspectConfig.class,
     dataExample = """
         {"routes":[{"type":"ARGUMENT","className":"java.lang.IllegalArgumentException"},{"type":"NPE","className":"java.lang.NullPointerException"}],"matchCause":true,"defaultType":"OTHER"}
         """
@@ -54,8 +54,8 @@ public class ExceptionInspectComponent extends DatabusNodeComponent {
 
     @Override
     public void process() {
-        ExceptionInspectCfg cfg = this.getCmpData(ExceptionInspectCfg.class);
-        List<ExceptionInspectCfg.Route> routes = cfg == null ? null : cfg.getRoutes();
+        ExceptionInspectConfig cfg = this.getCmpData(ExceptionInspectConfig.class);
+        List<ExceptionInspectConfig.Route> routes = cfg == null ? null : cfg.getRoutes();
         if (routes == null || routes.isEmpty()) {
             throw new ServiceException("异常识别组件缺少 routes 配置（tag=" + this.getTag() + "）");
         }
@@ -76,7 +76,7 @@ public class ExceptionInspectComponent extends DatabusNodeComponent {
         // 外层异常优先：每层 cause 上按 routes 顺序匹配；route 顺序即优先级（父类排子类之后）
         Throwable cursor = caught;
         while (cursor != null) {
-            for (ExceptionInspectCfg.Route route : routes) {
+            for (ExceptionInspectConfig.Route route : routes) {
                 if (route == null || route.getType() == null || route.getType().isBlank()
                     || route.getClassName() == null || route.getClassName().isBlank()) {
                     throw new ServiceException("异常识别组件存在路由名或异常类名为空的对照条目（tag="

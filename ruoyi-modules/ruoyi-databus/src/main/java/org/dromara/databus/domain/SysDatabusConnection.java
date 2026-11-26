@@ -11,7 +11,7 @@ import org.dromara.common.mybatis.core.domain.BaseEntity;
 /**
  * 数据总线连接管理对象 sys_databus_connection。
  *
- * <p>三层物料模型第二层（Connection 实例）的落库实体。2026-09-18 按设计文档 §16 重构为
+ * <p>三层物料模型第二层（Connection 实例）的落库实体。按设计文档 §16 组织为
  * "通用元数据列 + 配置 JSON 列"形态：
  * <ol>
  *   <li>通用列：connectionId / connectionName / connectorType / enabled + 审计列，所有 connector 共用</li>

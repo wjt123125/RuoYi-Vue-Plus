@@ -12,7 +12,7 @@ import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.component.schema.enums.NodeTypeKind;
 import org.dromara.databus.component.schema.introspect.CfgIntrospector;
 import org.dromara.databus.component.schema.model.PropSchema;
-import org.dromara.databus.domain.vo.ComponentSchemaBody;
+import org.dromara.databus.component.schema.model.ComponentSchemaBody;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.stereotype.Component;
 

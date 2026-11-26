@@ -10,14 +10,14 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.dromara.databus.component.cfg.ScriptCfg;
+import org.dromara.databus.component.config.ScriptConfig;
 import org.dromara.databus.connector.Connection;
 import org.dromara.databus.context.DatabusContext;
 import org.dromara.databus.context.InputParamValidator;
-import org.dromara.databus.context.JsonCodec;
+import org.dromara.databus.util.JsonCodec;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.bean.Properties;
+import org.dromara.databus.el.bean.ELProperties;
 import org.dromara.databus.enums.LogLevelEnum;
 import org.dromara.databus.enums.TriggerSourceEnum;
 import org.dromara.databus.executor.trace.ExecutionTrace;
@@ -219,7 +219,7 @@ public class DatabusExecutor {
      * <b>仅服务试运行</b>（{@code executeByEl} 路径）：脚本节点不是 Spring bean（无
      * {@code @LiteflowComponent}），不能像 Java 组件那样靠启动扫描注册，必须在 EL 编译/执行前
      * 用 {@link LiteFlowNodeBuilder} 动态注册。已发布链路的脚本节点由 Rule-DB 的 lf_script 表
-     * 懒加载（发布时 {@code RulePublishService} 推送），不走本方法。
+     * 懒加载（发布时 {@code ChainRuleDbPublisher} 推送），不走本方法。
      * <p>
      * 节点遍历与脚本解析直接复用 {@link #collectScriptNodes}——试运行注册与发布推送 lf_script
      * 是同一套叶子判定口径，避免两处递归各写一份。单个脚本注册失败只 log.error 不阻断其余节点；
@@ -273,7 +273,7 @@ public class DatabusExecutor {
     }
 
     /**
-     * 脚本节点规格，一个脚本叶子一条：发布链路时由 {@code RulePublishService} 推送
+     * 脚本节点规格，一个脚本叶子一条：发布链路时由 {@code ChainRuleDbPublisher} 推送
      * Rule-DB lf_script；试运行时由 {@link #registerScriptNodes} 据此注册 FlowBus。
      *
      * @param nodeId   脚本 nodeId = 画布数据空间名（EL 里的引用名）
@@ -287,14 +287,14 @@ public class DatabusExecutor {
     /**
      * 递归遍历画布组件树，收集全部脚本节点规格。
      * <p>
-     * 这是脚本叶子的<b>唯一遍历入口</b>，两处复用：发布时 {@code RulePublishService} 拿结果
+     * 这是脚本叶子的<b>唯一遍历入口</b>，两处复用：发布时 {@code ChainRuleDbPublisher} 拿结果
      * 推送 lf_script；试运行时 {@link #registerScriptNodes} 拿结果注册 FlowBus。
      * <p>
      * 判定口径：id 非空 + type 为 NodeComponent/NodeBooleanComponent + data 解析出非空
-     * ScriptCfg.script（非脚本叶子 data 为空或无 script 字段，自然排除）。
+     * ScriptConfig.script（非脚本叶子 data 为空或无 script 字段，自然排除）。
      * <p>
      * 注意：lf_script 主键为 (application_name, node_id)，脚本 nodeId 为画布数据空间名，
-     * 不区分链路——跨链路同名 tag 的不同脚本存在覆盖风险，由调用方 RulePublishService
+     * 不区分链路——跨链路同名 tag 的不同脚本存在覆盖风险，由调用方 ChainRuleDbPublisher
      * 在发布时做冲突校验。
      *
      * @param jsonEl 画布组件树根（可为 null）
@@ -330,11 +330,11 @@ public class DatabusExecutor {
      * 解析单个叶子为脚本规格；非脚本叶子（data 为空 / 无 script 字段）返回 empty。
      */
     private Optional<ScriptNodeSpec> parseScriptSpec(CmpProperty node, String nodeId, String type) {
-        Properties props = node.getProperties();
+        ELProperties props = node.getProperties();
         if (props == null || StringUtils.isBlank(props.getData())) {
             return Optional.empty();
         }
-        ScriptCfg cfg = JsonCodec.parseObject(props.getData(), ScriptCfg.class);
+        ScriptConfig cfg = JsonCodec.parseObject(props.getData(), ScriptConfig.class);
         if (cfg == null || StringUtils.isBlank(cfg.getScript())) {
             return Optional.empty();
         }
@@ -373,7 +373,7 @@ public class DatabusExecutor {
         if (node == null) {
             return;
         }
-        Properties props = node.getProperties();
+        ELProperties props = node.getProperties();
         if (props != null && props.getTag() != null && props.getTitle() != null && !props.getTitle().isBlank()) {
             titleByTag.put(props.getTag(), props.getTitle());
         }

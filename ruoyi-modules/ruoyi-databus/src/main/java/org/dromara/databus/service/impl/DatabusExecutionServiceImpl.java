@@ -9,7 +9,7 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.databus.config.properties.DatabusExecutionCleanupProperties;
-import org.dromara.databus.context.JsonCodec;
+import org.dromara.databus.util.JsonCodec;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.DatabusExecution;
 import org.dromara.databus.domain.DatabusExecutionNode;

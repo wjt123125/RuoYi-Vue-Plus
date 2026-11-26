@@ -6,6 +6,7 @@ import com.jayway.jsonpath.PathNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.el.bean.ChainInputParam;
+import org.dromara.databus.util.JsonCodec;
 
 import java.util.HashSet;
 import java.util.List;

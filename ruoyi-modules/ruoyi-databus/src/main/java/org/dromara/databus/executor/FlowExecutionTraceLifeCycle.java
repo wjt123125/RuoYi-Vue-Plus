@@ -13,7 +13,7 @@ import org.dromara.databus.enums.ExecutionStatusEnum;
 import org.dromara.databus.enums.TriggerSourceEnum;
 import org.dromara.databus.executor.trace.ExecutionTrace;
 import org.dromara.databus.executor.trace.ExecutionTraceRecorder;
-import org.dromara.databus.executor.trace.NodeTraceRow;
+import org.dromara.databus.executor.trace.NodeTraceItem;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -130,7 +130,7 @@ public class FlowExecutionTraceLifeCycle implements PostProcessFlowExecuteLifeCy
      * FULL 档节点明细尽力批量落库：失败只 warn，总账已独立提交不受影响。
      */
     private void saveNodesBestEffort(ExecutionTrace trace) {
-        List<NodeTraceRow> rows = trace.drainNodes();
+        List<NodeTraceItem> rows = trace.drainNodes();
         if (rows.isEmpty()) {
             return;
         }
@@ -145,7 +145,7 @@ public class FlowExecutionTraceLifeCycle implements PostProcessFlowExecuteLifeCy
         }
     }
 
-    private DatabusExecutionNode toNodeEntity(Long executionId, NodeTraceRow row) {
+    private DatabusExecutionNode toNodeEntity(Long executionId, NodeTraceItem row) {
         DatabusExecutionNode node = new DatabusExecutionNode();
         node.setExecutionId(executionId);
         node.setNodeInstanceId(row.getNodeInstanceId());

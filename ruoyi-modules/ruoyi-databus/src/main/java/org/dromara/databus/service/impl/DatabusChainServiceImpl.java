@@ -13,6 +13,11 @@ import org.dromara.databus.domain.vo.CopySuggestionVo;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.service.IDatabusChainService;
+import org.dromara.databus.service.support.chain.ChainCopySupport;
+import org.dromara.databus.service.support.chain.ChainPublishSupport;
+import org.dromara.databus.service.support.chain.ChainQuerySupport;
+import org.dromara.databus.service.support.chain.ChainRefGraphSupport;
+import org.dromara.databus.service.support.chain.ChainWriteSupport;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,7 +29,7 @@ import java.util.List;
  * 链路定义 Service 实现。
  * <p>
  * 本类只保留接口入口与事务边界：读查询、写定义、引用图、发布下线、复制模板分别委托给
- * {@link ChainQuerySupport}、{@link ChainWriteSupport}、{@link ChainGraphSupport}、
+ * {@link ChainQuerySupport}、{@link ChainWriteSupport}、{@link ChainRefGraphSupport}、
  * {@link ChainPublishSupport}、{@link ChainCopySupport}。
  * <p>
  * 发布/下线与 Rule-DB 的联动顺序（发布先推规则后改状态、下线先改状态后移除规则）见
@@ -40,7 +45,7 @@ public class DatabusChainServiceImpl implements IDatabusChainService {
 
     private final ChainWriteSupport writeSupport;
 
-    private final ChainGraphSupport graphSupport;
+    private final ChainRefGraphSupport graphSupport;
 
     private final ChainPublishSupport publishSupport;
 

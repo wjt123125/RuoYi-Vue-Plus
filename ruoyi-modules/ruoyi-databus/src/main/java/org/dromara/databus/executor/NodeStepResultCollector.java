@@ -12,7 +12,7 @@ import org.dromara.databus.component.flow.LoopSupport;
 import org.dromara.databus.context.DatabusContext;
 import org.dromara.databus.enums.ExecutionStatusEnum;
 import org.dromara.databus.executor.trace.ExecutionTrace;
-import org.dromara.databus.executor.trace.NodeTraceRow;
+import org.dromara.databus.executor.trace.NodeTraceItem;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -119,9 +119,9 @@ public class NodeStepResultCollector implements PostProcessNodeExecuteLifeCycle 
     /**
      * 组装节点轨迹行（纯数据，不持有 cmp/slot/step 引用）。
      */
-    private NodeTraceRow toTraceRow(NodeComponent cmp, Exception e, CmpStep currentStep,
+    private NodeTraceItem toTraceRow(NodeComponent cmp, Exception e, CmpStep currentStep,
                                     String outputJson, String inputJson, Boolean booleanResult) {
-        NodeTraceRow row = new NodeTraceRow();
+        NodeTraceItem row = new NodeTraceItem();
         // 实例 id 统一取 refNode 通道：真实 id 由框架在开 enable-node-instance-id 时挂到 Node 上；
         // 2.16.3.1 起 CmpStep.setRefNode 已把该 id 同步到 CmpStep 自身（getter 复活），两通道等价，
         // 此处保持 refNode 写法不变。未开开关或动态建链时为 null（列可空，循环多轮另靠 branch_info 的 LOOP 轮次区分）

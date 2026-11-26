@@ -48,7 +48,7 @@ public interface ExpressParser {
      * <p>
      * 绝大多数解析器与 Condition 类型一一对应，直接用默认值；
      * 特例是 CHAIN 引用——它不是 Condition 类型
-     * （{@link ConditionTypeEnum} 没有 chain 项），ChainParser 覆盖本方法
+     * （{@link ConditionTypeEnum} 没有 chain 项），ChainConditionParser 覆盖本方法
      * 返回自定义 key（"chain"）并让 {@code parserType()} 返回 null，
      * 只服务 JSON→EL 根节点为 CHAIN 的场景，不参与 Condition 路由。
      *

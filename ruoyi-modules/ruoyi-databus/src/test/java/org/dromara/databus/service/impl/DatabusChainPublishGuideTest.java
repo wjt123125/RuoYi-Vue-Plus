@@ -1,5 +1,11 @@
 package org.dromara.databus.service.impl;
 
+import org.dromara.databus.service.support.chain.ChainCopySupport;
+import org.dromara.databus.service.support.chain.ChainPublishSupport;
+import org.dromara.databus.service.support.chain.ChainQuerySupport;
+import org.dromara.databus.service.support.chain.ChainRefGraphSupport;
+import org.dromara.databus.service.support.chain.ChainWriteSupport;
+import org.dromara.databus.service.support.chain.ChainRuleDbPublisher;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -61,7 +67,7 @@ class DatabusChainPublishGuideTest {
     private ExpressGenerator expressGenerator;
 
     @Mock
-    private RulePublishService rulePublishService;
+    private ChainRuleDbPublisher ChainRuleDbPublisher;
 
     @Mock
     private DatabusMarketItemMapper marketItemMapper;
@@ -84,11 +90,11 @@ class DatabusChainPublishGuideTest {
 
     @BeforeEach
     void setUp() {
-        ChainGraphSupport graphSupport = new ChainGraphSupport(chainMapper);
-        ChainWriteSupport writeSupport = new ChainWriteSupport(chainMapper, expressGenerator, rulePublishService,
+        ChainRefGraphSupport graphSupport = new ChainRefGraphSupport(chainMapper);
+        ChainWriteSupport writeSupport = new ChainWriteSupport(chainMapper, expressGenerator, ChainRuleDbPublisher,
             installMapper, marketItemMapper, graphSupport);
         chainService = new DatabusChainServiceImpl(new ChainQuerySupport(chainMapper), writeSupport,
-            graphSupport, new ChainPublishSupport(chainMapper, expressGenerator, rulePublishService,
+            graphSupport, new ChainPublishSupport(chainMapper, expressGenerator, ChainRuleDbPublisher,
                 marketItemMapper, componentMapper, graphSupport),
             new ChainCopySupport(chainMapper, writeSupport));
     }
@@ -109,7 +115,7 @@ class DatabusChainPublishGuideTest {
         // 闭包顺序 chainB 先（自己、无行本应进引导），chainC 后（他人、无行→拒）——
         // 拒绝抛出后引导清单整体作废（前端弹窗不会出现）
         assertTrue(ex.getMessage().contains("无权代他人提审"), "应拒他人未上架链：" + ex.getMessage());
-        verify(rulePublishService, never()).publishChain(any(), any(), any());
+        verify(ChainRuleDbPublisher, never()).publishChain(any(), any(), any());
         verify(chainMapper, never()).updateById(any(DatabusChain.class));
     }
 
@@ -154,7 +160,7 @@ class DatabusChainPublishGuideTest {
         assertTrue(result.getGuideItems().stream().noneMatch(g -> Objects.equals(3L, g.getSourceId())));
         // 他人组件未上架：不阻塞只提示
         assertEquals(List.of("组件Y"), result.getOtherUnlistedComponents());
-        verify(rulePublishService).publishChain(any(), any(), any());
+        verify(ChainRuleDbPublisher).publishChain(any(), any(), any());
     }
 
     /**
@@ -178,7 +184,7 @@ class DatabusChainPublishGuideTest {
         assertEquals(1, result.getGuideItems().size(), "悬空组件不进清单，只剩主链自己");
         assertEquals(1L, result.getGuideItems().get(0).getSourceId());
         assertTrue(result.getOtherUnlistedComponents().isEmpty());
-        verify(rulePublishService).publishChain(any(), any(), any());
+        verify(ChainRuleDbPublisher).publishChain(any(), any(), any());
     }
 
     // ---------------------------- fixtures ----------------------------

@@ -2,7 +2,7 @@ package org.dromara.databus.agent;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
-import static org.dromara.databus.agent.AgentToolText.trimToNull;
+import static org.dromara.databus.agent.tool.AgentToolText.trimToNull;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.json.utils.JsonUtils;
@@ -10,7 +10,7 @@ import org.dromara.databus.config.properties.DatabusAgentProperties;
 import org.dromara.databus.domain.DatabusAgentApprovalSetting;
 import org.dromara.databus.domain.DatabusComponent;
 import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.bean.Properties;
+import org.dromara.databus.el.bean.ELProperties;
 import org.dromara.databus.enums.AgentApprovalModeEnum;
 import org.dromara.databus.mapper.DatabusAgentApprovalSettingMapper;
 import org.dromara.databus.mapper.DatabusComponentMapper;
@@ -227,7 +227,7 @@ public class AgentApprovalService {
         if (node == null) {
             return;
         }
-        Properties props = node.getProperties();
+        ELProperties props = node.getProperties();
         String code = props != null ? trimToNull(props.getId()) : null;
         if (code == null) {
             code = trimToNull(node.getId());

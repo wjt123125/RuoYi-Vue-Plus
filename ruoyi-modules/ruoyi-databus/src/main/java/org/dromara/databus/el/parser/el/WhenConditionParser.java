@@ -3,7 +3,7 @@ package org.dromara.databus.el.parser.el;
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.StrUtil;
 import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.bean.Properties;
+import org.dromara.databus.el.bean.ELProperties;
 import org.dromara.databus.el.enums.ExpressParserEnum;
 import org.dromara.databus.el.parser.base.AbstractExpressParser;
 import com.yomahub.liteflow.enums.ConditionTypeEnum;
@@ -84,7 +84,7 @@ public class WhenConditionParser extends AbstractExpressParser {
 
     @Override
     public String generateIdAndTag(CmpProperty jsonEl, String elExpress) {
-        Properties properties = jsonEl.getProperties();
+        ELProperties properties = jsonEl.getProperties();
         if (Objects.isNull(properties)) {
             return elExpress;
         }

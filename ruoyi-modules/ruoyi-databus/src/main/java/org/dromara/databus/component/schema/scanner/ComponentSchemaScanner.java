@@ -10,7 +10,7 @@ import org.dromara.databus.component.schema.enums.NodeTypeKind;
 import org.dromara.databus.component.schema.introspect.CfgIntrospector;
 import org.dromara.databus.component.schema.model.CmpSchema;
 import org.dromara.databus.component.schema.registry.DefaultComponentSchemaRegistry;
-import org.dromara.databus.component.cfg.ScriptCfg;
+import org.dromara.databus.component.config.ScriptConfig;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.ApplicationContext;
@@ -141,7 +141,7 @@ public class ComponentSchemaScanner implements ApplicationRunner {
         snapshot.put(code, new CmpSchema(
             code, name, shortName, "business", icon, color, description,
             nodeType, EditorKind.SCRIPT, 100, null,
-            CfgIntrospector.introspect(ScriptCfg.class)));
+            CfgIntrospector.introspect(ScriptConfig.class)));
         codeOwners.put(code, "script-supplement:" + code);
     }
 }

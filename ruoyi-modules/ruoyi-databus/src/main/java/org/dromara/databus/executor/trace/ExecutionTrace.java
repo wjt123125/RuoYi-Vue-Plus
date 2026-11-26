@@ -70,7 +70,7 @@ public class ExecutionTrace {
     /**
      * FULL 档节点行缓冲（WHEN 并发追加，afterFlow 单次排空）
      */
-    private final Queue<NodeTraceRow> nodeRows = new ConcurrentLinkedQueue<>();
+    private final Queue<NodeTraceItem> nodeRows = new ConcurrentLinkedQueue<>();
 
     /**
      * 节点执行前整树快照：ThreadLocal 线程隔离（WHEN 并行线程各自一份），
@@ -134,16 +134,16 @@ public class ExecutionTrace {
     /**
      * 追加一行节点轨迹（多线程并发安全）。
      */
-    public void appendNode(NodeTraceRow row) {
+    public void appendNode(NodeTraceItem row) {
         nodeRows.add(row);
     }
 
     /**
      * 排空全部节点行（afterFlow 落库时调用一次；并发追加在此前已由 join 保证可见）。
      */
-    public List<NodeTraceRow> drainNodes() {
-        List<NodeTraceRow> rows = new ArrayList<>();
-        NodeTraceRow row;
+    public List<NodeTraceItem> drainNodes() {
+        List<NodeTraceItem> rows = new ArrayList<>();
+        NodeTraceItem row;
         while ((row = nodeRows.poll()) != null) {
             rows.add(row);
         }

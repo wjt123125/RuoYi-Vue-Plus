@@ -65,7 +65,7 @@ public class MarketVoAssembler {
      * 一层层往下收集画布上的节点，拼成预览用的列表（审核预览和「安装前看实现」都用它）：
      * EL 关键字那种结构节点（ExpressParserEnum.type，不分大小写）只记节点本身、不记编码；
      * 业务组件节点记 type、编码、名称。condition 分支和所有 children 都要走一遍，
-     * 走法和 ChainForkRedirector.collectComponentCodes 一样（两边规则必须一致，
+     * 走法和 MarketChainRedirector.collectComponentCodes 一样（两边规则必须一致，
      * 不然同一个链在两个地方看到的组件清单会对不上）。
      * <p>
      * depth 一层加一（根节点是 0，children 和 condition 里的加 1），

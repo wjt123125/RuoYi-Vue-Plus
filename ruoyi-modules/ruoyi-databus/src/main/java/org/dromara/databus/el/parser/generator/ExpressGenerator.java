@@ -22,7 +22,7 @@ import java.util.Map;
 /**
  * 双向转换的对外门面 —— 画布 JSON（CmpProperty 树）与 LiteFlow EL 表达式互转的总入口。
  * <p>
- * 上层调用方：{@code ElGenerateController}（REST 接口 /databus/el/generate）、
+ * 上层调用方：{@code DatabusElGenerateController}（REST 接口 /databus/el/generate）、
  * {@code DatabusEditorController}、{@code DatabusChainServiceImpl}。
  * <p>
  * 两个方向的流水线：

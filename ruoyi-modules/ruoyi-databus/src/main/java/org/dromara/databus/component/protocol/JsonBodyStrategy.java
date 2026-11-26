@@ -1,7 +1,7 @@
 package org.dromara.databus.component.protocol;
 
 import org.dromara.common.core.exception.ServiceException;
-import org.dromara.databus.context.JsonCodec;
+import org.dromara.databus.util.JsonCodec;
 import org.springframework.http.MediaType;
 
 /**

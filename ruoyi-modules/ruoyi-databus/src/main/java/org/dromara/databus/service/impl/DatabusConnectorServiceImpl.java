@@ -8,7 +8,6 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.databus.connector.ConnectorManifest;
 import org.dromara.databus.connector.ConnectorRegistry;
-import org.dromara.databus.constant.ConnectorConstants;
 import org.dromara.databus.connector.plugin.PluginManager;
 import org.dromara.databus.domain.DatabusConnectorDef;
 import org.dromara.databus.domain.DatabusMarketItem;
@@ -21,6 +20,8 @@ import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
 import org.dromara.databus.mapper.SysDatabusConnectionMapper;
 import org.dromara.databus.service.IDatabusConnectorService;
+import org.dromara.databus.service.support.connector.ConnectorDefQuerySupport;
+import org.dromara.databus.service.support.connector.ConnectorPackageReader;
 import org.dromara.system.api.model.LoginUser;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -94,7 +95,7 @@ public class DatabusConnectorServiceImpl implements IDatabusConnectorService {
     /**
      * def 台账查询与 VO 组装
      */
-    private final ConnectorDefViewAssembler defViewAssembler;
+    private final ConnectorDefQuerySupport defViewAssembler;
 
     /**
      * 包读取与审核预览

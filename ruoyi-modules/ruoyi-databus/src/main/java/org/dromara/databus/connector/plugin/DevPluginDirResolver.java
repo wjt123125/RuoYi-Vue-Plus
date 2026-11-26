@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * dev 装载目录的配置解析与路径安全校验（从 DevConnectorLoader 拆出）。
+ * dev 装载目录的配置解析与路径安全校验。
  *
  * <p>职责边界：只把 {@code databus.connector.dev-plugin-dir} 的配置值变成可用目录，
  * 不读 manifest、不装载、不写台账。

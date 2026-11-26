@@ -16,6 +16,11 @@ import org.dromara.databus.domain.vo.ScriptDraftResultVo;
 import org.dromara.databus.domain.vo.ScriptRuntimeVo;
 import org.dromara.databus.domain.vo.ScriptSaveResultVo;
 import org.dromara.databus.service.IDatabusComponentService;
+import org.dromara.databus.service.support.component.ComponentConnectorDepSupport;
+import org.dromara.databus.service.support.component.ComponentDraftSupport;
+import org.dromara.databus.service.support.component.ComponentQuerySupport;
+import org.dromara.databus.service.support.component.ComponentScriptSupport;
+import org.dromara.databus.service.support.component.ComponentWriteSupport;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +32,7 @@ import java.util.List;
  * <p>
  * 本类只保留接口入口与事务边界：读查询委托 {@link ComponentQuerySupport}，定义写入委托
  * {@link ComponentWriteSupport}，脚本宿主委托 {@link ComponentScriptSupport}，脚本草稿与画布预览委托
- * {@link ComponentDraftSupport}；连接器依赖行的派生写入统一收在 {@link ComponentDepSupport}。
+ * {@link ComponentDraftSupport}；连接器依赖行的派生写入统一收在 {@link ComponentConnectorDepSupport}。
  *
  * @author databus
  */

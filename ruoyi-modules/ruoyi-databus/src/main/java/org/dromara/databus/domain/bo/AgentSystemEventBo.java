@@ -12,7 +12,7 @@ import java.util.Map;
  * 前端上报的系统事件（客观事实，不是用户原话）。
  * <p>
  * 前端只说「发生了什么」（code + payload），用户可见文案与模型可见指令都由
- * {@link org.dromara.databus.agent.AgentSystemEventCatalog} 维护，
+ * {@link org.dromara.databus.agent.event.AgentSystemEventCatalog} 维护，
  * 内部提示词因此不会混进用户气泡。
  *
  * @author databus

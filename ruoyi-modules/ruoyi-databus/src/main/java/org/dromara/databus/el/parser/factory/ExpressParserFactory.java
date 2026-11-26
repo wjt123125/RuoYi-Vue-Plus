@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * IfConditionParser……）注入进来，逐个注册到 PARSER_MAP：
  * <pre>
  * key   = parser.parserKey()  即 ConditionTypeEnum.getType()，如 "then"、"switch"
- *         （ChainParser 覆盖 parserKey() 返回 "chain"）
+ *         （ChainConditionParser 覆盖 parserKey() 返回 "chain"）
  * value = 解析器实例本身
  * </pre>
  * 之后 {@link org.dromara.databus.el.parser.selector.ParserSelector} 全部
@@ -56,7 +56,7 @@ public class ExpressParserFactory {
      * 注册单个解析器；parserKey() 为空（未绑定注册 key）的直接忽略。
      * <p>
      * key 取 {@link ExpressParser#parserKey()}：常规解析器等于
-     * ConditionTypeEnum.getType()（如 "then"）；ChainParser 这类
+     * ConditionTypeEnum.getType()（如 "then"）；ChainConditionParser 这类
      * "非 Condition 类型"的解析器通过覆盖 parserKey() 自定义注册名，
      * 此时 parserType() 为 null（不再作为忽略条件）。
      */

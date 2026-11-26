@@ -3,7 +3,7 @@ package org.dromara.databus.service.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.databus.context.InputParamValidator;
-import org.dromara.databus.context.JsonCodec;
+import org.dromara.databus.util.JsonCodec;
 import org.dromara.databus.domain.bo.PreviewRunBo;
 import org.dromara.databus.domain.vo.PreviewRunVo;
 import org.dromara.databus.el.bean.CmpProperty;

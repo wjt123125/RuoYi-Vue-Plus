@@ -1,5 +1,11 @@
 package org.dromara.databus.service.impl;
 
+import org.dromara.databus.service.support.chain.ChainCopySupport;
+import org.dromara.databus.service.support.chain.ChainPublishSupport;
+import org.dromara.databus.service.support.chain.ChainQuerySupport;
+import org.dromara.databus.service.support.chain.ChainRefGraphSupport;
+import org.dromara.databus.service.support.chain.ChainWriteSupport;
+import org.dromara.databus.service.support.chain.ChainRuleDbPublisher;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -45,7 +51,7 @@ class DatabusChainDeleteProtectTest {
     private ExpressGenerator expressGenerator;
 
     @Mock
-    private RulePublishService rulePublishService;
+    private ChainRuleDbPublisher ChainRuleDbPublisher;
 
     @Mock
     private DatabusMarketItemMapper marketItemMapper;
@@ -69,11 +75,11 @@ class DatabusChainDeleteProtectTest {
 
     @BeforeEach
     void setUp() {
-        ChainGraphSupport graphSupport = new ChainGraphSupport(chainMapper);
-        ChainWriteSupport writeSupport = new ChainWriteSupport(chainMapper, expressGenerator, rulePublishService,
+        ChainRefGraphSupport graphSupport = new ChainRefGraphSupport(chainMapper);
+        ChainWriteSupport writeSupport = new ChainWriteSupport(chainMapper, expressGenerator, ChainRuleDbPublisher,
             installMapper, marketItemMapper, graphSupport);
         chainService = new DatabusChainServiceImpl(new ChainQuerySupport(chainMapper), writeSupport,
-            graphSupport, new ChainPublishSupport(chainMapper, expressGenerator, rulePublishService,
+            graphSupport, new ChainPublishSupport(chainMapper, expressGenerator, ChainRuleDbPublisher,
                 marketItemMapper, componentMapper, graphSupport),
             new ChainCopySupport(chainMapper, writeSupport));
     }
@@ -93,7 +99,7 @@ class DatabusChainDeleteProtectTest {
             "应回显引用链名，实际：" + ex.getMessage());
         assertTrue(ex.getMessage().contains("请先在对应链路中移除引用"));
         verify(chainMapper, never()).deleteByIds(any());
-        verify(rulePublishService, never()).removeChainQuietly(any());
+        verify(ChainRuleDbPublisher, never()).removeChainQuietly(any());
     }
 
     /**
@@ -107,7 +113,7 @@ class DatabusChainDeleteProtectTest {
 
         assertTrue(chainService.deleteByIds(List.of(2L)));
         verify(chainMapper).deleteByIds(List.of(2L));
-        verify(rulePublishService).removeChainQuietly("chainB");
+        verify(ChainRuleDbPublisher).removeChainQuietly("chainB");
     }
 
     /**
@@ -127,8 +133,8 @@ class DatabusChainDeleteProtectTest {
 
         assertTrue(chainService.deleteByIds(List.of(1L, 2L)));
         verify(chainMapper).deleteByIds(List.of(1L, 2L));
-        verify(rulePublishService).removeChainQuietly("chainA");
-        verify(rulePublishService).removeChainQuietly("chainB");
+        verify(ChainRuleDbPublisher).removeChainQuietly("chainA");
+        verify(ChainRuleDbPublisher).removeChainQuietly("chainB");
     }
 
     /**
@@ -145,7 +151,7 @@ class DatabusChainDeleteProtectTest {
 
         assertTrue(chainService.deleteByIds(List.of(2L)));
         verify(chainMapper).deleteByIds(List.of(2L));
-        verify(rulePublishService).removeChainQuietly("chainB");
+        verify(ChainRuleDbPublisher).removeChainQuietly("chainB");
     }
 
     private DatabusChain chain(Long id, String code, String name, CmpProperty tree) {

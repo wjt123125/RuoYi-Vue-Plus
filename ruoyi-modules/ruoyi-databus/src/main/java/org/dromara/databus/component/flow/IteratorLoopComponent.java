@@ -4,7 +4,7 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import com.yomahub.liteflow.core.NodeIteratorComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
-import org.dromara.databus.component.cfg.IteratorLoopCfg;
+import org.dromara.databus.component.config.IteratorLoopConfig;
 import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.component.schema.enums.NodeTypeKind;
 import org.dromara.databus.context.DatabusContext;
@@ -33,13 +33,13 @@ import java.util.Iterator;
 @DatabusCmp(
     code = "iteratorLoop", name = "迭代循环组件", icon = "ph:shuffle", color = "#67c23a",
     description = "ITERATOR 算子条件位：source 填数组/集合表达式（{{ $.路径 }}），逐轮迭代；体内用 $i 取当前轮下标（嵌套时内层为 $j）",
-    nodeType = NodeTypeKind.ITERATOR, cfg = IteratorLoopCfg.class, sort = 50
+    nodeType = NodeTypeKind.ITERATOR, cfg = IteratorLoopConfig.class, sort = 50
 )
 public class IteratorLoopComponent extends NodeIteratorComponent {
 
     @Override
     public Iterator<?> processIterator() {
-        IteratorLoopCfg cfg = this.getCmpData(IteratorLoopCfg.class);
+        IteratorLoopConfig cfg = this.getCmpData(IteratorLoopConfig.class);
         if (cfg == null || cfg.getSource() == null || cfg.getSource().isBlank()) {
             throw new ServiceException("迭代循环缺少 source 配置（数组/集合路径，tag=" + this.getTag() + "）");
         }

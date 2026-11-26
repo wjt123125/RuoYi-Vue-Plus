@@ -3,7 +3,7 @@ package org.dromara.databus.el.parser.base;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.bean.Properties;
+import org.dromara.databus.el.bean.ELProperties;
 import org.dromara.databus.el.enums.ExpressParserEnum;
 import org.dromara.databus.el.parser.selector.ParserSelector;
 import com.yomahub.liteflow.enums.ConditionTypeEnum;
@@ -138,10 +138,10 @@ public abstract class AbstractExpressParser implements ExpressParser {
     // ==================== properties 构造辅助（EL→JSON） ====================
 
     /**
-     * 两参版：由 condition 的 id + tag 构造 Properties，全空则返回 null
+     * 两参版：由 condition 的 id + tag 构造 ELProperties，全空则返回 null
      * （前端拿到 null 就不会渲染属性面板）。
      */
-    protected Properties getProperties(String id, String tag) {
+    protected ELProperties getProperties(String id, String tag) {
         if (null == id && null == tag) {
             return null;
         }
@@ -150,13 +150,13 @@ public abstract class AbstractExpressParser implements ExpressParser {
             return null;
         }
         // title / outletLabels 为纯编辑态字段，EL 反向解析不产出，builder 缺省 null
-        return Properties.builder().id(propertyId).tag(tag).build();
+        return ELProperties.builder().id(propertyId).tag(tag).build();
     }
 
     /**
      * 三参版：节点用，多一个 data（LiteFlow 的组件参数 cmpData）。
      */
-    protected Properties getProperties(String id, String tag, String data) {
+    protected ELProperties getProperties(String id, String tag, String data) {
         if (null == id && null == tag && null == data) {
             return null;
         }
@@ -165,7 +165,7 @@ public abstract class AbstractExpressParser implements ExpressParser {
             return null;
         }
         // title / outletLabels 为纯编辑态字段，EL 反向解析不产出，builder 缺省 null
-        return Properties.builder().id(propertyId).tag(tag).data(data).build();
+        return ELProperties.builder().id(propertyId).tag(tag).data(data).build();
     }
 
     /**
@@ -186,7 +186,7 @@ public abstract class AbstractExpressParser implements ExpressParser {
 
     /**
      * 本解析器对应的 LiteFlow 默认 condition id，如 THEN 解析器 → "condition-then"。
-     * 取 {@link #parserKey()} 而非 parserType().getType()，保证 ChainParser 这类
+     * 取 {@link #parserKey()} 而非 parserType().getType()，保证 ChainConditionParser 这类
      * parserType() 为 null 的解析器继承本方法时不会 NPE。
      */
     protected String defaultConditionId() {
@@ -333,7 +333,7 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (Objects.isNull(jsonEl.getProperties())) {
             return null;
         }
-        Properties properties = jsonEl.getProperties();
+        ELProperties properties = jsonEl.getProperties();
         if (null == properties.getTag()) {
             return null;
         }
@@ -349,7 +349,7 @@ public abstract class AbstractExpressParser implements ExpressParser {
         if (Objects.isNull(jsonEl.getProperties())) {
             return null;
         }
-        Properties properties = jsonEl.getProperties();
+        ELProperties properties = jsonEl.getProperties();
         if (null == properties.getData()) {
             return null;
         }

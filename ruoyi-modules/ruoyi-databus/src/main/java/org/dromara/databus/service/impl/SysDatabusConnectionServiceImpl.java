@@ -14,7 +14,7 @@ import org.dromara.databus.connector.Connector;
 import org.dromara.databus.connector.ConnectorDescriptor;
 import org.dromara.databus.connector.ConnectorException;
 import org.dromara.databus.connector.ConnectorRegistry;
-import org.dromara.databus.context.JsonCodec;
+import org.dromara.databus.util.JsonCodec;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.domain.DatabusConnectorDef;
 import org.dromara.databus.domain.SysDatabusConnection;
@@ -444,8 +444,8 @@ public class SysDatabusConnectionServiceImpl implements ISysDatabusConnectionSer
     /**
      * 新增时校验必填的敏感字段：descriptor 里 {@code sensitive && required} 的 key 必须给了值。
      * <p>编辑时由 {@link #mergeMissingSensitive} 兜（留空即沿用旧值），新增没有旧值可沿用，
-     * 空着存进去只会得到一条永远连不上的连接。原来这里是硬编码的「apiSecret 不能为空」，
-     * 现在字段名与必填性都来自连接器自己的 configSchema（方案 §十一 阶段 B 第 7 步）。
+     * 空着存进去只会得到一条永远连不上的连接。字段名与必填性都来自连接器自己的
+     * configSchema（方案 §十一 阶段 B 第 7 步）。
      * <p>非敏感的必填项不在这里拦：连接器执行期的校验能给出更精确的错因
      * （如 JDBC 的「host/port/database 与自定义 URL 二选一」），前端也已按同一份 schema 做提交前校验。
      */

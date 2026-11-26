@@ -1,6 +1,6 @@
 package org.dromara.databus.service;
 
-import org.dromara.databus.agent.AgentChainSnapshot;
+import org.dromara.databus.agent.run.AgentChainSnapshot;
 import org.dromara.databus.domain.vo.DatabusChainVo;
 
 import java.util.List;

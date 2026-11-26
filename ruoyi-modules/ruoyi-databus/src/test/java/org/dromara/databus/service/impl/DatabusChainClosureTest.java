@@ -1,5 +1,11 @@
 package org.dromara.databus.service.impl;
 
+import org.dromara.databus.service.support.chain.ChainCopySupport;
+import org.dromara.databus.service.support.chain.ChainPublishSupport;
+import org.dromara.databus.service.support.chain.ChainQuerySupport;
+import org.dromara.databus.service.support.chain.ChainRefGraphSupport;
+import org.dromara.databus.service.support.chain.ChainWriteSupport;
+import org.dromara.databus.service.support.chain.ChainRuleDbPublisher;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -7,7 +13,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.domain.DatabusChain;
 import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.bean.Properties;
+import org.dromara.databus.el.bean.ELProperties;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.enums.ChainStatusEnum;
 import org.dromara.databus.mapper.DatabusChainMapper;
@@ -73,13 +79,13 @@ class DatabusChainClosureTest {
             Object code = wrapper.getParamNameValuePairs().values().iterator().next();
             return chainsByCode.get(code);
         });
-        ChainGraphSupport graphSupport = new ChainGraphSupport(chainMapper);
+        ChainRefGraphSupport graphSupport = new ChainRefGraphSupport(chainMapper);
         ChainWriteSupport writeSupport = new ChainWriteSupport(chainMapper, mock(ExpressGenerator.class),
-            mock(RulePublishService.class), mock(DatabusInstallMapper.class), mock(DatabusMarketItemMapper.class),
+            mock(ChainRuleDbPublisher.class), mock(DatabusInstallMapper.class), mock(DatabusMarketItemMapper.class),
             graphSupport);
         service = new DatabusChainServiceImpl(new ChainQuerySupport(chainMapper), writeSupport,
             graphSupport, new ChainPublishSupport(chainMapper, mock(ExpressGenerator.class),
-                mock(RulePublishService.class), mock(DatabusMarketItemMapper.class),
+                mock(ChainRuleDbPublisher.class), mock(DatabusMarketItemMapper.class),
                 mock(DatabusComponentMapper.class), graphSupport),
             new ChainCopySupport(chainMapper, writeSupport));
     }
@@ -244,7 +250,7 @@ class DatabusChainClosureTest {
      */
     private CmpProperty chainRefLegacy(String code) {
         return CmpProperty.builder().type("CHAIN")
-            .properties(Properties.builder().id(code).build())
+            .properties(ELProperties.builder().id(code).build())
             .build();
     }
 

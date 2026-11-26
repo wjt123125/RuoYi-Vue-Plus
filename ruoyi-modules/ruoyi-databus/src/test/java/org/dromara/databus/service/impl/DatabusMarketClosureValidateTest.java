@@ -12,11 +12,11 @@ import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusExecutionMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
-import org.dromara.databus.market.MarketChainCopySupport;
-import org.dromara.databus.market.MarketInstallCodeSupport;
-import org.dromara.databus.market.MarketInstallQuerySupport;
+import org.dromara.databus.market.support.MarketInstallChainCopySupport;
+import org.dromara.databus.market.support.MarketInstallCodeSupport;
+import org.dromara.databus.market.support.MarketInstallQuerySupport;
 import org.dromara.databus.market.MarketInstallService;
-import org.dromara.databus.market.MarketUninstallSupport;
+import org.dromara.databus.market.support.MarketUninstallSupport;
 import org.dromara.databus.market.support.MarketClosureLoader;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import org.dromara.databus.service.IDatabusChainService;
@@ -83,7 +83,7 @@ class DatabusMarketClosureValidateTest {
             mock(DatabusConnectorDefMapper.class),
             chainService,
             codeSupport,
-            new MarketChainCopySupport(chainMapper, componentMapper, new ExpressGenerator(), closureLoader, codeSupport),
+            new MarketInstallChainCopySupport(chainMapper, componentMapper, new ExpressGenerator(), closureLoader, codeSupport),
             new MarketUninstallSupport(chainMapper, mock(DatabusInstallMapper.class), chainService),
             new MarketInstallQuerySupport(marketItemMapper, mock(DatabusInstallMapper.class), chainMapper,
                 componentMapper, mock(DatabusConnectorDefMapper.class), mock(DatabusExecutionMapper.class),

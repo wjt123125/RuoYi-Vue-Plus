@@ -64,7 +64,7 @@ public class CmpProperty {
     /**
      * 附加属性（id/tag/data），可为 null。
      */
-    private Properties properties;
+    private ELProperties properties;
 
     /**
      * 条件位节点（IF/SWITCH/FOR/WHILE/ITERATOR 的控制节点），可为 null。

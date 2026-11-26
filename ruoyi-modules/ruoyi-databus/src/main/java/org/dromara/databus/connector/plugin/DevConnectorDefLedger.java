@@ -25,8 +25,7 @@ import static org.dromara.databus.constant.ConnectorConstants.MANIFEST_ENTRY;
 import static org.dromara.databus.constant.ConnectorConstants.SOURCE_DEV;
 
 /**
- * DEV 连接器台账（{@code databus_connector_def} 中 {@code source=DEV} 的行）的写入与对账
- * （从 DevConnectorLoader 拆出）。
+ * DEV 连接器台账（{@code databus_connector_def} 中 {@code source=DEV} 的行）的写入与对账。
  *
  * <p>职责边界：只维护 DEV 行的内容与存续，不装载、不碰运行态 registry。
  *

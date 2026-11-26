@@ -15,7 +15,12 @@ import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
-import org.dromara.databus.market.support.MarketClosure;
+import org.dromara.databus.market.model.InstallOutcome;
+import org.dromara.databus.market.model.MarketClosure;
+import org.dromara.databus.market.support.MarketInstallChainCopySupport;
+import org.dromara.databus.market.support.MarketInstallCodeSupport;
+import org.dromara.databus.market.support.MarketInstallQuerySupport;
+import org.dromara.databus.market.support.MarketUninstallSupport;
 import org.dromara.databus.service.IDatabusChainService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,7 +57,7 @@ import static org.dromara.databus.constant.MarketConstants.TYPE_CONNECTOR;
  * 刷新逻辑在 {@link MarketInstallQuerySupport}。
  * <p>
  * 本类只保留入口与事务边界；链路复制、卸载清理、列表查询分别委托给同包的
- * {@link MarketChainCopySupport}、{@link MarketUninstallSupport}、{@link MarketInstallQuerySupport}，
+ * {@link MarketInstallChainCopySupport}、{@link MarketUninstallSupport}、{@link MarketInstallQuerySupport}，
  * 编码与哈希等纯工具在 {@link MarketInstallCodeSupport}。
  *
  * @author databus
@@ -79,7 +84,7 @@ public class MarketInstallService {
 
     private final MarketInstallCodeSupport codeSupport;
 
-    private final MarketChainCopySupport chainCopySupport;
+    private final MarketInstallChainCopySupport chainCopySupport;
 
     private final MarketUninstallSupport uninstallSupport;
 
@@ -230,7 +235,7 @@ public class MarketInstallService {
                 // 引用检查（被别的链引用就不给删，这一批里互相引用的算例外）＋逻辑删
                 // ＋清 Rule-DB 的 lf_chain＋清安装记录＋重算计数
                 chainService.deleteByIds(List.of(resourceId));
-                // 顺带清子链副本（2026-10-24 改的，原来只删最外层那一条）：主链副本删掉之后，
+                // 顺带清子链副本：主链副本删掉之后，
                 // 把清单里「没有被还在用的链引用、装完之后一直没动过」的子链副本一起删
                 uninstallSupport.cascadeCleanClosureCopies(item, userId);
                 // 安装记录一般已经被 chainService.cleanupInstallRecords 删掉了，下面再删一次只是保险
@@ -274,7 +279,7 @@ public class MarketInstallService {
 
     /**
      * 安装前的市场检查（decisions §十四-4）：依赖清单里每条链（包括主链）都必须在市场里存在、
-     * 而且状态是 ONLINE。实现在 {@link MarketChainCopySupport#validateClosureOnMarket}。
+     * 而且状态是 ONLINE。实现在 {@link MarketInstallChainCopySupport#validateClosureOnMarket}。
      *
      * @param closure 已经查好的依赖清单（包括主链，链的遍历顺序就是复制顺序）
      */

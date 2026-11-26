@@ -4,7 +4,7 @@
  * <p>包内结构与阅读顺序（建议按 1→2→3 顺序读源码）：</p>
  * <ol>
  *   <li><b>bean</b> —— 数据模型：{@link org.dromara.databus.el.bean.CmpProperty}
- *       （画布组件树节点，先看懂它）、{@link org.dromara.databus.el.bean.Properties}（id/tag/data）、
+ *       （画布组件树节点，先看懂它）、{@link org.dromara.databus.el.bean.ELProperties}（id/tag/data）、
  *       {@link org.dromara.databus.el.bean.ELInfo}（EL 文本信封）；</li>
  *   <li><b>parser.base</b> —— 骨架：{@link org.dromara.databus.el.parser.base.ExpressParser}
  *       （接口 + EL 语法模板常量）、{@link org.dromara.databus.el.parser.base.AbstractExpressParser}

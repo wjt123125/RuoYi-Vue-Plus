@@ -7,7 +7,7 @@ import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
-import org.dromara.databus.context.PathResolver;
+import org.dromara.databus.util.PathResolver;
 import org.dromara.databus.executor.DatabusExecutor;
 import org.dromara.databus.enums.AlertNotifyTypeEnum;
 import org.dromara.databus.enums.TriggerSourceEnum;

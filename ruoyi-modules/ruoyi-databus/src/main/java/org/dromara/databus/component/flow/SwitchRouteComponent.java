@@ -4,7 +4,7 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import com.yomahub.liteflow.core.NodeSwitchComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
-import org.dromara.databus.component.cfg.SwitchRouteCfg;
+import org.dromara.databus.component.config.SwitchRouteConfig;
 import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.dromara.databus.component.schema.enums.NodeTypeKind;
 import org.dromara.databus.context.DatabusContext;
@@ -33,17 +33,17 @@ import java.util.Objects;
 @DatabusCmp(
     code = "switchRoute", name = "选择路由组件", icon = "ph:signpost", color = "#e6a23c",
     description = "SWITCH 算子条件位：source 表达式求出当前值，按 cases 顺序匹配分支名跳转；全不命中报错（暂不支持 DEFAULT）",
-    nodeType = NodeTypeKind.SWITCH, cfg = SwitchRouteCfg.class, sort = 60
+    nodeType = NodeTypeKind.SWITCH, cfg = SwitchRouteConfig.class, sort = 60
 )
 public class SwitchRouteComponent extends NodeSwitchComponent {
 
     @Override
     public String processSwitch() {
-        SwitchRouteCfg cfg = this.getCmpData(SwitchRouteCfg.class);
+        SwitchRouteConfig cfg = this.getCmpData(SwitchRouteConfig.class);
         if (cfg == null || cfg.getSource() == null || cfg.getSource().isBlank()) {
             throw new ServiceException("选择路由缺少 source 配置（判断值路径，tag=" + this.getTag() + "）");
         }
-        List<SwitchRouteCfg.CaseRoute> cases = cfg.getCases();
+        List<SwitchRouteConfig.CaseRoute> cases = cfg.getCases();
         if (cases == null || cases.isEmpty()) {
             throw new ServiceException("选择路由缺少 cases 配置（tag=" + this.getTag() + "）");
         }
@@ -52,7 +52,7 @@ public class SwitchRouteComponent extends NodeSwitchComponent {
         // source 为「要数据」字段：{{ $.路径 }} 由 resolve 取值（路径不存在抛错）
         Object actual = ctx.resolve(cfg.getSource().trim());
 
-        for (SwitchRouteCfg.CaseRoute route : cases) {
+        for (SwitchRouteConfig.CaseRoute route : cases) {
             if (route == null || route.getTarget() == null || route.getTarget().isBlank()) {
                 throw new ServiceException("选择路由存在 target 为空的分支配置，请补全 case 分支名");
             }

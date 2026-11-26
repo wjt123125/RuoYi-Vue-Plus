@@ -3,7 +3,7 @@ package org.dromara.databus.el.parser.el;
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.StrUtil;
 import org.dromara.databus.el.bean.CmpProperty;
-import org.dromara.databus.el.bean.Properties;
+import org.dromara.databus.el.bean.ELProperties;
 import org.dromara.databus.el.enums.ExpressParserEnum;
 import org.dromara.databus.el.parser.base.AbstractExpressParser;
 import com.yomahub.liteflow.common.ChainConstant;
@@ -116,7 +116,7 @@ public class ThenConditionParser extends AbstractExpressParser {
     /** 第 4 步：拼表达式级 id/tag/data（THEN(a,b).id("dog") 的部分） */
     @Override
     public String generateIdAndTag(CmpProperty jsonEl, String elExpress) {
-        Properties properties = jsonEl.getProperties();
+        ELProperties properties = jsonEl.getProperties();
         if (Objects.isNull(properties)) {
             return elExpress;
         }

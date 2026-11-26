@@ -4,7 +4,7 @@ import com.yomahub.liteflow.annotation.LiteflowComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.databus.component.DatabusNodeComponent;
-import org.dromara.databus.component.cfg.ExceptionThrowerCfg;
+import org.dromara.databus.component.config.ExceptionThrowerConfig;
 import org.dromara.databus.component.schema.annotation.DatabusCmp;
 import org.springframework.util.ClassUtils;
 
@@ -31,7 +31,7 @@ import java.lang.reflect.Constructor;
     group = "other",
     sort = 50,
     description = "测试用故障制造机：按异常类名（常量或 {{ $.路径 }}）反射抛出异常，配合 CATCH 验证异常兜底链；生产链路勿用",
-    cfg = ExceptionThrowerCfg.class,
+    cfg = ExceptionThrowerConfig.class,
     dataExample = """
         {"exceptionClass":"{{ $.exceptionClass }}","message":"模拟参数校验失败"}
         """
@@ -40,7 +40,7 @@ public class ExceptionThrowerComponent extends DatabusNodeComponent {
 
     @Override
     public void process() throws Exception {
-        ExceptionThrowerCfg cfg = this.getCmpData(ExceptionThrowerCfg.class);
+        ExceptionThrowerConfig cfg = this.getCmpData(ExceptionThrowerConfig.class);
         if (cfg == null || cfg.getExceptionClass() == null || cfg.getExceptionClass().isBlank()) {
             throw new ServiceException("异常抛出组件缺少 exceptionClass 配置（tag=" + this.getTag() + "）");
         }

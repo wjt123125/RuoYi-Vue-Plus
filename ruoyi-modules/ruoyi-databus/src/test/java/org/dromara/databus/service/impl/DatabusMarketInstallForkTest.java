@@ -20,11 +20,11 @@ import org.dromara.databus.mapper.DatabusConnectorDefMapper;
 import org.dromara.databus.mapper.DatabusExecutionMapper;
 import org.dromara.databus.mapper.DatabusInstallMapper;
 import org.dromara.databus.mapper.DatabusMarketItemMapper;
-import org.dromara.databus.market.MarketChainCopySupport;
-import org.dromara.databus.market.MarketInstallCodeSupport;
-import org.dromara.databus.market.MarketInstallQuerySupport;
+import org.dromara.databus.market.support.MarketInstallChainCopySupport;
+import org.dromara.databus.market.support.MarketInstallCodeSupport;
+import org.dromara.databus.market.support.MarketInstallQuerySupport;
 import org.dromara.databus.market.MarketInstallService;
-import org.dromara.databus.market.MarketUninstallSupport;
+import org.dromara.databus.market.support.MarketUninstallSupport;
 import org.dromara.databus.market.support.MarketClosureLoader;
 import org.dromara.databus.service.IDatabusChainService;
 import org.junit.jupiter.api.BeforeAll;
@@ -49,7 +49,6 @@ import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -129,7 +128,7 @@ class DatabusMarketInstallForkTest {
             mock(DatabusConnectorDefMapper.class),
             chainService,
             codeSupport,
-            new MarketChainCopySupport(chainMapper, componentMapper, new ExpressGenerator(),
+            new MarketInstallChainCopySupport(chainMapper, componentMapper, new ExpressGenerator(),
                 // 依赖清单装配用真实实现：它调的 collectChainClosure / selectList 已在下面打桩
                 new MarketClosureLoader(chainService, marketItemMapper, componentMapper), codeSupport),
             new MarketUninstallSupport(chainMapper, installMapper, chainService),

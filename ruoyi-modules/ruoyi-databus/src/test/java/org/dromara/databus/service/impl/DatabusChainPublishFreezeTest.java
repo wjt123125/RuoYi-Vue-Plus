@@ -1,5 +1,11 @@
 package org.dromara.databus.service.impl;
 
+import org.dromara.databus.service.support.chain.ChainCopySupport;
+import org.dromara.databus.service.support.chain.ChainPublishSupport;
+import org.dromara.databus.service.support.chain.ChainQuerySupport;
+import org.dromara.databus.service.support.chain.ChainRefGraphSupport;
+import org.dromara.databus.service.support.chain.ChainWriteSupport;
+import org.dromara.databus.service.support.chain.ChainRuleDbPublisher;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -53,7 +59,7 @@ class DatabusChainPublishFreezeTest {
     private ExpressGenerator expressGenerator;
 
     @Mock
-    private RulePublishService rulePublishService;
+    private ChainRuleDbPublisher ChainRuleDbPublisher;
 
     @Mock
     private DatabusMarketItemMapper marketItemMapper;
@@ -77,11 +83,11 @@ class DatabusChainPublishFreezeTest {
 
     @BeforeEach
     void setUp() {
-        ChainGraphSupport graphSupport = new ChainGraphSupport(chainMapper);
-        ChainWriteSupport writeSupport = new ChainWriteSupport(chainMapper, expressGenerator, rulePublishService,
+        ChainRefGraphSupport graphSupport = new ChainRefGraphSupport(chainMapper);
+        ChainWriteSupport writeSupport = new ChainWriteSupport(chainMapper, expressGenerator, ChainRuleDbPublisher,
             installMapper, marketItemMapper, graphSupport);
         chainService = new DatabusChainServiceImpl(new ChainQuerySupport(chainMapper), writeSupport,
-            graphSupport, new ChainPublishSupport(chainMapper, expressGenerator, rulePublishService,
+            graphSupport, new ChainPublishSupport(chainMapper, expressGenerator, ChainRuleDbPublisher,
                 marketItemMapper, componentMapper, graphSupport),
             new ChainCopySupport(chainMapper, writeSupport));
     }
@@ -101,7 +107,7 @@ class DatabusChainPublishFreezeTest {
         // 发布引导（decisions §十四-6）：闭包只有主链＋悬空组件引用（componentMapper 未 stub 返空
         // → 引导跳过），返回非 null 即发布成功
         assertNotNull(chainService.publish(1L, 1L));
-        verify(rulePublishService).publishChain(any(), any(), any());
+        verify(ChainRuleDbPublisher).publishChain(any(), any(), any());
 
         ArgumentCaptor<DatabusChain> chainCaptor = ArgumentCaptor.forClass(DatabusChain.class);
         verify(chainMapper).updateById(chainCaptor.capture());

@@ -7,6 +7,8 @@ import org.dromara.databus.component.schema.enums.WidgetKind;
 import org.dromara.databus.component.schema.model.CmpSchema;
 import org.dromara.databus.component.schema.model.PropSchema;
 import org.dromara.databus.domain.DatabusComponent;
+import org.dromara.databus.component.schema.model.ComponentSchemaBody;
+import org.dromara.databus.enums.ComponentSourceEnum;
 
 import java.util.List;
 
@@ -52,7 +54,7 @@ public record ComponentOptionVo(String code,
                                 String description,
                                 NodeTypeKind nodeType,
                                 EditorKind editor,
-                                ComponentSource source,
+                                ComponentSourceEnum source,
                                 Integer sort,
                                 String dataExample,
                                 ComponentSchemaBody schema,
@@ -82,7 +84,7 @@ public record ComponentOptionVo(String code,
             cmp.description(),
             cmp.nodeType(),
             cmp.editor(),
-            ComponentSource.SYSTEM,
+            ComponentSourceEnum.SYSTEM,
             cmp.sort(),
             cmp.dataExample(),
             new ComponentSchemaBody(cmp.fields()),
@@ -113,7 +115,7 @@ public record ComponentOptionVo(String code,
             row.getDescription(),
             parseNodeType(row.getNodeType()),
             parseEditor(row.getEditor()),
-            ComponentSource.CUSTOM,
+            ComponentSourceEnum.CUSTOM,
             row.getSort(),
             row.getDataExample(),
             body,
@@ -145,7 +147,7 @@ public record ComponentOptionVo(String code,
             firstNonBlank(row.getDescription(), sys.description()),
             sys.nodeType(),
             sys.editor(),
-            ComponentSource.OVERLAY,
+            ComponentSourceEnum.OVERLAY,
             row.getSort() == null ? sys.sort() : row.getSort(),
             sys.dataExample(),
             new ComponentSchemaBody(sys.fields()),

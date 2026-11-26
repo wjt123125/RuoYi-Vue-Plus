@@ -14,7 +14,7 @@ import org.dromara.databus.mapper.DatabusComponentMapper;
 import org.dromara.databus.mapper.DatabusExecutionMapper;
 import org.dromara.databus.mapper.DatabusExecutionNodeMapper;
 import org.dromara.databus.service.ISysDatabusConnectionService;
-import org.dromara.databus.service.impl.RulePublishService;
+import org.dromara.databus.service.support.chain.ChainRuleDbPublisher;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
@@ -47,7 +47,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * 另有三个运行期补充：
  * <ul>
- *     <li>{@link RulePublishService} 虽是 {@code @Component} 但构造需要 {@code DataSource}
+ *     <li>{@link ChainRuleDbPublisher} 虽是 {@code @Component} 但构造需要 {@code DataSource}
  *     与 {@code spring.application.name}，测试不连库且不走发布，按类型排除；</li>
  *     <li>{@link DatabusExecutor} 构造需要 {@link ISysDatabusConnectionService} 与
  *     {@link DatabusChainMapper}：前者实现类是 {@code @Service} 已被注解过滤，
@@ -87,7 +87,7 @@ import static org.mockito.Mockito.when;
         @ComponentScan.Filter(type = FilterType.ANNOTATION,
             classes = {RestController.class, Controller.class, Service.class}),
         @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE,
-            classes = RulePublishService.class),
+            classes = ChainRuleDbPublisher.class),
         @ComponentScan.Filter(type = FilterType.REGEX,
             pattern = "org\\.dromara\\.databus\\.(alert|job|market)\\..*")
     })

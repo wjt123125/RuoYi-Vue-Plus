@@ -2,7 +2,7 @@ package org.dromara.databus;
 
 import org.dromara.databus.el.bean.CmpProperty;
 import org.dromara.databus.el.bean.ELInfo;
-import org.dromara.databus.el.bean.Properties;
+import org.dromara.databus.el.bean.ELProperties;
 import org.dromara.databus.el.parser.generator.ExpressGenerator;
 import com.yomahub.liteflow.builder.el.LiteFlowChainELBuilder;
 import com.yomahub.liteflow.common.ChainConstant;
@@ -155,7 +155,7 @@ class ExpressGeneratorTest {
         CmpProperty forNode = CmpProperty.builder()
             .id("forCmp")
             .type("NodeForComponent")
-            .properties(Properties.builder()
+            .properties(ELProperties.builder()
                 .tag("forLoop1")
                 .data("{\"count\":3}")
                 .build())
@@ -163,7 +163,7 @@ class ExpressGeneratorTest {
         CmpProperty doNode = CmpProperty.builder()
             .id("hello")
             .type("NodeComponent")
-            .properties(Properties.builder()
+            .properties(ELProperties.builder()
                 .tag("setValue1")
                 .data("{\"path\":\"$.forLoop1.cursor\",\"value\":\"$i\"}")
                 .build())
@@ -205,7 +205,7 @@ class ExpressGeneratorTest {
         assertEquals("THEN(hello,delay);", output.getElStr());
     }
 
-    // ==================== CHAIN 子流程引用（ChainParser） ====================
+    // ==================== CHAIN 子流程引用（ChainConditionParser） ====================
 
     /**
      * 构造 THEN(hello, subChain) 对应的画布 JSON——CHAIN 引用叶子直发 type=CHAIN
@@ -242,7 +242,7 @@ class ExpressGeneratorTest {
     /**
      * JSON→EL：根节点是 CHAIN（整条链只有一个子流程引用节点）。
      * 历史行为：ParserSelector.getParser("chain") 找不到解析器直接抛 RuntimeException；
-     * ChainParser 通过覆盖 parserKey() 以 "chain" 注册后兜住该场景。
+     * ChainConditionParser 通过覆盖 parserKey() 以 "chain" 注册后兜住该场景。
      */
     @Test
     void generateEL_rootChain_shouldProduceExpectedExpression() {
@@ -256,7 +256,7 @@ class ExpressGeneratorTest {
         CmpProperty taggedChain = CmpProperty.builder()
                 .id("subChain")
                 .type("CHAIN")
-                .properties(Properties.builder().tag("chainTag1").build())
+                .properties(ELProperties.builder().tag("chainTag1").build())
                 .build();
         assertEquals("subChain.tag(\"chainTag1\");",
                 expressGenerator.generateEL(taggedChain).getElStr());

@@ -11,10 +11,11 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * AI agent 每一轮动手前的链路快照 databus_agent_snapshot
+ * AI agent 每一轮动手前的改动快照 databus_agent_snapshot
  * <p>
- * 只增不改：一行 = 某一轮 chain_draft_save 动手前的链路全量快照（cmpProperty / elExpression /
- * canvasData / inputParams / logLevel），供「回到 AI 动手前」按轮次回滚（设计文档 §9.2 / §16.1）。
+ * 只增不改：一行 = 某一轮动手前的全量快照，供「回到 AI 动手前」按轮次回滚（设计文档 §9.2 / §16.1）。
+ * payload 是 JSON，用 {@code resourceType} 区分资源：{@code CHAIN} 存链路结构/EL/画布/入参/备注，
+ * {@code COMPONENT_DRAFT} 存组件草稿的正文与元信息；回滚按类型分派到对应资源。
  * payload 用 mediumtext：大链路的结构树 + 画布 JSON 可能超过 64KB，截断的快照等于回滚不了。
  *
  * @author databus

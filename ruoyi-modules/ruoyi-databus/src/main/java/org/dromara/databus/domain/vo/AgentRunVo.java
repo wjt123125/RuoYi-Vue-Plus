@@ -72,6 +72,11 @@ public class AgentRunVo implements Serializable {
     private List<String> followUps;
 
     /**
+     * 本轮是否真正改过链路（存在链路快照即为 true）；前端据此决定是否提供回退入口
+     */
+    private Boolean changed;
+
+    /**
      * 已用纠错轮数
      */
     private Integer round;

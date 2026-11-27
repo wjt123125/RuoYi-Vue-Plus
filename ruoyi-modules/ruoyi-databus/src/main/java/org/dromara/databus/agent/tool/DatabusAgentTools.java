@@ -259,7 +259,7 @@ public class DatabusAgentTools {
      * <p>
      * EL 一律由 {@link org.dromara.databus.el.parser.generator.ExpressGenerator} 生成并校验，工具层不自己拼；内联脚本节点一律拒绝
      * （必须先落脚本草稿、再把节点换成组件引用）。每次动手前把改之前的整条链路存
-     * {@code databus_agent_snapshot}，供「回到这次对话前」按 run 整体回滚。
+     * {@code databus_agent_snapshot}，供「回退到本轮对话发起前」按 run 整体回滚。
      *
      * @param draftId           草稿链路 id；有就是改，没有就是新建
      * @param chainCode         链路编码，新建必填

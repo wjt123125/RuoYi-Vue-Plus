@@ -33,11 +33,13 @@ import org.dromara.databus.domain.vo.AgentApprovalModeVo;
 import org.dromara.databus.domain.vo.AgentConversationVo;
 import org.dromara.databus.domain.vo.AgentMessageVo;
 import org.dromara.databus.domain.vo.AgentRollbackVo;
+import org.dromara.databus.domain.vo.AgentRevertPreviewVo;
 import org.dromara.databus.domain.vo.AgentRunVo;
 import org.dromara.databus.enums.AgentRunStatusEnum;
 import org.dromara.databus.mapper.DatabusAgentMessageMapper;
 import org.dromara.databus.mapper.DatabusAgentRunMapper;
 import org.dromara.databus.service.IDatabusAgentRunService;
+import org.dromara.databus.service.IDatabusAgentSnapshotService;
 import org.dromara.system.api.model.LoginUser;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -91,6 +93,7 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     private final AgentConversationMetaSupport conversationSupport;
     private final AgentRunRollbackSupport rollbackSupport;
     private final AgentIdentityResolver identityResolver;
+    private final IDatabusAgentSnapshotService snapshotService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -570,8 +573,9 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
     }
 
     @Override
-    public List<AgentRollbackVo> rollbackRun(String runId) {
-        return rollbackSupport.rollbackRun(runId);
+    public boolean hasRunChanges(String runId) {
+        replayAssembler.requireOwnedRun(runId);
+        return snapshotService.hasChanges(runId);
     }
 
     @Override
@@ -606,6 +610,11 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             .eq(DatabusAgentMessage::getRunId, runId)
             .in(DatabusAgentMessage::getEventCode, EVENT_SYSTEM_EVENT, EVENT_CARD_REPLY)
             .orderByAsc(DatabusAgentMessage::getSeq));
+        // 重试=先撤销这一轮的链路/组件改动再按原意图重发；与本方法同一事务，
+        // 撤回是默认能力，仅「已归属他人 / 被回退范围外链路引用」的资源跳过
+        if (snapshotService.hasChanges(runId)) {
+            rollbackSupport.rollbackRun(runId);
+        }
         runMapper.deleteById(old.getId());
         supersedeActiveRuns(old.getUserId(), old.getConversationId());
         DatabusAgentRun run = createRun(old.getUserId(), loginUser, old.getConversationId(), old.getIntent(),
@@ -614,6 +623,11 @@ public class DatabusAgentRunServiceImpl implements IDatabusAgentRunService {
             streamSink.appendMessage(run.getRunId(), event.getEventCode(), null, event.getContent());
         }
         return new AgentChatStartVo(run.getRunId(), run.getConversationId(), run.getIntent());
+    }
+
+    @Override
+    public AgentRevertPreviewVo previewRevert(String runId) {
+        return rollbackSupport.previewRun(runId);
     }
 
     @Override

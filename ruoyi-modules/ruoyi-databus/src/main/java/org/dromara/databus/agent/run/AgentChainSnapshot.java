@@ -26,6 +26,11 @@ public class AgentChainSnapshot implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
+     * 资源类型，固定 {@code CHAIN}；回滚按它把链路行与草稿行分开处理
+     */
+    private String resourceType;
+
+    /**
      * 快照所属链路 id
      */
     private Long chainId;
@@ -69,5 +74,10 @@ public class AgentChainSnapshot implements Serializable {
      * 执行记录档位
      */
     private String logLevel;
+
+    /**
+     * 链路备注（回滚一并写回）
+     */
+    private String remark;
 
 }

@@ -68,19 +68,20 @@ create table if not exists databus_agent_step (
     key idx_agent_step_tool (tool, create_time)
 ) engine=innodb comment = 'AI agent 工具调用审计';
 
--- 每轮动手前的链路快照，只增不改：供「回到这次对话前」按 run 整体回滚（设计文档 §9.2 / §16.1）
--- payload 存 DatabusChain 整行快照（cmpProperty / elExpression / canvasData / inputParams / logLevel）；
+-- 每轮动手前的改动快照，只增不改：供「回到这次对话前」按 run 整体回滚（设计文档 §9.2 / §16.1）
+-- payload 是 JSON，用 resourceType 区分资源：CHAIN 存 DatabusChain 整行快照（cmpProperty / elExpression /
+-- canvasData / inputParams / remark）；COMPONENT_DRAFT 存组件草稿的正文与元信息（CREATE 只存定位信息，UPDATE 存改前内容）；
 -- 用 mediumtext 而非 text：大链路的 cmpProperty + canvasData 可能超过 64KB，截断的快照等于回滚不了。
 create table if not exists databus_agent_snapshot (
     id                  bigint(20)      not null                   comment '主键',
     run_id              varchar(64)     not null                   comment '所属 run',
     round               int(11)         not null default 0         comment '第几轮动手前（0 表示首轮）',
     operation           varchar(10)     not null default 'UPDATE'  comment 'CREATE 新建 / UPDATE 修改',
-    payload             mediumtext      default null               comment '链路全量快照（JSON：cmpProperty/elExpression/canvasData/inputParams/logLevel）',
+    payload             mediumtext      default null               comment '改动前快照（JSON，resourceType 区分：CHAIN 存链路全量 cmpProperty/elExpression/canvasData/inputParams/remark；COMPONENT_DRAFT 存草稿正文与元信息）',
     create_time         datetime        default null               comment '创建时间',
     primary key (id),
     unique key uk_agent_snapshot_run_round (run_id, round)
-) engine=innodb comment = 'AI agent 每轮动手前链路快照';
+) engine=innodb comment = 'AI agent 每轮动手前的改动快照（链路 / 组件草稿）';
 
 -- 推给前端的文字记录，同时是 seq 的号源（前端按 seq 保序）
 create table if not exists databus_agent_message (

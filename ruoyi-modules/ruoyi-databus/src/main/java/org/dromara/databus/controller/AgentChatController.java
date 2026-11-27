@@ -14,6 +14,7 @@ import org.dromara.databus.domain.vo.AgentApprovalModeVo;
 import org.dromara.databus.domain.vo.AgentConversationVo;
 import org.dromara.databus.domain.vo.AgentMessageVo;
 import org.dromara.databus.domain.vo.AgentRollbackVo;
+import org.dromara.databus.domain.vo.AgentRevertPreviewVo;
 import org.dromara.databus.domain.vo.AgentRunVo;
 import org.dromara.databus.service.IDatabusAgentRunService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -210,14 +211,14 @@ public class AgentChatController extends BaseController {
     }
 
     /**
-     * 回到这次对话前：按 run 整体回滚（新建的删掉、改过的写回）。
+     * 该轮是否真正改过链路：前端据此决定是否显示「回退到本轮对话发起前」。
      *
      * @param runId run 句柄
-     * @return 被回滚的链路
+     * @return true 表示本轮动过链路
      */
-    @PostMapping("/run/{runId}/rollback")
-    public R<List<AgentRollbackVo>> rollback(@PathVariable String runId) {
-        return R.ok(agentRunService.rollbackRun(runId));
+    @GetMapping("/run/{runId}/changed")
+    public R<Boolean> changed(@PathVariable String runId) {
+        return R.ok(agentRunService.hasRunChanges(runId));
     }
 
     /**
@@ -243,10 +244,21 @@ public class AgentChatController extends BaseController {
     }
 
     /**
-     * 回退到本轮对话发起前：撤销本轮及之后各轮的链路改动，并截断这些轮次的历史。
+     * 回退预检：只读返回「将撤销 / 将跳过 / 受影响」，前端据此决定是否出确认卡。
      *
      * @param runId run 句柄
-     * @return 被回滚的链路
+     * @return 预检结果
+     */
+    @PostMapping("/run/{runId}/revert/preview")
+    public R<AgentRevertPreviewVo> revertPreview(@PathVariable String runId) {
+        return R.ok(agentRunService.previewRevert(runId));
+    }
+
+    /**
+     * 回退到本轮对话发起前：撤销本轮及之后各轮的链路与草稿改动，并截断这些轮次的历史。
+     *
+     * @param runId run 句柄
+     * @return 每个资源一条结果（action=SKIP 表示未撤销）
      */
     @PostMapping("/run/{runId}/revert")
     public R<List<AgentRollbackVo>> revert(@PathVariable String runId) {

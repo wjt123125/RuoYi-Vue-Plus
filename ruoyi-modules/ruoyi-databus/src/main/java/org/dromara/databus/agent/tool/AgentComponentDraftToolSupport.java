@@ -4,20 +4,25 @@ import org.dromara.databus.agent.run.AgentRunContext;
 import org.dromara.databus.agent.event.AgentEventPublisher;
 import org.dromara.databus.agent.event.AgentCardChannel;
 import org.dromara.databus.agent.event.AgentCard;
+import org.dromara.databus.agent.support.AgentGuard;
 import lombok.RequiredArgsConstructor;
 import static org.dromara.databus.agent.tool.AgentToolText.trimToNull;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.databus.domain.bo.ScriptDraftBo;
+import org.dromara.databus.domain.vo.DatabusComponentVo;
 import org.dromara.databus.domain.vo.ScriptDraftResultVo;
 import org.dromara.databus.el.bean.ChainInputParam;
+import org.dromara.databus.enums.ComponentStatusEnum;
 import org.dromara.databus.script.host.ScriptCompileException;
 import org.dromara.databus.script.host.ScriptDiagnostic;
+import org.dromara.databus.service.IDatabusAgentSnapshotService;
 import org.dromara.databus.service.IDatabusComponentService;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import static org.dromara.databus.constant.AgentConstants.ERROR_VALIDATION;
@@ -38,6 +43,8 @@ import static org.dromara.databus.constant.AgentConstants.RESOURCE_TYPE_COMPONEN
 public class AgentComponentDraftToolSupport {
 
     private final IDatabusComponentService componentService;
+    private final IDatabusAgentSnapshotService snapshotService;
+    private final AgentGuard agentGuard;
     private final AgentEventPublisher eventPublisher;
     private final AgentCardChannel cardChannel;
 
@@ -72,8 +79,21 @@ public class AgentComponentDraftToolSupport {
         bo.setInputParams(parseInputParams(inputParams));
         // create_by 只认会话身份：草稿所有权决定「谁能改」，不能让模型指定
         bo.setCreateBy(context.userId());
+        // 改已有草稿：先取改前内容，成功落库后再记快照——保存失败（编译不过/非草稿态）不留快照，
+        // 避免出现「没改成却有回退入口」；新建同样先占轮次，防止写库后才因轮次超限抛错留下无快照的草稿
+        DatabusComponentVo before = componentId == null ? null : componentService.queryById(componentId);
+        boolean snapshotUpdate = before != null
+            && ComponentStatusEnum.DRAFT.getCode().equals(before.getStatus())
+            && Objects.equals(before.getCreateBy(), context.userId());
+        int round = (componentId == null || snapshotUpdate) ? agentGuard.nextRound(context.runId()) : 0;
         try {
             ScriptDraftResultVo result = componentService.saveScriptDraft(bo);
+            if (componentId == null) {
+                snapshotService.recordDraftCreate(context.runId(), round,
+                    result.getId(), result.getComponentCode(), result.getComponentName());
+            } else if (snapshotUpdate) {
+                snapshotService.recordDraft(context.runId(), round, before);
+            }
             // 业务事件：工作区收到后刷组件树并自动开审阅 tab；
             // 对话里再补一张资源卡，用户关掉 tab 后仍有可点入口
             eventPublisher.publishComponentDraft(context, result.getId(),

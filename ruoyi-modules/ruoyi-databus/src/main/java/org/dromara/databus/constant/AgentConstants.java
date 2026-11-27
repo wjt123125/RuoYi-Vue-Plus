@@ -328,4 +328,36 @@ public final class AgentConstants {
      * 快照记录的操作类型：修改
      */
     public static final String OPERATION_UPDATE = "UPDATE";
+
+    /**
+     * 快照资源类型：链路（payload.resourceType，回滚按类型分派）
+     */
+    public static final String SNAPSHOT_RESOURCE_CHAIN = "CHAIN";
+
+    /**
+     * 快照资源类型：组件草稿（databus_component_draft_save 落的 DRAFT 行，含脚本正文）
+     */
+    public static final String SNAPSHOT_RESOURCE_COMPONENT_DRAFT = "COMPONENT_DRAFT";
+
+    /* ---------------- 回退预检 / 回退结果的动作 ---------------- */
+
+    /**
+     * 回退动作：删除本对话新建的资源
+     */
+    public static final String REVERT_ACTION_DELETE = "DELETE";
+
+    /**
+     * 回退动作：把资源写回对话前的快照
+     */
+    public static final String REVERT_ACTION_RESTORE = "RESTORE";
+
+    /**
+     * 回退动作：资源已不可撤销（已采纳 / 已发布 / 已被引用等），跳过并附原因
+     */
+    public static final String REVERT_ACTION_SKIP = "SKIP";
+
+    /**
+     * 预检附加项：链路引用了本次将被删除的资源，删除后需要重新编排
+     */
+    public static final String REVERT_ACTION_REFERENCE = "REFERENCE";
 }

@@ -18,6 +18,7 @@ import org.dromara.databus.enums.AgentRunStatusEnum;
 import org.dromara.databus.mapper.DatabusAgentMessageMapper;
 import org.dromara.databus.mapper.DatabusAgentRunMapper;
 import org.dromara.databus.mapper.DatabusAgentStepMapper;
+import org.dromara.databus.service.IDatabusAgentSnapshotService;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -27,6 +28,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import static org.dromara.databus.constant.AgentConstants.CONVERSATION_HISTORY_LIMIT;
@@ -59,6 +61,7 @@ public class AgentRunReplayAssembler {
     private final DatabusAgentMessageMapper messageMapper;
     private final DatabusAgentStepMapper stepMapper;
     private final AgentConversationMetaSupport conversationSupport;
+    private final IDatabusAgentSnapshotService snapshotService;
 
     /**
      * 按会话查当前用户进行中的 run（刷新后恢复用），无则返回 null。
@@ -205,11 +208,13 @@ public class AgentRunReplayAssembler {
             Map<String, List<String>> target = isCard ? cardsByRun : repliesByRun;
             target.computeIfAbsent(message.getRunId(), key -> new ArrayList<>()).add(message.getContent());
         }
+        Set<String> changedRuns = snapshotService.changedRunIds(runIds);
         for (AgentRunVo vo : runs) {
             vo.setCards(cardsByRun.getOrDefault(vo.getRunId(), List.of()));
             vo.setCardReplies(repliesByRun.getOrDefault(vo.getRunId(), List.of()));
             vo.setErrors(errorsByRun.getOrDefault(vo.getRunId(), List.of()));
             vo.setFollowUps(followUpsByRun.getOrDefault(vo.getRunId(), List.of()));
+            vo.setChanged(changedRuns.contains(vo.getRunId()));
         }
     }
 

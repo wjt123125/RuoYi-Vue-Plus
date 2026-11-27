@@ -6,6 +6,7 @@ import org.dromara.databus.domain.vo.AgentApprovalModeVo;
 import org.dromara.databus.domain.vo.AgentConversationVo;
 import org.dromara.databus.domain.vo.AgentMessageVo;
 import org.dromara.databus.domain.vo.AgentRollbackVo;
+import org.dromara.databus.domain.vo.AgentRevertPreviewVo;
 import org.dromara.databus.domain.vo.AgentRunVo;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -125,13 +126,12 @@ public interface IDatabusAgentRunService {
     void restoreConversation(String conversationId);
 
     /**
-     * 回到这次对话前：按 run 整体回滚，对本 run 动过的每条链取本 run 内最早一份快照，
-     * UPDATE 写回原结构、CREATE 删除整条链路。
+     * 判断该轮是否真正改过链路（存在链路快照即为 true），前端据此决定是否显示回退入口。
      *
      * @param runId run 句柄
-     * @return 被回滚的链路（deleted=true 表示整条已删除）
+     * @return true 表示本轮动过链路
      */
-    List<AgentRollbackVo> rollbackRun(String runId);
+    boolean hasRunChanges(String runId);
 
     /**
      * 删除一轮对话：逻辑删除该 run，历史回放不再出现这一轮。
@@ -149,11 +149,19 @@ public interface IDatabusAgentRunService {
     AgentChatStartVo retryRun(String runId);
 
     /**
-     * 回退到本轮对话发起前：由近及远撤销本轮及之后各轮的链路改动，
-     * 并删除这些轮次的历史，刷新后不再回放。
+     * 回退预检：只读算出「将撤销 / 将跳过 / 受影响」，前端据此决定是否出确认卡。
      *
      * @param runId run 句柄
-     * @return 被回滚的链路（deleted=true 表示整条已删除）
+     * @return 预检结果，三份清单都为空表示这一轮没有可回退的改动
+     */
+    AgentRevertPreviewVo previewRevert(String runId);
+
+    /**
+     * 回退到本轮对话发起前：由近及远撤销本轮及之后各轮的链路与草稿改动，
+     * 并删除这些轮次的历史，刷新后不再回放。撤不掉的资源跳过并附原因。
+     *
+     * @param runId run 句柄
+     * @return 每个资源一条结果（action=SKIP 表示未撤销）
      */
     List<AgentRollbackVo> revertRun(String runId);
 
